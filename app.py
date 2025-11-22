@@ -236,7 +236,7 @@ def create_ui():
     saved_volume = config_manager.get_volume()
     saved_output_name = config_manager.get_last_output_name()
 
-    with gr.Blocks(title="NTN Podcast Creator", theme=gr.themes.Soft()) as app:
+    with gr.Blocks(title="NTN Podcast Creator") as app:
         gr.Markdown("""
         # 🎙️ NTN Podcast Creator
 
