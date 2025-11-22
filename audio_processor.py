@@ -3,8 +3,9 @@
 import os
 import random
 import math
-from typing import List, Optional
+from typing import List, Optional, Callable
 from pydub import AudioSegment
+from pydub.silence import detect_leading_silence
 
 
 class AudioProcessor:
@@ -37,6 +38,32 @@ class AudioProcessor:
         except Exception as e:
             raise Exception(f"Error loading audio file {file_path}: {e}")
 
+    def trim_silence(self, audio: AudioSegment, silence_threshold: int = -40) -> AudioSegment:
+        """Trim silence from the beginning and end of audio.
+
+        Args:
+            audio: AudioSegment to process
+            silence_threshold: Threshold in dB for what is considered silence
+
+        Returns:
+            AudioSegment with silence trimmed
+        """
+        # Detect leading silence
+        start_trim = detect_leading_silence(
+            audio, silence_threshold=silence_threshold)
+
+        # Detect trailing silence by reversing the audio
+        end_trim = detect_leading_silence(
+            audio.reverse(), silence_threshold=silence_threshold)
+
+        # Calculate duration
+        duration = len(audio)
+
+        # Trim the audio
+        trimmed = audio[start_trim:duration-end_trim]
+
+        return trimmed
+
     def reduce_volume(self, audio: AudioSegment, volume_percent: int) -> AudioSegment:
         """Reduce audio volume.
 
@@ -63,7 +90,8 @@ class AudioProcessor:
         self,
         background_files: List[str],
         target_duration_ms: int,
-        volume_percent: int = 10
+        volume_percent: int = 10,
+        log_callback: Optional[Callable[[str], None]] = None
     ) -> Optional[AudioSegment]:
         """Create looped background music from randomly selected tracks.
 
@@ -73,20 +101,27 @@ class AudioProcessor:
             background_files: List of background music file paths
             target_duration_ms: Target duration in milliseconds
             volume_percent: Volume percentage for background (0-100)
+            log_callback: Optional callback function for logging
 
         Returns:
             AudioSegment with concatenated background music or None if no files
         """
+        def log(message: str):
+            if log_callback:
+                log_callback(message)
+            else:
+                print(message)
+
         if not background_files:
             return None
 
         # Filter out files that don't exist
         valid_files = [f for f in background_files if os.path.exists(f)]
         if not valid_files:
-            print("Warning: No valid background music files found")
+            log("Warning: No valid background music files found")
             return None
 
-        print(
+        log(
             f"Building background music from {len(valid_files)} available track(s)")
 
         # Build background by randomly selecting and concatenating tracks
@@ -108,7 +143,7 @@ class AudioProcessor:
                 tracks_used.append(track_name)
 
             except Exception as e:
-                print(f"Error loading background track {track_name}: {e}")
+                log(f"Error loading background track {track_name}: {e}")
                 continue
 
         # Trim to exact duration
@@ -116,7 +151,7 @@ class AudioProcessor:
 
         # Show which tracks were used
         if tracks_used:
-            print(f"Background music created using: {', '.join(tracks_used)}")
+            log(f"Background music created using: {', '.join(tracks_used)}")
 
         return background
 
@@ -147,7 +182,9 @@ class AudioProcessor:
         outro_file: Optional[str] = None,
         background_files: Optional[List[str]] = None,
         background_volume: int = 10,
-        output_file: str = "output.mp3"
+        output_file: str = "output.mp3",
+        trim_silence: bool = False,
+        log_callback: Optional[Callable[[str], None]] = None
     ) -> str:
         """Create complete podcast with intro, outro, and background music.
 
@@ -158,6 +195,8 @@ class AudioProcessor:
             background_files: List of background music files (optional)
             background_volume: Volume percentage for background (0-100)
             output_file: Path for output file
+            trim_silence: Whether to trim silence from voice recording
+            log_callback: Optional callback function for logging
 
         Returns:
             Path to output file
@@ -165,46 +204,62 @@ class AudioProcessor:
         Raises:
             Exception: If processing fails
         """
-        print("Starting podcast creation...")
+        def log(message: str):
+            if log_callback:
+                log_callback(message)
+            else:
+                print(message)
+
+        log("Starting podcast creation...")
 
         # Load main voice recording
-        print(f"Loading main voice: {os.path.basename(voice_file)}")
+        log(f"Loading main voice: {os.path.basename(voice_file)}")
         voice = self.load_audio(voice_file)
+
+        # Trim silence if requested
+        if trim_silence:
+            log("Trimming silence from voice recording...")
+            original_duration = len(voice)
+            voice = self.trim_silence(voice)
+            trimmed_duration = len(voice)
+            saved_ms = original_duration - trimmed_duration
+            log(f"Trimmed {saved_ms/1000:.2f} seconds of silence")
 
         # Build the podcast sequence
         podcast = AudioSegment.empty()
 
         # Add intro if provided
         if intro_file and os.path.exists(intro_file):
-            print(f"Adding intro: {os.path.basename(intro_file)}")
+            log(f"Adding intro: {os.path.basename(intro_file)}")
             intro = self.load_audio(intro_file)
             podcast += intro
 
         # Add main voice
-        print("Adding main voice recording")
+        log("Adding main voice recording")
         podcast += voice
 
         # Add outro if provided
         if outro_file and os.path.exists(outro_file):
-            print(f"Adding outro: {os.path.basename(outro_file)}")
+            log(f"Adding outro: {os.path.basename(outro_file)}")
             outro = self.load_audio(outro_file)
             podcast += outro
 
         # Add background music if provided
         if background_files:
-            print(f"Creating background music (volume: {background_volume}%)")
+            log(f"Creating background music (volume: {background_volume}%)")
             background = self.create_looped_background(
                 background_files,
                 len(podcast),
-                background_volume
+                background_volume,
+                log_callback=log
             )
             if background:
-                print("Mixing background music with podcast")
+                log("Mixing background music with podcast")
                 podcast = self.mix_audio(podcast, background)
 
         # Export final podcast
-        print(f"Exporting to: {output_file}")
+        log(f"Exporting to: {output_file}")
         podcast.export(output_file, format="mp3")
-        print("Podcast creation complete!")
+        log("Podcast creation complete!")
 
         return output_file
