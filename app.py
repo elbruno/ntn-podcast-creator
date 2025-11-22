@@ -39,16 +39,21 @@ def save_uploaded_file(uploaded_file, prefix: str = "file") -> Optional[str]:
     else:
         original_name = f"{prefix}.mp3"
     
-    # Create unique filename
+    # Create destination path
     dest_path = os.path.join("uploads", original_name)
     
-    # Copy file if it's not already in uploads
-    if hasattr(uploaded_file, 'name') and uploaded_file.name != dest_path:
-        try:
-            shutil.copy2(uploaded_file.name, dest_path)
-        except Exception as e:
-            print(f"Error saving file: {e}")
-            return None
+    # Check if file is already in uploads directory
+    if hasattr(uploaded_file, 'name'):
+        source_dir = os.path.dirname(os.path.abspath(uploaded_file.name))
+        target_dir = os.path.abspath("uploads")
+        
+        # Only copy if not already in uploads directory
+        if source_dir != target_dir:
+            try:
+                shutil.copy2(uploaded_file.name, dest_path)
+            except Exception as e:
+                print(f"Error saving file: {e}")
+                return None
     
     return dest_path
 
@@ -329,6 +334,6 @@ if __name__ == "__main__":
     app.launch(
         server_name="0.0.0.0",
         server_port=7860,
-        share=True,
+        share=False,
         show_error=True
     )

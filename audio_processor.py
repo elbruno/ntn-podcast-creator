@@ -49,14 +49,15 @@ class AudioProcessor:
         if volume_percent >= 100:
             return audio
         
-        # Convert percentage to dB reduction
-        # volume_percent of 100 = 0 dB, 50 = -6 dB, 10 = -20 dB
-        if volume_percent > 0:
-            db_reduction = 20 * (1 - volume_percent / 100)
-            return audio - db_reduction
-        else:
+        if volume_percent <= 0:
             # Silence
             return audio - 60
+        
+        # Convert percentage to dB using logarithmic scaling
+        # volume_percent of 100 = 0 dB, 50 = -6 dB, 10 = -20 dB
+        import math
+        db_change = 20 * math.log10(volume_percent / 100)
+        return audio + db_change
     
     def create_looped_background(
         self, 

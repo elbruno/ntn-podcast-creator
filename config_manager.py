@@ -126,9 +126,9 @@ class ConfigManager:
         """Update background music volume.
         
         Args:
-            volume: Volume percentage (0-100)
+            volume: Volume percentage (0-50)
         """
-        self.set("background_volume", max(0, min(100, volume)))
+        self.set("background_volume", max(0, min(50, volume)))
     
     def get_intro(self) -> Optional[str]:
         """Get intro file path.
