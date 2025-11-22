@@ -76,14 +76,20 @@ def update_intro_file(file):
         return "No intro file selected"
 
     # Save to audios/intro_audio folder
-    if hasattr(file, 'name'):
+    # In Gradio 6.0, file is a string path directly
+    if isinstance(file, str):
+        source_path = file
+        original_name = os.path.basename(file)
+    elif hasattr(file, 'name'):
+        source_path = file.name
         original_name = os.path.basename(file.name)
     else:
         original_name = "intro.mp3"
+        source_path = file
 
     dest_path = os.path.join("audios", "intro_audio", original_name)
     try:
-        shutil.copy2(file.name, dest_path)
+        shutil.copy2(source_path, dest_path)
         config_manager.update_intro(dest_path)
         return f"Intro file saved: {os.path.basename(dest_path)}"
     except Exception as e:
@@ -98,14 +104,20 @@ def update_outro_file(file):
         return "No outro file selected"
 
     # Save to audios/outro_audio folder
-    if hasattr(file, 'name'):
+    # In Gradio 6.0, file is a string path directly
+    if isinstance(file, str):
+        source_path = file
+        original_name = os.path.basename(file)
+    elif hasattr(file, 'name'):
+        source_path = file.name
         original_name = os.path.basename(file.name)
     else:
         original_name = "outro.mp3"
+        source_path = file
 
     dest_path = os.path.join("audios", "outro_audio", original_name)
     try:
-        shutil.copy2(file.name, dest_path)
+        shutil.copy2(source_path, dest_path)
         config_manager.update_outro(dest_path)
         return f"Outro file saved: {os.path.basename(dest_path)}"
     except Exception as e:
@@ -121,14 +133,20 @@ def add_background_track(file):
         return "No file selected", get_background_tracks_display()
 
     # Save to audios/background_music folder
-    if hasattr(file, 'name'):
+    # In Gradio 6.0, file is a string path directly
+    if isinstance(file, str):
+        source_path = file
+        original_name = os.path.basename(file)
+    elif hasattr(file, 'name'):
+        source_path = file.name
         original_name = os.path.basename(file.name)
     else:
         original_name = "background.mp3"
+        source_path = file
 
     dest_path = os.path.join("audios", "background_music", original_name)
     try:
-        shutil.copy2(file.name, dest_path)
+        shutil.copy2(source_path, dest_path)
         config_manager.add_background_track(dest_path)
         background_tracks_list = config_manager.get_background_tracks()
         return f"Added: {os.path.basename(dest_path)}", get_background_tracks_display()
