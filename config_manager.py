@@ -182,7 +182,7 @@ class ConfigManager:
     def load_default_audio_files(self) -> None:
         """Load default audio files from dedicated directories.
 
-        Scans intro_audio/, outro_audio/, and background_music/ directories
+        Scans audios/intro_audio/, audios/outro_audio/, and audios/background_music/ directories
         for audio files and automatically populates the configuration.
 
         For intro and outro: Uses the first audio file found in each directory.
@@ -194,7 +194,8 @@ class ConfigManager:
         # Load intro audio (first file found)
         intro_files = []
         for ext in audio_extensions:
-            intro_files.extend(glob.glob(os.path.join('intro_audio', ext)))
+            intro_files.extend(
+                glob.glob(os.path.join('audios', 'intro_audio', ext)))
         if intro_files:
             intro_file = intro_files[0]
             if os.path.exists(intro_file):
@@ -204,7 +205,8 @@ class ConfigManager:
         # Load outro audio (first file found)
         outro_files = []
         for ext in audio_extensions:
-            outro_files.extend(glob.glob(os.path.join('outro_audio', ext)))
+            outro_files.extend(
+                glob.glob(os.path.join('audios', 'outro_audio', ext)))
         if outro_files:
             outro_file = outro_files[0]
             if os.path.exists(outro_file):
@@ -215,7 +217,7 @@ class ConfigManager:
         background_files = []
         for ext in audio_extensions:
             background_files.extend(
-                glob.glob(os.path.join('background_music', ext)))
+                glob.glob(os.path.join('audios', 'background_music', ext)))
 
         if background_files:
             # Validate files exist and update config

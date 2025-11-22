@@ -15,9 +15,9 @@ audio_processor = AudioProcessor()
 # Create necessary directories
 os.makedirs("uploads", exist_ok=True)
 os.makedirs("outputs", exist_ok=True)
-os.makedirs("intro_audio", exist_ok=True)
-os.makedirs("outro_audio", exist_ok=True)
-os.makedirs("background_music", exist_ok=True)
+os.makedirs("audios/intro_audio", exist_ok=True)
+os.makedirs("audios/outro_audio", exist_ok=True)
+os.makedirs("audios/background_music", exist_ok=True)
 
 # Load default audio files from dedicated folders
 config_manager.load_default_audio_files()
@@ -75,13 +75,13 @@ def update_intro_file(file):
         config_manager.update_intro(None)
         return "No intro file selected"
 
-    # Save to intro_audio folder
+    # Save to audios/intro_audio folder
     if hasattr(file, 'name'):
         original_name = os.path.basename(file.name)
     else:
         original_name = "intro.mp3"
 
-    dest_path = os.path.join("intro_audio", original_name)
+    dest_path = os.path.join("audios", "intro_audio", original_name)
     try:
         shutil.copy2(file.name, dest_path)
         config_manager.update_intro(dest_path)
@@ -97,13 +97,13 @@ def update_outro_file(file):
         config_manager.update_outro(None)
         return "No outro file selected"
 
-    # Save to outro_audio folder
+    # Save to audios/outro_audio folder
     if hasattr(file, 'name'):
         original_name = os.path.basename(file.name)
     else:
         original_name = "outro.mp3"
 
-    dest_path = os.path.join("outro_audio", original_name)
+    dest_path = os.path.join("audios", "outro_audio", original_name)
     try:
         shutil.copy2(file.name, dest_path)
         config_manager.update_outro(dest_path)
@@ -120,13 +120,13 @@ def add_background_track(file):
     if file is None:
         return "No file selected", get_background_tracks_display()
 
-    # Save to background_music folder
+    # Save to audios/background_music folder
     if hasattr(file, 'name'):
         original_name = os.path.basename(file.name)
     else:
         original_name = "background.mp3"
 
-    dest_path = os.path.join("background_music", original_name)
+    dest_path = os.path.join("audios", "background_music", original_name)
     try:
         shutil.copy2(file.name, dest_path)
         config_manager.add_background_track(dest_path)
@@ -165,12 +165,13 @@ def update_volume(volume):
     return f"Volume set to {int(volume)}%"
 
 
-def create_podcast_handler(voice_file, output_name):
+def create_podcast_handler(voice_file, output_name, delete_voice):
     """Handle podcast creation request.
 
     Args:
         voice_file: Uploaded voice file
         output_name: Desired output filename
+        delete_voice: Whether to delete voice file after creation
 
     Returns:
         Tuple of (status message, output file path or None)
@@ -211,6 +212,14 @@ def create_podcast_handler(voice_file, output_name):
             background_volume=volume,
             output_file=output_path
         )
+
+        # Delete voice recording if requested
+        if delete_voice and voice_path and os.path.exists(voice_path):
+            try:
+                os.remove(voice_path)
+                print(f"Deleted voice recording: {voice_path}")
+            except Exception as e:
+                print(f"Warning: Could not delete voice file: {e}")
 
         return f"✓ Podcast created successfully: {output_name}.mp3", result_path
 
@@ -303,6 +312,11 @@ def create_ui():
                     value=saved_output_name,
                     placeholder="my_podcast"
                 )
+                delete_voice_checkbox = gr.Checkbox(
+                    label="Delete voice recording after podcast creation",
+                    value=True,
+                    info="Automatically removes the uploaded voice file to save space"
+                )
                 create_button = gr.Button(
                     "🎬 Create Podcast", variant="primary", size="lg")
 
@@ -343,20 +357,20 @@ def create_ui():
 
         create_button.click(
             fn=create_podcast_handler,
-            inputs=[voice_input, output_name_input],
+            inputs=[voice_input, output_name_input, delete_voice_checkbox],
             outputs=[status_output, audio_output]
         )
 
         gr.Markdown("""
         ---
         ### 💡 Tips
-        - Default audio files are auto-loaded from `intro_audio/`, `outro_audio/`, and `background_music/` folders on startup
+        - Default audio files are auto-loaded from `audios/intro_audio/`, `audios/outro_audio/`, and `audios/background_music/` folders on startup
         - Generated podcasts are saved in the `outputs/` directory
-        - Voice recordings are temporarily saved in the `uploads/` directory
+        - Voice recordings are temporarily saved in the `uploads/` directory (auto-deleted by default after podcast creation)
         - Your settings (intro, outro, background tracks, volume) are automatically saved
         - Background music is randomly selected and looped to match your podcast duration
         - Recommended background volume: 10-12% for clear voice quality
-        - Add your default audio files to the respective folders and restart the app to use them automatically
+        - Add your default audio files to the respective folders under `audios/` and restart the app to use them automatically
         """)
 
     return app
