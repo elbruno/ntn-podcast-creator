@@ -44,6 +44,7 @@ class ConfigManager:
             "outro_file": None,
             "background_tracks": [],
             "background_volume": 10,
+            "track_volumes": {},  # Individual volumes per track
             "last_output_name": "podcast_output"
         }
 
@@ -178,6 +179,52 @@ class ConfigManager:
             name: Output filename
         """
         self.set("last_output_name", name)
+
+    def get_track_volume(self, track_path: str) -> int:
+        """Get volume setting for a specific track.
+
+        Args:
+            track_path: Path to the track file
+
+        Returns:
+            Volume percentage for the track (defaults to global volume)
+        """
+        track_volumes = self.get("track_volumes", {})
+        return track_volumes.get(track_path, self.get_volume())
+
+    def set_track_volume(self, track_path: str, volume: int) -> None:
+        """Set volume for a specific track.
+
+        Args:
+            track_path: Path to the track file
+            volume: Volume percentage (0-50)
+        """
+        track_volumes = self.get("track_volumes", {})
+        track_volumes[track_path] = max(0, min(50, volume))
+        self.set("track_volumes", track_volumes)
+
+    def apply_volume_to_all_tracks(self, volume: int) -> None:
+        """Apply volume setting to all background tracks.
+
+        Args:
+            volume: Volume percentage (0-50)
+        """
+        volume = max(0, min(50, volume))
+        tracks = self.get_background_tracks()
+        track_volumes = {}
+        for track in tracks:
+            track_volumes[track] = volume
+        self.set("track_volumes", track_volumes)
+        # Also update global volume
+        self.update_volume(volume)
+
+    def get_all_track_volumes(self) -> Dict[str, int]:
+        """Get all track volumes.
+
+        Returns:
+            Dictionary mapping track paths to volumes
+        """
+        return self.get("track_volumes", {})
 
     def load_default_audio_files(self) -> None:
         """Load default audio files from dedicated directories.

@@ -91,6 +91,7 @@ class AudioProcessor:
         background_files: List[str],
         target_duration_ms: int,
         volume_percent: int = 10,
+        track_volumes: Optional[dict] = None,
         log_callback: Optional[Callable[[str], None]] = None
     ) -> Optional[AudioSegment]:
         """Create looped background music from randomly selected tracks.
@@ -100,7 +101,8 @@ class AudioProcessor:
         Args:
             background_files: List of background music file paths
             target_duration_ms: Target duration in milliseconds
-            volume_percent: Volume percentage for background (0-100)
+            volume_percent: Default volume percentage for background (0-100)
+            track_volumes: Optional dict mapping track paths to individual volumes
             log_callback: Optional callback function for logging
 
         Returns:
@@ -135,12 +137,19 @@ class AudioProcessor:
 
             try:
                 track = self.load_audio(selected_file)
+                
+                # Use individual track volume if available, otherwise use default
+                if track_volumes and selected_file in track_volumes:
+                    track_volume = track_volumes[selected_file]
+                else:
+                    track_volume = volume_percent
+                
                 # Reduce volume of this track
-                track = self.reduce_volume(track, volume_percent)
+                track = self.reduce_volume(track, track_volume)
 
                 # Append to background
                 background += track
-                tracks_used.append(track_name)
+                tracks_used.append(f"{track_name} ({track_volume}%)")
 
             except Exception as e:
                 log(f"Error loading background track {track_name}: {e}")
@@ -182,6 +191,7 @@ class AudioProcessor:
         outro_file: Optional[str] = None,
         background_files: Optional[List[str]] = None,
         background_volume: int = 10,
+        track_volumes: Optional[dict] = None,
         output_file: str = "output.mp3",
         trim_silence: bool = False,
         log_callback: Optional[Callable[[str], None]] = None
@@ -193,7 +203,8 @@ class AudioProcessor:
             intro_file: Path to intro audio (optional)
             outro_file: Path to outro audio (optional)
             background_files: List of background music files (optional)
-            background_volume: Volume percentage for background (0-100)
+            background_volume: Default volume percentage for background (0-100)
+            track_volumes: Optional dict mapping track paths to individual volumes
             output_file: Path for output file
             trim_silence: Whether to trim silence from voice recording
             log_callback: Optional callback function for logging
@@ -252,6 +263,7 @@ class AudioProcessor:
                 background_files,
                 len(voice),
                 background_volume,
+                track_volumes=track_volumes,
                 log_callback=log
             )
             if background:
