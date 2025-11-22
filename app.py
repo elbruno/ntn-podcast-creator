@@ -93,7 +93,14 @@ def generate_timeline_chart(voice_file: Optional[str], intro_file: Optional[str]
     outro_duration = get_audio_duration_seconds(
         outro_file) if outro_file else 0.0
 
-    total_duration = intro_duration + voice_duration + outro_duration
+    # Calculate total with overlaps (2 seconds total: 1s intro-voice + 1s voice-outro)
+    overlap_seconds = 0.0
+    if intro_duration > 0 and voice_duration > 0:
+        overlap_seconds += 1.0  # intro-voice overlap
+    if voice_duration > 0 and outro_duration > 0:
+        overlap_seconds += 1.0  # voice-outro overlap
+
+    total_duration = intro_duration + voice_duration + outro_duration - overlap_seconds
 
     if total_duration == 0:
         return "<div style='padding: 20px; text-align: center; color: #666;'>No audio files to preview</div>"
@@ -119,63 +126,98 @@ def generate_timeline_chart(voice_file: Optional[str], intro_file: Optional[str]
         <div style="margin: 20px 0;">
             <div style="font-size: 14px; color: #666; margin-bottom: 10px;">
                 Total Duration: <strong>{format_time(total_duration)}</strong>
+                {' (with 1s overlaps)' if overlap_seconds > 0 else ''}
             </div>
-            <div style="display: flex; height: 60px; border-radius: 4px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+            <div style="position: relative; height: 80px;">
+                <!-- Main timeline -->
+                <div style="display: flex; height: 60px; border-radius: 4px; overflow: visible; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
     """
 
     # Add intro segment
     if intro_duration > 0:
         html += f"""
-                <div style="width: {intro_percent}%; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                     display: flex; align-items: center; justify-content: center; color: white;
-                     font-size: 12px; font-weight: bold; border-right: 2px solid white;">
-                    <div style="text-align: center; padding: 5px;">
-                        <div>INTRO</div>
-                        <div style="font-size: 10px; opacity: 0.9;">{format_time(intro_duration)}</div>
+                    <div style="width: {intro_percent}%; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                         display: flex; align-items: center; justify-content: center; color: white;
+                         font-size: 12px; font-weight: bold; border-right: 2px solid white; position: relative;">
+                        <div style="text-align: center; padding: 5px;">
+                            <div>INTRO</div>
+                            <div style="font-size: 10px; opacity: 0.9;">{format_time(intro_duration)}</div>
+                        </div>
+                        {"<div style='position: absolute; right: -10px; top: 0; bottom: 0; width: 20px; background: rgba(255,255,255,0.3); z-index: 10;'></div>" if voice_duration > 0 else ""}
                     </div>
-                </div>
         """
 
     # Add voice segment with background indicator
     if voice_duration > 0:
-        bg_indicator = " + 🎵 BG" if has_background else ""
         html += f"""
-                <div style="width: {voice_percent}%; background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-                     display: flex; align-items: center; justify-content: center; color: white;
-                     font-size: 12px; font-weight: bold; border-right: 2px solid white;">
-                    <div style="text-align: center; padding: 5px;">
-                        <div>VOICE{bg_indicator}</div>
-                        <div style="font-size: 10px; opacity: 0.9;">{format_time(voice_duration)}</div>
+                    <div style="width: {voice_percent}%; background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+                         display: flex; align-items: center; justify-content: center; color: white;
+                         font-size: 12px; font-weight: bold; border-right: 2px solid white; position: relative;">
+                        <div style="text-align: center; padding: 5px;">
+                            <div>VOICE</div>
+                            <div style="font-size: 10px; opacity: 0.9;">{format_time(voice_duration)}</div>
+                        </div>
+                        {"<div style='position: absolute; left: -10px; top: 0; bottom: 0; width: 20px; background: rgba(255,255,255,0.3); z-index: 10;'></div>" if intro_duration > 0 else ""}
+                        {"<div style='position: absolute; right: -10px; top: 0; bottom: 0; width: 20px; background: rgba(255,255,255,0.3); z-index: 10;'></div>" if outro_duration > 0 else ""}
                     </div>
-                </div>
         """
 
     # Add outro segment
     if outro_duration > 0:
         html += f"""
-                <div style="width: {outro_percent}%; background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-                     display: flex; align-items: center; justify-content: center; color: white;
-                     font-size: 12px; font-weight: bold;">
-                    <div style="text-align: center; padding: 5px;">
-                        <div>OUTRO</div>
-                        <div style="font-size: 10px; opacity: 0.9;">{format_time(outro_duration)}</div>
+                    <div style="width: {outro_percent}%; background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+                         display: flex; align-items: center; justify-content: center; color: white;
+                         font-size: 12px; font-weight: bold; position: relative;">
+                        <div style="text-align: center; padding: 5px;">
+                            <div>OUTRO</div>
+                            <div style="font-size: 10px; opacity: 0.9;">{format_time(outro_duration)}</div>
+                        </div>
+                        {"<div style='position: absolute; left: -10px; top: 0; bottom: 0; width: 20px; background: rgba(255,255,255,0.3); z-index: 10;'></div>" if voice_duration > 0 else ""}
                     </div>
+        """
+
+    html += """
+                </div>
+    """
+
+    # Add background music layer on top of voice section
+    if has_background and voice_duration > 0:
+        # Calculate position and width for background music overlay
+        bg_start_percent = intro_percent
+        bg_width_percent = voice_percent
+
+        html += f"""
+                <!-- Background music layer -->
+                <div style="position: absolute; left: {bg_start_percent}%; width: {bg_width_percent}%; top: 0; height: 20px;
+                     background: repeating-linear-gradient(45deg, #FFD700, #FFD700 10px, #FFA500 10px, #FFA500 20px);
+                     border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.2); display: flex; align-items: center; justify-content: center;">
+                    <span style="font-size: 10px; font-weight: bold; color: #333; text-shadow: 1px 1px 2px rgba(255,255,255,0.8);">🎵 BACKGROUND MUSIC</span>
                 </div>
         """
 
     html += """
             </div>
-            <div style="margin-top: 15px; padding: 10px; background: white; border-radius: 4px; font-size: 13px;">
+        </div>
+    """
+
+    html += """
+            <div style="margin-top: 25px; padding: 10px; background: white; border-radius: 4px; font-size: 13px;">
                 <div style="margin-bottom: 5px;"><strong>Legend:</strong></div>
     """
 
     if intro_duration > 0:
         html += "<div style='margin: 3px 0;'>🟣 <strong>INTRO</strong> - Plays first (no background music)</div>"
     if voice_duration > 0:
-        bg_text = " with background music" if has_background else " (no background music)"
-        html += f"<div style='margin: 3px 0;'>🔴 <strong>VOICE</strong> - Your recording{bg_text}</div>"
+        html += "<div style='margin: 3px 0;'>🔴 <strong>VOICE</strong> - Your recording"
+        if has_background:
+            html += " (see background music layer above)"
+        html += "</div>"
     if outro_duration > 0:
         html += "<div style='margin: 3px 0;'>🔵 <strong>OUTRO</strong> - Plays last (no background music)</div>"
+    if has_background and voice_duration > 0:
+        html += "<div style='margin: 3px 0;'>🎵 <strong>BACKGROUND MUSIC</strong> - Plays only during voice recording</div>"
+    if overlap_seconds > 0:
+        html += "<div style='margin: 3px 0; padding: 5px; background: #fff3cd; border-radius: 3px;'>⚡ <strong>Overlaps:</strong> 1-second smooth transitions between segments (shown as lighter areas)</div>"
 
     html += """
             </div>

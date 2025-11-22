@@ -225,8 +225,10 @@ class AudioProcessor:
             saved_ms = original_duration - trimmed_duration
             log(f"Trimmed {saved_ms/1000:.2f} seconds of silence")
 
-        # Build the podcast sequence
-        podcast = AudioSegment.empty()
+        # Build the podcast sequence with overlaps
+        # Overlap duration: 1 second (1000ms)
+        overlap_ms = 1000
+
         intro_duration = 0
         outro_duration = 0
 
@@ -234,8 +236,9 @@ class AudioProcessor:
         if intro_file and os.path.exists(intro_file):
             log(f"Adding intro: {os.path.basename(intro_file)}")
             intro = self.load_audio(intro_file)
-            podcast += intro
             intro_duration = len(intro)
+        else:
+            intro = None
 
         # Add main voice with background music
         log("Adding main voice recording")
@@ -255,14 +258,54 @@ class AudioProcessor:
                 log("Mixing background music with voice recording")
                 voice_with_bg = self.mix_audio(voice, background)
 
-        podcast += voice_with_bg
-
         # Add outro if provided (no background music)
         if outro_file and os.path.exists(outro_file):
             log(f"Adding outro: {os.path.basename(outro_file)}")
             outro = self.load_audio(outro_file)
-            podcast += outro
             outro_duration = len(outro)
+        else:
+            outro = None
+
+        # Build podcast with overlaps
+        podcast = AudioSegment.empty()
+
+        if intro:
+            podcast += intro
+            # Overlap: intro's last second overlaps with voice's first second
+            if len(podcast) >= overlap_ms:
+                log(f"Applying {overlap_ms}ms overlap between intro and voice")
+                # Remove last second from intro
+                podcast = podcast[:-overlap_ms]
+
+        # Add voice with background (overlays with end of intro if present)
+        if intro and len(intro) >= overlap_ms:
+            # Extract the last second of intro to mix with first second of voice
+            intro_tail = intro[-overlap_ms:]
+            voice_head = voice_with_bg[:overlap_ms]
+            voice_tail = voice_with_bg[overlap_ms:]
+
+            # Mix the overlapping parts
+            overlapped_section = intro_tail.overlay(voice_head)
+            podcast += overlapped_section + voice_tail
+        else:
+            podcast += voice_with_bg
+
+        # Overlap: voice's last second overlaps with outro's first second
+        if outro and len(voice_with_bg) >= overlap_ms:
+            log(f"Applying {overlap_ms}ms overlap between voice and outro")
+            # Remove last second from current podcast
+            podcast = podcast[:-overlap_ms]
+
+            # Extract the last second of voice to mix with first second of outro
+            voice_tail = voice_with_bg[-overlap_ms:]
+            outro_head = outro[:overlap_ms]
+            outro_tail = outro[overlap_ms:]
+
+            # Mix the overlapping parts
+            overlapped_section = voice_tail.overlay(outro_head)
+            podcast += overlapped_section + outro_tail
+        elif outro:
+            podcast += outro
 
         # Export final podcast
         log(f"Exporting to: {output_file}")
