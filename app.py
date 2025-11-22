@@ -30,6 +30,27 @@ background_tracks_list = []
 console_log = []
 
 
+def get_audio_duration(file_path: str) -> str:
+    """Get audio duration in MM:SS format.
+
+    Args:
+        file_path: Path to audio file
+
+    Returns:
+        Duration string in MM:SS format or 'N/A' on error
+    """
+    try:
+        from pydub import AudioSegment
+        audio = AudioSegment.from_file(file_path)
+        duration_seconds = len(audio) / 1000
+        minutes = int(duration_seconds // 60)
+        seconds = int(duration_seconds % 60)
+        return f"{minutes:02d}:{seconds:02d}"
+    except Exception as e:
+        log_message(f"Error getting duration for {file_path}: {e}")
+        return "N/A"
+
+
 def log_message(message: str):
     """Add message to console log."""
     global console_log
@@ -97,7 +118,7 @@ def update_intro_file(file):
     """Update intro file in configuration."""
     if file is None:
         config_manager.update_intro(None)
-        return "No intro file selected"
+        return "No intro file selected", *get_intro_info()
 
     # Save to audios/intro_audio folder
     # In Gradio 6.0, file is a string path directly
@@ -115,17 +136,18 @@ def update_intro_file(file):
     try:
         shutil.copy2(source_path, dest_path)
         config_manager.update_intro(dest_path)
-        return f"Intro file saved: {os.path.basename(dest_path)}"
+        log_message(f"Intro file saved: {os.path.basename(dest_path)}")
+        return f"Intro file saved: {os.path.basename(dest_path)}", *get_intro_info()
     except Exception as e:
-        print(f"Error saving intro file: {e}")
-        return "Error saving intro file"
+        log_message(f"Error saving intro file: {e}")
+        return "Error saving intro file", *get_intro_info()
 
 
 def update_outro_file(file):
     """Update outro file in configuration."""
     if file is None:
         config_manager.update_outro(None)
-        return "No outro file selected"
+        return "No outro file selected", *get_outro_info()
 
     # Save to audios/outro_audio folder
     # In Gradio 6.0, file is a string path directly
@@ -143,10 +165,11 @@ def update_outro_file(file):
     try:
         shutil.copy2(source_path, dest_path)
         config_manager.update_outro(dest_path)
-        return f"Outro file saved: {os.path.basename(dest_path)}"
+        log_message(f"Outro file saved: {os.path.basename(dest_path)}")
+        return f"Outro file saved: {os.path.basename(dest_path)}", *get_outro_info()
     except Exception as e:
-        print(f"Error saving outro file: {e}")
-        return "Error saving outro file"
+        log_message(f"Error saving outro file: {e}")
+        return "Error saving outro file", *get_outro_info()
 
 
 def add_background_track(file):
@@ -154,7 +177,8 @@ def add_background_track(file):
     global background_tracks_list
 
     if file is None:
-        return "No file selected", get_background_tracks_display()
+        display_list, _ = get_background_tracks_list()
+        return "No file selected", get_background_tracks_display(), gr.update(choices=display_list)
 
     # Save to audios/background_music folder
     # In Gradio 6.0, file is a string path directly
@@ -173,10 +197,16 @@ def add_background_track(file):
         shutil.copy2(source_path, dest_path)
         config_manager.add_background_track(dest_path)
         background_tracks_list = config_manager.get_background_tracks()
-        return f"Added: {os.path.basename(dest_path)}", get_background_tracks_display()
+        log_message(f"Added background track: {os.path.basename(dest_path)}")
+
+        # Get updated list for dropdown
+        display_list, _ = get_background_tracks_list()
+
+        return f"Added: {os.path.basename(dest_path)}", get_background_tracks_display(), gr.update(choices=display_list)
     except Exception as e:
-        print(f"Error saving background file: {e}")
-        return "Error saving file", get_background_tracks_display()
+        log_message(f"Error saving background file: {e}")
+        display_list, _ = get_background_tracks_list()
+        return "Error saving file", get_background_tracks_display(), gr.update(choices=display_list)
 
 
 def get_background_tracks_display():
@@ -193,12 +223,126 @@ def get_background_tracks_display():
     return "\n".join([f"• {os.path.basename(t)}" for t in valid_tracks])
 
 
+def get_intro_info():
+    """Get intro audio file info with duration."""
+    intro = config_manager.get_intro()
+    if intro and os.path.exists(intro):
+        duration = get_audio_duration(intro)
+        return f"{duration} - {os.path.basename(intro)}", intro
+    return "No intro audio set", None
+
+
+def get_outro_info():
+    """Get outro audio file info with duration."""
+    outro = config_manager.get_outro()
+    if outro and os.path.exists(outro):
+        duration = get_audio_duration(outro)
+        return f"{duration} - {os.path.basename(outro)}", outro
+    return "No outro audio set", None
+
+
+def get_background_tracks_list():
+    """Get list of background tracks with duration and file paths."""
+    tracks = config_manager.get_background_tracks()
+    if not tracks:
+        return [], []
+
+    valid_tracks = [t for t in tracks if os.path.exists(t)]
+    if valid_tracks != tracks:
+        config_manager.update_background_tracks(valid_tracks)
+
+    # Return list of (display_name, file_path) tuples
+    result = []
+    paths = []
+    for track in valid_tracks:
+        duration = get_audio_duration(track)
+        display = f"{duration} - {os.path.basename(track)}"
+        result.append(display)
+        paths.append(track)
+
+    return result, paths
+
+
+def delete_intro():
+    """Delete intro audio file."""
+    intro = config_manager.get_intro()
+    if intro and os.path.exists(intro):
+        try:
+            os.remove(intro)
+            config_manager.update_intro(None)
+            log_message(f"Deleted intro: {os.path.basename(intro)}")
+            return "Intro deleted successfully", *get_intro_info()
+        except Exception as e:
+            log_message(f"Error deleting intro: {e}")
+            return f"Error deleting intro: {e}", *get_intro_info()
+    return "No intro to delete", *get_intro_info()
+
+
+def delete_outro():
+    """Delete outro audio file."""
+    outro = config_manager.get_outro()
+    if outro and os.path.exists(outro):
+        try:
+            os.remove(outro)
+            config_manager.update_outro(None)
+            log_message(f"Deleted outro: {os.path.basename(outro)}")
+            return "Outro deleted successfully", *get_outro_info()
+        except Exception as e:
+            log_message(f"Error deleting outro: {e}")
+            return f"Error deleting outro: {e}", *get_outro_info()
+    return "No outro to delete", *get_outro_info()
+
+
+def delete_background_track(track_index):
+    """Delete a specific background track by index."""
+    tracks = config_manager.get_background_tracks()
+
+    if track_index is None or track_index < 0 or track_index >= len(tracks):
+        return "Invalid track selection", gr.update(choices=[]), gr.update(value=None)
+
+    track_path = tracks[track_index]
+
+    try:
+        if os.path.exists(track_path):
+            os.remove(track_path)
+
+        # Remove from config
+        tracks.pop(track_index)
+        config_manager.update_background_tracks(tracks)
+
+        log_message(
+            f"Deleted background track: {os.path.basename(track_path)}")
+
+        # Get updated list
+        display_list, paths = get_background_tracks_list()
+        choices = display_list if display_list else []
+
+        return "Track deleted successfully", gr.update(choices=choices), gr.update(value=None)
+    except Exception as e:
+        log_message(f"Error deleting track: {e}")
+        display_list, _ = get_background_tracks_list()
+        return f"Error deleting track: {e}", gr.update(choices=display_list), gr.update(value=None)
+
+
+def get_selected_track_audio(track_index, track_choices):
+    """Get the audio file path for the selected track."""
+    if track_index is None or track_index < 0:
+        return None
+
+    tracks = config_manager.get_background_tracks()
+    if track_index >= len(tracks):
+        return None
+
+    return tracks[track_index]
+
+
 def clear_background_tracks():
     """Clear all background tracks."""
     global background_tracks_list
     config_manager.update_background_tracks([])
     background_tracks_list = []
-    return "All background tracks cleared", get_background_tracks_display()
+    log_message("All background tracks cleared")
+    return "All background tracks cleared", get_background_tracks_display(), gr.update(choices=[])
 
 
 def update_volume(volume):
@@ -400,10 +544,32 @@ def create_ui():
                     with gr.Column():
                         gr.Markdown("#### Intro Audio")
                         gr.Markdown("*Plays before your voice recording*")
-                        intro_input = gr.Audio(
-                            label="Upload Intro Audio",
+
+                        intro_display = gr.Textbox(
+                            label="Current Intro",
+                            value=get_intro_info()[0],
+                            interactive=False
+                        )
+
+                        intro_audio_player = gr.Audio(
+                            label="Play Intro",
+                            value=get_intro_info()[1],
                             type="filepath"
                         )
+
+                        with gr.Row():
+                            intro_input = gr.Audio(
+                                label="Upload New Intro",
+                                type="filepath"
+                            )
+
+                        with gr.Row():
+                            delete_intro_button = gr.Button(
+                                "🗑️ Delete Intro",
+                                variant="stop",
+                                size="sm"
+                            )
+
                         intro_status = gr.Textbox(
                             label="Status",
                             interactive=False
@@ -413,10 +579,32 @@ def create_ui():
 
                         gr.Markdown("#### Outro Audio")
                         gr.Markdown("*Plays after your voice recording*")
-                        outro_input = gr.Audio(
-                            label="Upload Outro Audio",
+
+                        outro_display = gr.Textbox(
+                            label="Current Outro",
+                            value=get_outro_info()[0],
+                            interactive=False
+                        )
+
+                        outro_audio_player = gr.Audio(
+                            label="Play Outro",
+                            value=get_outro_info()[1],
                             type="filepath"
                         )
+
+                        with gr.Row():
+                            outro_input = gr.Audio(
+                                label="Upload New Outro",
+                                type="filepath"
+                            )
+
+                        with gr.Row():
+                            delete_outro_button = gr.Button(
+                                "🗑️ Delete Outro",
+                                variant="stop",
+                                size="sm"
+                            )
+
                         outro_status = gr.Textbox(
                             label="Status",
                             interactive=False
@@ -452,6 +640,33 @@ def create_ui():
                             value=get_background_tracks_display(),
                             interactive=False,
                             lines=6
+                        )
+
+                        gr.Markdown("**Manage Tracks**")
+
+                        # Get initial track list
+                        initial_tracks, _ = get_background_tracks_list()
+
+                        bg_track_selector = gr.Dropdown(
+                            label="Select Track to Play or Delete",
+                            choices=initial_tracks,
+                            interactive=True
+                        )
+
+                        bg_track_player = gr.Audio(
+                            label="Play Selected Track",
+                            type="filepath"
+                        )
+
+                        delete_bg_track_button = gr.Button(
+                            "🗑️ Delete Selected Track",
+                            variant="stop",
+                            size="sm"
+                        )
+
+                        bg_track_status = gr.Textbox(
+                            label="Track Status",
+                            interactive=False
                         )
 
                         gr.Markdown("---")
@@ -524,25 +739,78 @@ def create_ui():
         intro_input.change(
             fn=update_intro_file,
             inputs=[intro_input],
-            outputs=[intro_status]
+            outputs=[intro_status, intro_display, intro_audio_player]
+        )
+
+        delete_intro_button.click(
+            fn=delete_intro,
+            inputs=[],
+            outputs=[intro_status, intro_display, intro_audio_player]
         )
 
         outro_input.change(
             fn=update_outro_file,
             inputs=[outro_input],
-            outputs=[outro_status]
+            outputs=[outro_status, outro_display, outro_audio_player]
+        )
+
+        delete_outro_button.click(
+            fn=delete_outro,
+            inputs=[],
+            outputs=[outro_status, outro_display, outro_audio_player]
         )
 
         add_bg_button.click(
             fn=add_background_track,
             inputs=[background_input],
-            outputs=[background_status, background_list]
+            outputs=[background_status, background_list, bg_track_selector]
         )
 
         clear_bg_button.click(
             fn=clear_background_tracks,
             inputs=[],
-            outputs=[background_status, background_list]
+            outputs=[background_status, background_list, bg_track_selector]
+        )
+
+        # When user selects a track from dropdown, load it into the player
+        def update_bg_player(track_choice):
+            if track_choice is None:
+                return None
+            # Find the index of selected track
+            display_list, paths = get_background_tracks_list()
+            try:
+                idx = display_list.index(track_choice)
+                return paths[idx]
+            except (ValueError, IndexError):
+                return None
+
+        bg_track_selector.change(
+            fn=update_bg_player,
+            inputs=[bg_track_selector],
+            outputs=[bg_track_player]
+        )
+
+        # Delete selected background track
+        def delete_selected_bg_track(track_choice):
+            if track_choice is None:
+                display_list, _ = get_background_tracks_list()
+                return "No track selected", get_background_tracks_display(), gr.update(choices=display_list), None
+
+            # Find the index of selected track
+            display_list, _ = get_background_tracks_list()
+            try:
+                idx = display_list.index(track_choice)
+                status, dropdown_update, player_update = delete_background_track(
+                    idx)
+                return status, get_background_tracks_display(), dropdown_update, player_update
+            except (ValueError, IndexError):
+                return "Track not found", get_background_tracks_display(), gr.update(choices=display_list), None
+
+        delete_bg_track_button.click(
+            fn=delete_selected_bg_track,
+            inputs=[bg_track_selector],
+            outputs=[bg_track_status, background_list,
+                     bg_track_selector, bg_track_player]
         )
 
         volume_slider.change(
