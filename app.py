@@ -240,89 +240,151 @@ def create_ui():
         gr.Markdown("""
         # 🎙️ NTN Podcast Creator
 
-        Create professional podcasts by uploading your voice recording. Default intro, outro, and background music are automatically loaded.
-        Just upload your voice recording and click "Create Podcast"!
+        Create professional podcasts with intro, outro, and background music.
         """)
 
-        with gr.Row():
-            with gr.Column():
-                gr.Markdown("### 1. Upload Your Podcast Voice Recording")
-                voice_input = gr.Audio(
-                    label="Main Voice Recording (Required)",
-                    type="filepath"
-                )
+        with gr.Tabs():
+            # Main Tab - Podcast Creation
+            with gr.Tab("Create Podcast"):
+                gr.Markdown("""
+                ### Upload your voice recording and create your podcast
+                Default intro, outro, and background music are automatically applied.
+                """)
 
-                gr.Markdown("### 2. Optional: Replace Default Intro Audio")
-                intro_input = gr.Audio(
-                    label="Intro Audio (plays before your voice) - Auto-loaded from intro_audio/",
-                    type="filepath"
-                )
-                intro_status = gr.Textbox(
-                    label="Intro Status", interactive=False)
+                with gr.Row():
+                    with gr.Column():
+                        voice_input = gr.Audio(
+                            label="Voice Recording (Required)",
+                            type="filepath"
+                        )
 
-                gr.Markdown("### 3. Optional: Replace Default Outro Audio")
-                outro_input = gr.Audio(
-                    label="Outro Audio (plays after your voice) - Auto-loaded from outro_audio/",
-                    type="filepath"
-                )
-                outro_status = gr.Textbox(
-                    label="Outro Status", interactive=False)
+                        output_name_input = gr.Textbox(
+                            label="Podcast Filename (without .mp3)",
+                            value=saved_output_name,
+                            placeholder="my_podcast"
+                        )
 
-            with gr.Column():
-                gr.Markdown("### 4. Optional: Manage Background Music")
-                gr.Markdown(
-                    "Background tracks are auto-loaded from background_music/. Upload additional tracks or use defaults.")
-                background_input = gr.Audio(
-                    label="Upload Additional Background Music Track",
-                    type="filepath"
-                )
-                add_bg_button = gr.Button(
-                    "Add Background Track", variant="secondary")
-                background_status = gr.Textbox(
-                    label="Upload Status", interactive=False)
+                        delete_voice_checkbox = gr.Checkbox(
+                            label="Delete voice recording after creation",
+                            value=True,
+                            info="Saves storage space"
+                        )
 
-                background_list = gr.Textbox(
-                    label="Current Background Tracks",
-                    value=get_background_tracks_display(),
-                    interactive=False,
-                    lines=5
-                )
-                clear_bg_button = gr.Button(
-                    "Clear All Background Tracks", variant="stop")
+                        create_button = gr.Button(
+                            "🎬 Create Podcast",
+                            variant="primary",
+                            size="lg"
+                        )
 
-                gr.Markdown("### 5. Configure Background Volume")
-                volume_slider = gr.Slider(
-                    minimum=0,
-                    maximum=50,
-                    value=saved_volume,
-                    step=1,
-                    label="Background Music Volume (%)",
-                    info="Recommended: 10-12%"
-                )
-                volume_status = gr.Textbox(
-                    label="Volume Status", interactive=False)
+                    with gr.Column():
+                        status_output = gr.Textbox(
+                            label="Status",
+                            interactive=False,
+                            lines=3
+                        )
+                        audio_output = gr.Audio(
+                            label="Your Podcast",
+                            type="filepath"
+                        )
 
-        gr.Markdown("---")
+                gr.Markdown("""
+                ---
+                ### 💡 Quick Tips
+                - Upload your voice recording and click "Create Podcast"
+                - Default audio files are automatically loaded from `audios/` folder
+                - Generated podcasts are saved in the `outputs/` directory
+                - Configure intro, outro, and background music in the Settings tab
+                """)
 
-        with gr.Row():
-            with gr.Column():
-                gr.Markdown("### 6. Create Your Podcast")
-                output_name_input = gr.Textbox(
-                    label="Output Filename (without .mp3)",
-                    value=saved_output_name,
-                    placeholder="my_podcast"
-                )
-                delete_voice_checkbox = gr.Checkbox(
-                    label="Delete voice recording after podcast creation",
-                    value=True,
-                    info="Automatically removes the uploaded voice file to save space"
-                )
-                create_button = gr.Button(
-                    "🎬 Create Podcast", variant="primary", size="lg")
+            # Settings Tab - Audio Configuration
+            with gr.Tab("Settings"):
+                gr.Markdown("""
+                ### Configure Audio Settings
+                Customize intro, outro, and background music for your podcasts.
+                """)
 
-                status_output = gr.Textbox(label="Status", interactive=False)
-                audio_output = gr.Audio(
-                    label="Download Your Podcast", type="filepath")
+                with gr.Row():
+                    with gr.Column():
+                        gr.Markdown("#### Intro Audio")
+                        gr.Markdown("*Plays before your voice recording*")
+                        intro_input = gr.Audio(
+                            label="Upload Intro Audio",
+                            type="filepath"
+                        )
+                        intro_status = gr.Textbox(
+                            label="Status",
+                            interactive=False
+                        )
+
+                        gr.Markdown("---")
+
+                        gr.Markdown("#### Outro Audio")
+                        gr.Markdown("*Plays after your voice recording*")
+                        outro_input = gr.Audio(
+                            label="Upload Outro Audio",
+                            type="filepath"
+                        )
+                        outro_status = gr.Textbox(
+                            label="Status",
+                            interactive=False
+                        )
+
+                    with gr.Column():
+                        gr.Markdown("#### Background Music")
+                        gr.Markdown(
+                            "*One track is randomly selected and looped*")
+
+                        background_input = gr.Audio(
+                            label="Upload Background Track",
+                            type="filepath"
+                        )
+
+                        with gr.Row():
+                            add_bg_button = gr.Button(
+                                "Add Track",
+                                variant="secondary"
+                            )
+                            clear_bg_button = gr.Button(
+                                "Clear All",
+                                variant="stop"
+                            )
+
+                        background_status = gr.Textbox(
+                            label="Status",
+                            interactive=False
+                        )
+
+                        background_list = gr.Textbox(
+                            label="Current Tracks",
+                            value=get_background_tracks_display(),
+                            interactive=False,
+                            lines=6
+                        )
+
+                        gr.Markdown("---")
+
+                        gr.Markdown("#### Volume Settings")
+                        volume_slider = gr.Slider(
+                            minimum=0,
+                            maximum=50,
+                            value=saved_volume,
+                            step=1,
+                            label="Background Music Volume (%)",
+                            info="Recommended: 10-12%"
+                        )
+                        volume_status = gr.Textbox(
+                            label="Volume Status",
+                            interactive=False
+                        )
+
+                gr.Markdown("""
+                ---
+                ### 💡 Settings Tips
+                - Audio files are auto-loaded from `audios/intro_audio/`, `audios/outro_audio/`, and `audios/background_music/`
+                - All settings are automatically saved
+                - Background music is randomly selected and looped to match podcast duration
+                - Place default audio files in the respective folders and restart to auto-load
+                """)
 
         # Event handlers
         intro_input.change(
@@ -360,18 +422,6 @@ def create_ui():
             inputs=[voice_input, output_name_input, delete_voice_checkbox],
             outputs=[status_output, audio_output]
         )
-
-        gr.Markdown("""
-        ---
-        ### 💡 Tips
-        - Default audio files are auto-loaded from `audios/intro_audio/`, `audios/outro_audio/`, and `audios/background_music/` folders on startup
-        - Generated podcasts are saved in the `outputs/` directory
-        - Voice recordings are temporarily saved in the `uploads/` directory (auto-deleted by default after podcast creation)
-        - Your settings (intro, outro, background tracks, volume) are automatically saved
-        - Background music is randomly selected and looped to match your podcast duration
-        - Recommended background volume: 10-12% for clear voice quality
-        - Add your default audio files to the respective folders under `audios/` and restart the app to use them automatically
-        """)
 
     return app
 
