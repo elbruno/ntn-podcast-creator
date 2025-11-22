@@ -194,23 +194,20 @@ def create_ui():
                 gr.Markdown("### 1. Upload Your Podcast Voice Recording")
                 voice_input = gr.Audio(
                     label="Main Voice Recording",
-                    type="filepath",
-                    sources=["upload"]
+                    type="filepath"
                 )
                 
                 gr.Markdown("### 2. Optional: Set Intro Audio")
                 intro_input = gr.Audio(
                     label="Intro Audio (plays before your voice)",
-                    type="filepath",
-                    sources=["upload"]
+                    type="filepath"
                 )
                 intro_status = gr.Textbox(label="Intro Status", interactive=False)
                 
                 gr.Markdown("### 3. Optional: Set Outro Audio")
                 outro_input = gr.Audio(
                     label="Outro Audio (plays after your voice)",
-                    type="filepath",
-                    sources=["upload"]
+                    type="filepath"
                 )
                 outro_status = gr.Textbox(label="Outro Status", interactive=False)
             
@@ -219,8 +216,7 @@ def create_ui():
                 gr.Markdown("Upload one or more tracks. A random track will be selected and looped.")
                 background_input = gr.Audio(
                     label="Upload Background Music Track",
-                    type="filepath",
-                    sources=["upload"]
+                    type="filepath"
                 )
                 add_bg_button = gr.Button("Add Background Track", variant="secondary")
                 background_status = gr.Textbox(label="Upload Status", interactive=False)
@@ -331,8 +327,8 @@ if __name__ == "__main__":
     
     app = create_ui()
     app.launch(
-        server_name="127.0.0.1",
+        server_name="0.0.0.0",
         server_port=7860,
-        share=False,
+        share=True,
         show_error=True
     )
