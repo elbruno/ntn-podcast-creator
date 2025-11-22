@@ -15,6 +15,7 @@ A local Python application with a user-friendly web interface for editing podcas
 
 - Python 3.8 or higher
 - FFmpeg (required for audio processing)
+- (Optional) Docker and VS Code with Dev Containers extension for containerized development
 
 ### Installing FFmpeg
 
@@ -34,16 +35,49 @@ Download from [FFmpeg website](https://ffmpeg.org/download.html) and add to PATH
 
 ## Installation
 
+### Option 1: Using Dev Container (Recommended)
+
+If you use Visual Studio Code, you can use the included dev container for the easiest setup:
+
+1. Install [Docker Desktop](https://www.docker.com/products/docker-desktop)
+2. Install the [Dev Containers extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers) for VS Code
+3. Clone this repository and open it in VS Code
+4. When prompted, click "Reopen in Container" (or press F1 and select "Dev Containers: Reopen in Container")
+5. Wait for the container to build - FFmpeg and all dependencies will be installed automatically
+6. Run `python app.py` in the VS Code terminal
+
+The dev container includes everything you need: Python 3.12, FFmpeg, and all Python dependencies.
+
+### Option 2: Local Installation
+
 1. Clone this repository:
 ```bash
 git clone https://github.com/elbruno/ntn-podcast-creator.git
 cd ntn-podcast-creator
 ```
 
-2. Install Python dependencies:
+2. Install FFmpeg (see instructions below)
+
+3. Install Python dependencies:
 ```bash
 pip install -r requirements.txt
 ```
+
+#### Installing FFmpeg
+
+**Ubuntu/Debian:**
+```bash
+sudo apt-get update
+sudo apt-get install ffmpeg
+```
+
+**macOS:**
+```bash
+brew install ffmpeg
+```
+
+**Windows:**
+Download from [FFmpeg website](https://ffmpeg.org/download.html) and add to PATH.
 
 ## Usage
 
@@ -79,6 +113,9 @@ These settings persist between sessions, so you don't need to reconfigure each t
 
 ```
 ntn-podcast-creator/
+├── .devcontainer/          # Dev container configuration
+│   ├── devcontainer.json   # Container setup
+│   └── README.md           # Dev container documentation
 ├── app.py                  # Main application with Gradio UI
 ├── audio_processor.py      # Audio processing logic
 ├── config_manager.py       # Configuration persistence
