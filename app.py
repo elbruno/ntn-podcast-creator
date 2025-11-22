@@ -603,6 +603,11 @@ def generate_volume_preview(track_path: str, volume: int) -> Optional[str]:
         
     Returns:
         Path to the preview file or None
+        
+    Note:
+        Generated temporary files are managed by the system and will be 
+        cleaned up when the browser session ends or when the temp directory
+        is cleaned by the OS.
     """
     try:
         from pydub import AudioSegment
@@ -614,8 +619,8 @@ def generate_volume_preview(track_path: str, volume: int) -> Optional[str]:
         # Apply volume
         audio_with_volume = audio_processor.reduce_volume(audio, volume)
         
-        # Save to temp file
-        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
+        # Save to temp file - Gradio handles cleanup for UI component files
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3", dir=tempfile.gettempdir())
         audio_with_volume.export(temp_file.name, format="mp3")
         
         return temp_file.name
@@ -807,7 +812,19 @@ def import_settings(settings_file) -> str:
         else:
             file_path = str(settings_file)
         
-        # Read settings file
+        # Basic security check - ensure it's a JSON file
+        if not file_path.lower().endswith('.json'):
+            return "Error: Only JSON files are supported"
+        
+        # Check if file exists
+        if not os.path.exists(file_path):
+            return "Error: Settings file not found"
+        
+        # Read settings file with size limit (1MB max)
+        file_size = os.path.getsize(file_path)
+        if file_size > 1024 * 1024:  # 1MB
+            return "Error: Settings file too large (max 1MB)"
+        
         with open(file_path, 'r', encoding='utf-8') as f:
             settings = json.load(f)
         

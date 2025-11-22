@@ -513,7 +513,7 @@ python app.py
 ```bash
 # Open in VS Code with Dev Containers extension
 # Container includes:
-# - Python 3.12
+# - Python 3.12 (compatible with Python 3.8+ requirements)
 # - FFmpeg pre-installed
 # - All Python dependencies
 

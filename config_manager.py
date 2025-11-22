@@ -189,6 +189,8 @@ class ConfigManager:
         Returns:
             Volume percentage for the track (defaults to global volume)
         """
+        if not track_path:
+            return self.get_volume()
         track_volumes = self.get("track_volumes", {})
         return track_volumes.get(track_path, self.get_volume())
 

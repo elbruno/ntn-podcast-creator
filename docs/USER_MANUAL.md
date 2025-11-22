@@ -509,7 +509,7 @@ The exported JSON file looks like this:
     "audios/background_music/track2.mp3": 15
   },
   "last_output_name": "podcast_output",
-  "export_date": "2025-11-22T12:30:00"
+  "export_date": "YYYY-MM-DDTHH:MM:SS"
 }
 ```
 
