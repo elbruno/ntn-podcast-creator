@@ -2,6 +2,7 @@
 
 import os
 import random
+import math
 from typing import List, Optional
 from pydub import AudioSegment
 
@@ -55,7 +56,6 @@ class AudioProcessor:
         
         # Convert percentage to dB using logarithmic scaling
         # volume_percent of 100 = 0 dB, 50 = -6 dB, 10 = -20 dB
-        import math
         db_change = 20 * math.log10(volume_percent / 100)
         return audio + db_change
     

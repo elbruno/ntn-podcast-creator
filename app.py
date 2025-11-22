@@ -54,6 +54,11 @@ def save_uploaded_file(uploaded_file, prefix: str = "file") -> Optional[str]:
             except Exception as e:
                 print(f"Error saving file: {e}")
                 return None
+        else:
+            # File is already in uploads, verify it exists
+            if not os.path.exists(dest_path):
+                print(f"Warning: Expected file not found: {dest_path}")
+                return None
     
     return dest_path
 
@@ -65,6 +70,9 @@ def update_intro_file(file):
         return "No intro file selected"
     
     saved_path = save_uploaded_file(file, "intro")
+    if saved_path is None:
+        return "Error saving intro file"
+    
     config_manager.update_intro(saved_path)
     return f"Intro file saved: {os.path.basename(saved_path)}"
 
@@ -76,6 +84,9 @@ def update_outro_file(file):
         return "No outro file selected"
     
     saved_path = save_uploaded_file(file, "outro")
+    if saved_path is None:
+        return "Error saving outro file"
+    
     config_manager.update_outro(saved_path)
     return f"Outro file saved: {os.path.basename(saved_path)}"
 
