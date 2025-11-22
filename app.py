@@ -749,6 +749,112 @@ def create_podcast_handler(voice_file, output_name, delete_voice, trim_silence):
         return error_msg, None, get_console_log()
 
 
+def export_settings() -> str:
+    """Export current settings to a JSON file.
+    
+    Returns:
+        Path to the exported settings file
+    """
+    import json
+    import datetime
+    
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"podcast_settings_{timestamp}.json"
+    filepath = os.path.join("outputs", filename)
+    
+    try:
+        # Get current configuration
+        settings = {
+            "intro_file": config_manager.get_intro(),
+            "outro_file": config_manager.get_outro(),
+            "background_tracks": config_manager.get_background_tracks(),
+            "background_volume": config_manager.get_volume(),
+            "track_volumes": config_manager.get_all_track_volumes(),
+            "last_output_name": config_manager.get_last_output_name(),
+            "export_date": datetime.datetime.now().isoformat()
+        }
+        
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(settings, f, indent=2)
+        
+        log_message(f"Settings exported to: {filename}")
+        return filepath
+    except Exception as e:
+        log_message(f"Error exporting settings: {e}")
+        return None
+
+
+def import_settings(settings_file) -> str:
+    """Import settings from a JSON file.
+    
+    Args:
+        settings_file: Uploaded settings file
+        
+    Returns:
+        Status message
+    """
+    import json
+    
+    if settings_file is None:
+        return "No settings file provided"
+    
+    try:
+        # Handle Gradio file path
+        if isinstance(settings_file, str):
+            file_path = settings_file
+        elif hasattr(settings_file, 'name'):
+            file_path = settings_file.name
+        else:
+            file_path = str(settings_file)
+        
+        # Read settings file
+        with open(file_path, 'r', encoding='utf-8') as f:
+            settings = json.load(f)
+        
+        # Validate and import settings
+        if "intro_file" in settings:
+            intro = settings["intro_file"]
+            if intro and os.path.exists(intro):
+                config_manager.update_intro(intro)
+        
+        if "outro_file" in settings:
+            outro = settings["outro_file"]
+            if outro and os.path.exists(outro):
+                config_manager.update_outro(outro)
+        
+        if "background_tracks" in settings:
+            tracks = settings["background_tracks"]
+            valid_tracks = [t for t in tracks if os.path.exists(t)]
+            if valid_tracks:
+                config_manager.update_background_tracks(valid_tracks)
+        
+        if "background_volume" in settings:
+            config_manager.update_volume(settings["background_volume"])
+        
+        if "track_volumes" in settings:
+            # Import track volumes
+            track_volumes = settings["track_volumes"]
+            for track, volume in track_volumes.items():
+                if os.path.exists(track):
+                    config_manager.set_track_volume(track, volume)
+        
+        if "last_output_name" in settings:
+            config_manager.update_last_output_name(settings["last_output_name"])
+        
+        log_message(f"Settings imported successfully from {os.path.basename(file_path)}")
+        return f"✓ Settings imported successfully from {os.path.basename(file_path)}"
+        
+    except json.JSONDecodeError as e:
+        error_msg = f"Error: Invalid settings file format - {e}"
+        log_message(error_msg)
+        return error_msg
+    except Exception as e:
+        error_msg = f"Error importing settings: {e}"
+        log_message(error_msg)
+        return error_msg
+
+
+
 def create_ui():
     """Create Gradio user interface."""
 
@@ -817,6 +923,30 @@ def create_ui():
                             label="Your Podcast",
                             type="filepath"
                         )
+                        
+                        gr.Markdown("**Download Options**")
+                        with gr.Row():
+                            export_settings_button = gr.Button(
+                                "💾 Download Settings",
+                                variant="secondary",
+                                size="sm"
+                            )
+                            settings_file_output = gr.File(
+                                label="Settings File",
+                                visible=True
+                            )
+                        
+                        gr.Markdown("**Import Settings**")
+                        with gr.Row():
+                            import_settings_input = gr.File(
+                                label="Upload Settings File (JSON)",
+                                file_types=[".json"]
+                            )
+                            import_status = gr.Textbox(
+                                label="Import Status",
+                                interactive=False
+                            )
+
 
                 gr.Markdown("""
                 ---
@@ -1204,6 +1334,20 @@ def create_ui():
             fn=clear_console_log,
             inputs=[],
             outputs=[console_output]
+        )
+        
+        # Export settings
+        export_settings_button.click(
+            fn=export_settings,
+            inputs=[],
+            outputs=[settings_file_output]
+        )
+        
+        # Import settings
+        import_settings_input.change(
+            fn=import_settings,
+            inputs=[import_settings_input],
+            outputs=[import_status]
         )
 
     return app
