@@ -2,6 +2,11 @@
 
 A local Python application with a user-friendly web interface for editing podcast audio. This tool helps you create professional-sounding podcasts by combining your voice recordings with intro/outro audio and background music.
 
+## 📖 Documentation
+
+- **[User Manual](USER_MANUAL.md)** - Complete guide with step-by-step instructions and screenshots
+- **[Dev Container Guide](.devcontainer/README.md)** - Setup instructions for containerized development
+
 ## Features
 
 - **Upload podcast voice file**: Upload your pre-recorded podcast audio
@@ -81,24 +86,32 @@ Download from [FFmpeg website](https://ffmpeg.org/download.html) and add to PATH
 
 ## Usage
 
+### Quick Start
+
 1. Start the application:
 ```bash
 python app.py
 ```
 
-2. Open your browser and navigate to the URL shown in the terminal (typically http://127.0.0.1:7860)
+2. Open your browser and navigate to http://127.0.0.1:7860
 
-3. Configure your podcast:
+3. Follow the interface steps:
    - Upload your main podcast voice recording
    - (Optional) Upload intro audio file
    - (Optional) Upload outro audio file
    - (Optional) Upload background music tracks
    - Adjust background music volume (default: 10%)
    - Enter output filename
+   - Click "Create Podcast"
+   - Download your finished podcast
 
-4. Click "Create Podcast" to generate your final podcast file
+**📖 For detailed instructions with screenshots, see the [User Manual](USER_MANUAL.md)**
 
-5. Download the generated MP3 file
+### Interface Preview
+
+![NTN Podcast Creator Interface](https://github.com/user-attachments/assets/84e1807d-889c-4546-8614-6aef13d2c798)
+
+The interface guides you through 6 simple steps to create your podcast.
 
 ## Configuration
 
@@ -120,6 +133,8 @@ ntn-podcast-creator/
 ├── audio_processor.py      # Audio processing logic
 ├── config_manager.py       # Configuration persistence
 ├── requirements.txt        # Python dependencies
+├── README.md               # Project overview and quick start
+├── USER_MANUAL.md          # Complete user guide with screenshots
 ├── config.json            # User settings (auto-generated)
 ├── uploads/               # Uploaded files (auto-generated)
 └── outputs/               # Generated podcasts (auto-generated)
