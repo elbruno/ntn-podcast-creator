@@ -227,35 +227,42 @@ class AudioProcessor:
 
         # Build the podcast sequence
         podcast = AudioSegment.empty()
+        intro_duration = 0
+        outro_duration = 0
 
-        # Add intro if provided
+        # Add intro if provided (no background music)
         if intro_file and os.path.exists(intro_file):
             log(f"Adding intro: {os.path.basename(intro_file)}")
             intro = self.load_audio(intro_file)
             podcast += intro
+            intro_duration = len(intro)
 
-        # Add main voice
+        # Add main voice with background music
         log("Adding main voice recording")
-        podcast += voice
+        voice_with_bg = voice
 
-        # Add outro if provided
-        if outro_file and os.path.exists(outro_file):
-            log(f"Adding outro: {os.path.basename(outro_file)}")
-            outro = self.load_audio(outro_file)
-            podcast += outro
-
-        # Add background music if provided
+        # Add background music only to voice section
         if background_files:
-            log(f"Creating background music (volume: {background_volume}%)")
+            log(
+                f"Creating background music for voice (volume: {background_volume}%)")
             background = self.create_looped_background(
                 background_files,
-                len(podcast),
+                len(voice),
                 background_volume,
                 log_callback=log
             )
             if background:
-                log("Mixing background music with podcast")
-                podcast = self.mix_audio(podcast, background)
+                log("Mixing background music with voice recording")
+                voice_with_bg = self.mix_audio(voice, background)
+
+        podcast += voice_with_bg
+
+        # Add outro if provided (no background music)
+        if outro_file and os.path.exists(outro_file):
+            log(f"Adding outro: {os.path.basename(outro_file)}")
+            outro = self.load_audio(outro_file)
+            podcast += outro
+            outro_duration = len(outro)
 
         # Export final podcast
         log(f"Exporting to: {output_file}")

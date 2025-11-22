@@ -51,6 +51,141 @@ def get_audio_duration(file_path: str) -> str:
         return "N/A"
 
 
+def get_audio_duration_seconds(file_path: str) -> float:
+    """Get audio duration in seconds.
+
+    Args:
+        file_path: Path to audio file
+
+    Returns:
+        Duration in seconds or 0.0 on error
+    """
+    try:
+        from pydub import AudioSegment
+        audio = AudioSegment.from_file(file_path)
+        return len(audio) / 1000.0
+    except Exception as e:
+        log_message(f"Error getting duration for {file_path}: {e}")
+        return 0.0
+
+
+def generate_timeline_chart(voice_file: Optional[str], intro_file: Optional[str],
+                            outro_file: Optional[str], has_background: bool) -> str:
+    """Generate a visual timeline chart showing how audio segments are organized.
+
+    Args:
+        voice_file: Path to voice recording
+        intro_file: Path to intro audio
+        outro_file: Path to outro audio
+        has_background: Whether background music will be applied
+
+    Returns:
+        HTML string with timeline visualization
+    """
+    if not voice_file:
+        return "<div style='padding: 20px; text-align: center; color: #666;'>Upload a voice recording to preview timeline</div>"
+
+    # Get durations
+    intro_duration = get_audio_duration_seconds(
+        intro_file) if intro_file else 0.0
+    voice_duration = get_audio_duration_seconds(
+        voice_file) if voice_file else 0.0
+    outro_duration = get_audio_duration_seconds(
+        outro_file) if outro_file else 0.0
+
+    total_duration = intro_duration + voice_duration + outro_duration
+
+    if total_duration == 0:
+        return "<div style='padding: 20px; text-align: center; color: #666;'>No audio files to preview</div>"
+
+    # Calculate percentages
+    intro_percent = (intro_duration / total_duration) * \
+        100 if intro_duration > 0 else 0
+    voice_percent = (voice_duration / total_duration) * \
+        100 if voice_duration > 0 else 0
+    outro_percent = (outro_duration / total_duration) * \
+        100 if outro_duration > 0 else 0
+
+    # Format durations
+    def format_time(seconds):
+        mins = int(seconds // 60)
+        secs = int(seconds % 60)
+        return f"{mins:02d}:{secs:02d}"
+
+    # Build HTML visualization
+    html = f"""
+    <div style="font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; border-radius: 8px;">
+        <h3 style="margin-top: 0; color: #333;">📊 Podcast Timeline Preview</h3>
+        <div style="margin: 20px 0;">
+            <div style="font-size: 14px; color: #666; margin-bottom: 10px;">
+                Total Duration: <strong>{format_time(total_duration)}</strong>
+            </div>
+            <div style="display: flex; height: 60px; border-radius: 4px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+    """
+
+    # Add intro segment
+    if intro_duration > 0:
+        html += f"""
+                <div style="width: {intro_percent}%; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                     display: flex; align-items: center; justify-content: center; color: white;
+                     font-size: 12px; font-weight: bold; border-right: 2px solid white;">
+                    <div style="text-align: center; padding: 5px;">
+                        <div>INTRO</div>
+                        <div style="font-size: 10px; opacity: 0.9;">{format_time(intro_duration)}</div>
+                    </div>
+                </div>
+        """
+
+    # Add voice segment with background indicator
+    if voice_duration > 0:
+        bg_indicator = " + 🎵 BG" if has_background else ""
+        html += f"""
+                <div style="width: {voice_percent}%; background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+                     display: flex; align-items: center; justify-content: center; color: white;
+                     font-size: 12px; font-weight: bold; border-right: 2px solid white;">
+                    <div style="text-align: center; padding: 5px;">
+                        <div>VOICE{bg_indicator}</div>
+                        <div style="font-size: 10px; opacity: 0.9;">{format_time(voice_duration)}</div>
+                    </div>
+                </div>
+        """
+
+    # Add outro segment
+    if outro_duration > 0:
+        html += f"""
+                <div style="width: {outro_percent}%; background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+                     display: flex; align-items: center; justify-content: center; color: white;
+                     font-size: 12px; font-weight: bold;">
+                    <div style="text-align: center; padding: 5px;">
+                        <div>OUTRO</div>
+                        <div style="font-size: 10px; opacity: 0.9;">{format_time(outro_duration)}</div>
+                    </div>
+                </div>
+        """
+
+    html += """
+            </div>
+            <div style="margin-top: 15px; padding: 10px; background: white; border-radius: 4px; font-size: 13px;">
+                <div style="margin-bottom: 5px;"><strong>Legend:</strong></div>
+    """
+
+    if intro_duration > 0:
+        html += "<div style='margin: 3px 0;'>🟣 <strong>INTRO</strong> - Plays first (no background music)</div>"
+    if voice_duration > 0:
+        bg_text = " with background music" if has_background else " (no background music)"
+        html += f"<div style='margin: 3px 0;'>🔴 <strong>VOICE</strong> - Your recording{bg_text}</div>"
+    if outro_duration > 0:
+        html += "<div style='margin: 3px 0;'>🔵 <strong>OUTRO</strong> - Plays last (no background music)</div>"
+
+    html += """
+            </div>
+        </div>
+    </div>
+    """
+
+    return html
+
+
 def log_message(message: str):
     """Add message to console log."""
     global console_log
@@ -69,6 +204,24 @@ def clear_console_log():
     global console_log
     console_log = []
     return "Console log cleared"
+
+
+def preview_timeline(voice_file: Optional[str]) -> str:
+    """Generate timeline preview.
+
+    Args:
+        voice_file: Path to voice recording
+
+    Returns:
+        HTML timeline chart
+    """
+    intro_file = config_manager.get_intro()
+    outro_file = config_manager.get_outro()
+    background_tracks = config_manager.get_background_tracks()
+    has_background = background_tracks is not None and len(
+        background_tracks) > 0
+
+    return generate_timeline_chart(voice_file, intro_file, outro_file, has_background)
 
 
 def save_uploaded_file(uploaded_file, prefix: str = "file") -> Optional[str]:
@@ -513,6 +666,11 @@ def create_ui():
                         )
 
                     with gr.Column():
+                        timeline_html = gr.HTML(
+                            label="Timeline Preview",
+                            value=preview_timeline(None)
+                        )
+
                         status_output = gr.Textbox(
                             label="Status",
                             interactive=False,
@@ -817,6 +975,13 @@ def create_ui():
             fn=update_volume,
             inputs=[volume_slider],
             outputs=[volume_status]
+        )
+
+        # Update timeline when voice file is uploaded
+        voice_input.change(
+            fn=preview_timeline,
+            inputs=[voice_input],
+            outputs=[timeline_html]
         )
 
         create_button.click(
