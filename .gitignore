@@ -182,9 +182,9 @@ cython_debug/
 .abstra/
 
 # Visual Studio Code
-#  Visual Studio Code specific template is maintained in a separate VisualStudioCode.gitignore 
+#  Visual Studio Code specific template is maintained in a separate VisualStudioCode.gitignore
 #  that can be found at https://github.com/github/gitignore/blob/main/Global/VisualStudioCode.gitignore
-#  and can be added to the global gitignore or merged into this file. However, if you prefer, 
+#  and can be added to the global gitignore or merged into this file. However, if you prefer,
 #  you could uncomment the following to ignore the entire vscode folder
 # .vscode/
 
@@ -211,3 +211,23 @@ config.json
 uploads/
 outputs/
 test_audio/
+
+# Audio files (except test folder)
+audios/intro_audio/*.mp3
+audios/intro_audio/*.wav
+audios/intro_audio/*.m4a
+audios/intro_audio/*.ogg
+audios/intro_audio/*.flac
+audios/outro_audio/*.mp3
+audios/outro_audio/*.wav
+audios/outro_audio/*.m4a
+audios/outro_audio/*.ogg
+audios/outro_audio/*.flac
+audios/background_music/*.mp3
+audios/background_music/*.wav
+audios/background_music/*.m4a
+audios/background_music/*.ogg
+audios/background_music/*.flac
+
+# Keep test audio files
+!audios/test/**

@@ -310,6 +310,7 @@ def create_ui():
                 ### 💡 Quick Tips
                 - Upload your voice recording and click "Create Podcast"
                 - Default audio files are automatically loaded from `audios/` folder
+                - Background tracks are randomly selected and mixed to match your recording length
                 - Generated podcasts are saved in the `outputs/` directory
                 - Configure intro, outro, and background music in the Settings tab
                 """)
@@ -350,7 +351,7 @@ def create_ui():
                     with gr.Column():
                         gr.Markdown("#### Background Music")
                         gr.Markdown(
-                            "*One track is randomly selected and looped*")
+                            "*Tracks are randomly selected and concatenated to match podcast length*")
 
                         background_input = gr.Audio(
                             label="Upload Background Track",
@@ -400,7 +401,8 @@ def create_ui():
                 ### 💡 Settings Tips
                 - Audio files are auto-loaded from `audios/intro_audio/`, `audios/outro_audio/`, and `audios/background_music/`
                 - All settings are automatically saved
-                - Background music is randomly selected and looped to match podcast duration
+                - Background music tracks are randomly selected and concatenated to match podcast duration
+                - Multiple tracks create variety in your background music
                 - Place default audio files in the respective folders and restart to auto-load
                 """)
 
