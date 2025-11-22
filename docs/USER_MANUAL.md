@@ -20,8 +20,13 @@ Welcome to the **NTN Podcast Creator**! This application helps you create profes
 
 - ✅ Add custom intro and outro audio to your podcast
 - ✅ Mix background music that automatically loops to match your recording
-- ✅ Control background music volume with precision
-- ✅ Save all settings for future podcast episodes
+- ✅ Control background music volume with precision - both globally and per-track
+- ✅ Apply different volume levels to each background music file
+- ✅ Preview tracks with applied volume settings before creating your podcast
+- ✅ Save and export your configuration settings as JSON files
+- ✅ Import previously saved settings to quickly recreate your setup
+- ✅ View all background tracks and their volumes in the visual timeline
+- ✅ Save all settings automatically for future podcast episodes
 - ✅ Export professional MP3 files ready for distribution
 
 ---
@@ -359,6 +364,159 @@ Generated podcasts are saved in `outputs/` directory:
 
 ---
 
+## Advanced Features
+
+### Individual Volume Control for Background Tracks
+
+**New in Latest Version!**
+
+You can now set different volume levels for each background music file, giving you precise control over how your podcast sounds.
+
+#### How to Use Individual Volume Control
+
+1. **Navigate to Settings Tab**
+   - Click on the "Settings" tab
+   - Scroll down to the "Background Music" section
+
+2. **Select a Track**
+   - In the dropdown menu labeled "Select Track to Play or Delete"
+   - Choose the background track you want to adjust
+   - The track will load in the audio player
+
+3. **Adjust Individual Volume**
+   - Use the "Selected Track Volume (%)" slider
+   - Range: 0-50% (recommended: 10-12%)
+   - Changes are saved immediately
+   - Preview the track with the new volume in "Preview Track with Applied Volume"
+
+4. **Apply to All Tracks**
+   - Set the "Default Background Music Volume (%)" slider to your desired level
+   - Click the "📢 Apply Volume to All Tracks" button
+   - All background tracks will now use this volume level
+
+#### Volume Control Tips
+
+- **Different moods**: Use lower volume (5-8%) for intense, dramatic sections
+- **Variety**: Use higher volume (12-15%) for intros/outros, lower for main content
+- **Consistency**: Use "Apply to All" when you want uniform background volume
+- **Preview first**: Always listen to the preview before creating your final podcast
+
+#### Visual Timeline Display
+
+The timeline preview now shows:
+- **All background tracks** that will be used in your podcast
+- **Volume level** for each track
+- **Color-coded segments** for easy identification
+
+Example:
+```
+🎼 Background Tracks:
+  • track1.mp3 - Volume: 10%
+  • track2.mp3 - Volume: 15%
+  • track3.mp3 - Volume: 8%
+```
+
+---
+
+### Settings Export and Import
+
+**New in Latest Version!**
+
+Save and load your entire configuration, making it easy to:
+- Backup your settings
+- Share configurations with team members
+- Switch between different podcast styles
+- Recreate a specific setup quickly
+
+#### Exporting Settings
+
+1. **Create Your Perfect Setup**
+   - Configure intro, outro, and background tracks
+   - Adjust all volume levels
+   - Test and refine until satisfied
+
+2. **Export Configuration**
+   - In the "Create Podcast" tab
+   - Click "💾 Download Settings"
+   - A JSON file will be generated with a timestamp
+   - Save this file to your computer
+
+3. **What Gets Exported**
+   - Intro file path
+   - Outro file path
+   - All background music tracks
+   - Global volume setting
+   - Individual track volumes
+   - Last output filename
+   - Export date/time
+
+#### Importing Settings
+
+1. **Prepare Settings File**
+   - Locate your previously exported JSON settings file
+   - Ensure audio files referenced still exist in the same locations
+
+2. **Import Configuration**
+   - In the "Create Podcast" tab
+   - Under "Import Settings"
+   - Click "Upload Settings File (JSON)"
+   - Select your JSON file
+   - Wait for "Import Status" to confirm success
+
+3. **Verify Imported Settings**
+   - Go to the "Settings" tab
+   - Check that all audio files loaded correctly
+   - Verify volume levels
+   - Make any necessary adjustments
+
+#### Use Cases for Export/Import
+
+**Different Podcast Series:**
+```
+- Weekly_News_Show_Settings.json (low background, formal intro)
+- Interview_Series_Settings.json (moderate background, friendly intro)
+- Story_Time_Settings.json (high background, dramatic intro)
+```
+
+**Team Collaboration:**
+```
+- Share settings with co-hosts
+- Maintain consistent branding
+- New team members can quickly get started
+```
+
+**Backup and Recovery:**
+```
+- Regular backups before major changes
+- Restore previous configurations
+- Version control for your podcast setup
+```
+
+#### Settings File Format
+
+The exported JSON file looks like this:
+```json
+{
+  "intro_file": "audios/intro_audio/intro.mp3",
+  "outro_file": "audios/outro_audio/outro.mp3",
+  "background_tracks": [
+    "audios/background_music/track1.mp3",
+    "audios/background_music/track2.mp3"
+  ],
+  "background_volume": 10,
+  "track_volumes": {
+    "audios/background_music/track1.mp3": 10,
+    "audios/background_music/track2.mp3": 15
+  },
+  "last_output_name": "podcast_output",
+  "export_date": "2025-11-22T12:30:00"
+}
+```
+
+**💡 Tip:** Keep a folder of settings files for different podcast types or seasons!
+
+---
+
 ## Troubleshooting
 
 ### Common Issues and Solutions
@@ -492,7 +650,27 @@ A: Just upload a new file. It will replace the previous one.
 A: Yes, click "Clear All Background Tracks" button. Or create the podcast without uploading any background music.
 
 **Q: What if I want different volumes for different episodes?**
-A: Adjust the slider before clicking "Create Podcast" for each episode.
+A: You can now:
+1. Set different volumes for each background track individually
+2. Export your settings for each episode type
+3. Import the appropriate settings when creating each episode
+
+**Q: Can I use different volumes for different background music tracks?**
+A: Yes! The new individual volume control feature allows you to:
+1. Go to Settings tab
+2. Select each background track
+3. Adjust its volume independently
+4. Preview the track with the applied volume
+
+**Q: How do I save my settings for different podcast styles?**
+A: Use the Export/Import feature:
+1. Set up your configuration (intro, outro, volumes)
+2. Click "💾 Download Settings"
+3. Save the JSON file with a descriptive name
+4. Import it later when you need that configuration
+
+**Q: Can I share my settings with a team member?**
+A: Yes! Export your settings as a JSON file and share it. Your team member can import it, but they'll need access to the same audio files (or files in the same locations).
 
 **Q: Can I edit my voice recording in this app?**
 A: No, this app mixes audio, it doesn't edit. Use audio editing software (Audacity, Adobe Audition) to edit your voice recording first.
@@ -501,11 +679,22 @@ A: No, this app mixes audio, it doesn't edit. Use audio editing software (Audaci
 A: 
 1. Upload your intro/outro once
 2. Add background music tracks
-3. Set your preferred volume
-4. Create each episode by just uploading new voice recordings
+3. Set your preferred volumes (global or per-track)
+4. Export these settings for backup
+5. Create each episode by just uploading new voice recordings
 
 **Q: Can I preview before creating the final file?**
-A: Not currently. Create the podcast and listen to verify quality. Quick iterations are easy!
+A: Yes! You can:
+1. Preview each background track with its applied volume in the Settings tab
+2. View the timeline preview to see how segments will be arranged
+3. Create a test podcast with a short voice recording
+
+**Q: Why would I want different volumes for different tracks?**
+A: Different scenarios:
+- One track for intense moments (lower volume)
+- Another for transitions (higher volume)
+- Variety in long podcasts to maintain listener interest
+- Match track energy to content (calm vs. upbeat)
 
 ### Troubleshooting Questions
 
