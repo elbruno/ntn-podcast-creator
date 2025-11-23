@@ -43,7 +43,25 @@ Before using the NTN Podcast Creator, ensure you have:
 
 ### Installation Methods
 
-#### Option 1: Using Dev Container (Easiest)
+#### Option 1: Using Docker (Fastest & Easiest)
+
+No need to install Python or FFmpeg! Docker handles everything:
+
+1. Install [Docker Desktop](https://www.docker.com/products/docker-desktop)
+2. Clone the repository:
+   ```bash
+   git clone https://github.com/elbruno/ntn-podcast-creator.git
+   cd ntn-podcast-creator
+   ```
+3. Start with Docker Compose:
+   ```bash
+   docker-compose up -d
+   ```
+4. Open your browser to `http://localhost:7860`
+
+**📖 See [Docker Deployment Guide](DOCKER.md) for detailed instructions**
+
+#### Option 2: Using Dev Container (For VS Code Users)
 
 If you use Visual Studio Code:
 
@@ -53,7 +71,7 @@ If you use Visual Studio Code:
 4. Click "Reopen in Container" when prompted
 5. Everything installs automatically!
 
-#### Option 2: Manual Installation
+#### Option 3: Manual Installation
 
 1. **Clone the repository:**
    ```bash
@@ -82,6 +100,21 @@ If you use Visual Studio Code:
 
 ### Starting the Application
 
+#### If Using Docker:
+```bash
+# Start (if not already running)
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Stop
+docker-compose down
+```
+
+Access at `http://localhost:7860`
+
+#### If Using Local Installation:
 1. Open a terminal in the project directory
 2. Run the application:
    ```bash
