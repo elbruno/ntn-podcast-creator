@@ -672,7 +672,7 @@ def get_current_settings():
     return "\\n".join(settings)
 
 
-def create_podcast_handler(voice_file, output_name, delete_voice, trim_silence, enhance_audio):
+def create_podcast_handler(voice_file, output_name, delete_voice, trim_silence, denoise_audio, enhance_audio):
     """Handle podcast creation request.
 
     Args:
@@ -680,17 +680,18 @@ def create_podcast_handler(voice_file, output_name, delete_voice, trim_silence, 
         output_name: Desired output filename
         delete_voice: Whether to delete voice file after creation
         trim_silence: Whether to trim silence from start/end
+        denoise_audio: Whether to denoise audio using audio-denoiser
         enhance_audio: Whether to enhance audio using Adobe Enhance
 
     Returns:
-        Tuple of (status message, output file path or None, console log)
+        Tuple of (status message, output file path or None, denoised file path or None, console log)
     """
     log_message("=" * 50)
     log_message("Starting new podcast creation")
 
     if voice_file is None:
         log_message("Error: No voice file provided")
-        return "Error: Please upload a voice recording file", None, get_console_log()
+        return "Error: Please upload a voice recording file", None, None, get_console_log()
 
     if not output_name or output_name.strip() == "":
         output_name = "podcast_output"
@@ -703,7 +704,7 @@ def create_podcast_handler(voice_file, output_name, delete_voice, trim_silence, 
     voice_path = save_uploaded_file(voice_file, "voice")
     if not voice_path:
         log_message("Error: Could not save voice file")
-        return "Error: Could not save voice file", None, get_console_log()
+        return "Error: Could not save voice file", None, None, get_console_log()
 
     # Get configuration
     intro_path = config_manager.get_intro()
@@ -719,6 +720,7 @@ def create_podcast_handler(voice_file, output_name, delete_voice, trim_silence, 
         f"  Background tracks: {len(background_tracks) if background_tracks else 0}")
     log_message(f"  Volume: {volume}%")
     log_message(f"  Trim silence: {trim_silence}")
+    log_message(f"  Denoise audio: {denoise_audio}")
     log_message(f"  Enhance audio: {enhance_audio}")
 
     # Create output path
@@ -729,7 +731,7 @@ def create_podcast_handler(voice_file, output_name, delete_voice, trim_silence, 
 
     try:
         # Create podcast
-        result_path = audio_processor.create_podcast(
+        result_path, denoised_path = audio_processor.create_podcast(
             voice_file=voice_path,
             intro_file=intro_path,
             outro_file=outro_path,
@@ -738,6 +740,7 @@ def create_podcast_handler(voice_file, output_name, delete_voice, trim_silence, 
             track_volumes=track_volumes if track_volumes else None,
             output_file=output_path,
             trim_silence=trim_silence,
+            denoise_audio=denoise_audio,
             enhance_audio=enhance_audio,
             log_callback=log_message
         )
@@ -752,13 +755,13 @@ def create_podcast_handler(voice_file, output_name, delete_voice, trim_silence, 
 
         log_message(f"✓ Podcast created successfully: {output_name}.mp3")
         log_message("=" * 50)
-        return f"✓ Podcast created successfully: {output_name}.mp3", result_path, get_console_log()
+        return f"✓ Podcast created successfully: {output_name}.mp3", result_path, denoised_path, get_console_log()
 
     except Exception as e:
         error_msg = f"Error creating podcast: {str(e)}"
         log_message(error_msg)
         log_message("=" * 50)
-        return error_msg, None, get_console_log()
+        return error_msg, None, None, get_console_log()
 
 
 def enhance_audio_only_handler(voice_file, delete_after):
@@ -991,6 +994,18 @@ def create_ui():
                         )
 
                         with gr.Group():
+                            gr.Markdown("#### Audio Preprocessing")
+                            gr.Markdown(
+                                "Clean and enhance your voice recording before creating the podcast."
+                            )
+
+                            denoise_audio_checkbox = gr.Checkbox(
+                                label="Clean audio using AI denoiser (recommended)",
+                                value=config_manager.get_denoise_audio(),
+                                info="Removes background noise using machine learning"
+                            )
+
+                        with gr.Group():
                             gr.Markdown("#### Adobe Enhance Assistant")
                             gr.Markdown(
                                 "Use Adobe's Enhance Speech AI in two ways: **(1)** keep the checkbox enabled to run automatically before mixing the podcast, "
@@ -1058,6 +1073,12 @@ def create_ui():
                         audio_output = gr.Audio(
                             label="Your Podcast",
                             type="filepath"
+                        )
+                        
+                        denoised_audio_output = gr.Audio(
+                            label="Cleaned Voice (Download)",
+                            type="filepath",
+                            visible=True
                         )
 
                         gr.Markdown("**Download Options**")
@@ -1450,8 +1471,8 @@ def create_ui():
         create_button_event = create_button.click(
             fn=create_podcast_handler,
             inputs=[voice_input, output_name_input,
-                    delete_voice_checkbox, trim_silence_checkbox, enhance_audio_checkbox],
-            outputs=[status_output, audio_output, console_output]
+                    delete_voice_checkbox, trim_silence_checkbox, denoise_audio_checkbox, enhance_audio_checkbox],
+            outputs=[status_output, audio_output, denoised_audio_output, console_output]
         )
 
         create_button_event.then(
@@ -1501,6 +1522,13 @@ def create_ui():
             fn=get_console_log,
             inputs=[],
             outputs=[enhance_only_log]
+        )
+
+        # Save denoise audio setting when changed
+        denoise_audio_checkbox.change(
+            fn=lambda enabled: config_manager.set_denoise_audio(enabled),
+            inputs=[denoise_audio_checkbox],
+            outputs=[]
         )
 
         # Save enhance audio setting when changed

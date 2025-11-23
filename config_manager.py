@@ -46,6 +46,7 @@ class ConfigManager:
             "background_volume": 10,
             "track_volumes": {},  # Individual volumes per track
             "last_output_name": "podcast_output",
+            "denoise_audio": True,  # Audio denoising feature (enabled by default)
             "enhance_audio": False  # Adobe audio enhancement feature
         }
 
@@ -228,6 +229,22 @@ class ConfigManager:
             Dictionary mapping track paths to volumes
         """
         return self.get("track_volumes", {})
+
+    def get_denoise_audio(self) -> bool:
+        """Get audio denoising setting.
+
+        Returns:
+            True if audio denoising is enabled, False otherwise
+        """
+        return self.get("denoise_audio", True)
+
+    def set_denoise_audio(self, enabled: bool) -> None:
+        """Set audio denoising setting.
+
+        Args:
+            enabled: True to enable audio denoising, False to disable
+        """
+        self.set("denoise_audio", enabled)
 
     def get_enhance_audio(self) -> bool:
         """Get audio enhancement setting.
