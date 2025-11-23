@@ -11,6 +11,8 @@ A local Python application with a user-friendly web interface for editing podcas
 
 ## Features
 
+- **Intuitive Multi-Tab Interface**: Easy navigation with dedicated tabs for podcast creation, Adobe Enhance, settings, and logs
+- **Smart Episode Naming**: Automatically suggests episode names with date (yymmdd) + your file name
 - **Upload podcast voice file**: Upload your pre-recorded podcast audio
 - **AI Audio Denoising (NEW)**:
   - Automatically clean voice recordings using machine learning
@@ -21,7 +23,8 @@ A local Python application with a user-friendly web interface for editing podcas
   - Graceful fallback to original audio if library unavailable
 - **Adobe Enhance Audio**:
   - Clean and enhance audio quality using Adobe's AI-powered Enhance Speech service
-  - Two modes: automatic during podcast creation or standalone with preview/download
+  - Available in dedicated **✨ Adobe Enhance** tab for standalone processing
+  - Optional checkbox in main tab for automatic enhancement during podcast creation
   - Removes background noise, reduces echo, and improves speech clarity
   - Browser automation via Playwright (2-5 minute processing time)
   - Optional feature with automatic fallback to original audio
@@ -153,29 +156,40 @@ python app.py
 
 ### Creating Your Podcast
 
-3. Follow the interface steps:
+3. Follow the interface steps in the **🎙️ Create Podcast** tab:
    - Upload your main podcast voice recording
-   - (Optional) Upload intro audio file
-   - (Optional) Upload outro audio file
-   - (Optional) Upload background music tracks
-   - Adjust global or individual track volume settings (default: 10%)
-   - Preview tracks with applied volume
-   - Enter output filename
+   - The episode name is auto-suggested with today's date (yymmdd) + your file name
+   - Adjust options in the accordion (denoise, trim silence, Adobe Enhance)
    - Click "Create Podcast"
-   - Download your finished podcast
-   - (Optional) Download or import settings
+   - Download your finished podcast and cleaned audio
+   - (Optional) Configure intro, outro, and background music in the **⚙️ Settings** tab
+   - (Optional) Use the **✨ Adobe Enhance** tab to clean audio files before creating podcasts
 
 **📖 For detailed instructions with screenshots, see the [User Manual](docs/USER_MANUAL.md)**
 
 ### Interface Preview
 
-![NTN Podcast Creator Interface](https://github.com/user-attachments/assets/84e1807d-889c-4546-8614-6aef13d2c798)
+![NTN Podcast Creator Interface](https://github.com/user-attachments/assets/d4d6010f-fec0-4a44-b15c-a2fe40809dc6)
 
-The interface guides you through simple steps to create your podcast with advanced volume controls.
+The interface features multiple tabs for easy navigation:
+- **🎙️ Create Podcast**: Main tab for uploading voice and creating podcasts
+- **✨ Adobe Enhance**: Standalone audio enhancement tool
+- **⚙️ Settings**: Configure intro, outro, and background music
+- **📋 Console Log**: View detailed processing logs
 
 ## New Features
 
-### AI Audio Denoising (Latest)
+### Improved UI/UX (Latest)
+- **Multi-Tab Interface**: Organized tabs with emoji icons for easy navigation
+  - 🎙️ **Create Podcast**: Main tab for podcast creation
+  - ✨ **Adobe Enhance**: Dedicated tab for standalone audio enhancement
+  - ⚙️ **Settings**: Configure audio files and volumes
+  - 📋 **Console Log**: View detailed processing logs
+- **Smart Episode Naming**: Automatically suggests episode names with date (yymmdd) + your file name
+- **Simplified Main Tab**: Cleaner interface with options in an accordion
+- **Improved Adobe Enhance Workflow**: Separate tab with clear instructions and dedicated upload
+
+### AI Audio Denoising
 - **Machine Learning Audio Cleanup**: Automatically clean voice recordings before podcast creation
   - Uses a 38-million parameter deep learning model
   - Removes background noise, hum, and ambient sounds
@@ -187,14 +201,14 @@ The interface guides you through simple steps to create your podcast with advanc
 - **Processing Chain**: Denoising runs first, then optionally Adobe Enhance, then podcast mixing
 - **Fast Processing**: Typically completes in seconds (much faster than Adobe Enhance)
 
-### Adobe Enhance Audio (v1.1)
+### Adobe Enhance Audio
 - **AI-Powered Audio Cleanup**: Enhance voice recordings using Adobe Podcast Enhance Speech
   - Removes background noise and echo
   - Enhances speech clarity and audio quality
   - Normalizes audio levels automatically
 - **Two Usage Modes**:
   - **Integrated Mode**: Checkbox to automatically enhance during podcast creation
-  - **Standalone Mode**: Enhance-only with preview and download (no mixing)
+  - **Standalone Mode**: Dedicated **✨ Adobe Enhance** tab with preview and download
 - **Browser Automation**: Uses Playwright to interact with Adobe's web service
 - **Progress Monitoring**: Detailed logs show upload, processing, and download status
 - **Automatic Fallback**: Gracefully uses original audio if enhancement service is unavailable
