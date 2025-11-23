@@ -8,6 +8,9 @@ from pydub import AudioSegment
 from pydub.silence import detect_leading_silence
 from .adobe_audio_enhancer import enhance_audio_file
 from .audio_denoiser_processor import denoise_audio_file
+from .noise_reducer import reduce_noise
+from .lufs_normalizer import normalize_audio_lufs
+from .whisper_transcriber import transcribe_audio
 
 
 class AudioProcessor:
@@ -197,9 +200,14 @@ class AudioProcessor:
         output_file: str = "output.mp3",
         trim_silence: bool = False,
         denoise_audio: bool = True,
+        denoise_method: str = "audio_denoiser",
         enhance_audio: bool = False,
+        normalize_lufs: bool = False,
+        target_lufs: float = -16.0,
+        generate_transcript: bool = False,
+        whisper_model: str = "base",
         log_callback: Optional[Callable[[str], None]] = None
-    ) -> tuple[str, Optional[str]]:
+    ) -> tuple[str, Optional[str], Optional[str]]:
         """Create complete podcast with intro, outro, and background music.
 
         Args:
@@ -211,12 +219,17 @@ class AudioProcessor:
             track_volumes: Optional dict mapping track paths to individual volumes
             output_file: Path for output file
             trim_silence: Whether to trim silence from voice recording
-            denoise_audio: Whether to denoise audio using audio-denoiser (optional)
+            denoise_audio: Whether to denoise audio (optional)
+            denoise_method: Denoising method ("audio_denoiser", "spectral", "rnnoise")
             enhance_audio: Whether to enhance audio using Adobe Enhance (optional)
+            normalize_lufs: Whether to normalize to target LUFS level
+            target_lufs: Target LUFS level (-14 or -16 recommended)
+            generate_transcript: Whether to generate transcript with Whisper
+            whisper_model: Whisper model size (tiny, base, small, medium, large)
             log_callback: Optional callback function for logging
 
         Returns:
-            Tuple of (path to output file, path to denoised audio or None)
+            Tuple of (path to output file, path to denoised audio or None, path to transcript or None)
 
         Raises:
             Exception: If processing fails
@@ -229,19 +242,44 @@ class AudioProcessor:
 
         log("Starting podcast creation...")
 
-        # Store denoised file path for download
+        # Store processed file paths
         denoised_file_path = None
+        transcript_file_path = None
 
-        # Denoise audio if requested (first pre-processing step)
+        # Phase 2: Noise reduction (multiple methods available)
         voice_file_to_process = voice_file
         if denoise_audio:
-            log("Denoising audio using audio-denoiser...")
-            denoised_file = denoise_audio_file(
-                voice_file,
-                enabled=True,
-                auto_scale=True,
-                log_callback=log
-            )
+            if denoise_method == "audio_denoiser":
+                log("Denoising audio using audio-denoiser (AI-based)...")
+                denoised_file = denoise_audio_file(
+                    voice_file,
+                    enabled=True,
+                    auto_scale=True,
+                    log_callback=log
+                )
+            elif denoise_method == "spectral":
+                log("Denoising audio using spectral gating (noisereduce)...")
+                denoised_file = reduce_noise(
+                    voice_file,
+                    method="spectral",
+                    log_callback=log
+                )
+            elif denoise_method == "rnnoise":
+                log("Denoising audio using FFmpeg RNNoise...")
+                denoised_file = reduce_noise(
+                    voice_file,
+                    method="rnnoise",
+                    log_callback=log
+                )
+            else:
+                log(f"Unknown denoise method '{denoise_method}', using audio_denoiser")
+                denoised_file = denoise_audio_file(
+                    voice_file,
+                    enabled=True,
+                    auto_scale=True,
+                    log_callback=log
+                )
+
             if denoised_file and denoised_file != voice_file:
                 voice_file_to_process = denoised_file
                 denoised_file_path = denoised_file
@@ -249,7 +287,7 @@ class AudioProcessor:
             else:
                 log("Using original audio (denoising not available or failed)")
 
-        # Enhance audio if requested (second pre-processing step)
+        # Enhance audio if requested
         if enhance_audio:
             log("Enhancing audio quality using Adobe Enhance...")
             enhanced_file = enhance_audio_file(
@@ -362,7 +400,55 @@ class AudioProcessor:
         # Export final podcast
         log(f"Exporting to: {output_file}")
         podcast.export(output_file, format="mp3")
+
+        # Phase 2: LUFS Normalization (after mixing, before final export)
+        if normalize_lufs:
+            log(f"Normalizing audio to {target_lufs} LUFS...")
+            # Create temporary WAV for normalization
+            import tempfile
+            temp_wav = tempfile.NamedTemporaryFile(delete=False, suffix=".wav").name
+            podcast.export(temp_wav, format="wav")
+
+            # Normalize
+            normalized_file = normalize_audio_lufs(
+                temp_wav,
+                output_file=None,
+                target_lufs=target_lufs,
+                log_callback=log
+            )
+
+            if normalized_file and normalized_file != temp_wav:
+                # Re-export as MP3
+                normalized_audio = self.load_audio(normalized_file)
+                normalized_audio.export(output_file, format="mp3")
+                log(f"✓ Applied LUFS normalization to final output")
+
+                # Clean up temp files
+                try:
+                    os.remove(temp_wav)
+                    if os.path.exists(normalized_file):
+                        os.remove(normalized_file)
+                except Exception:
+                    pass
+            else:
+                log("LUFS normalization skipped or failed")
+
         log("Podcast creation complete!")
+
+        # Phase 2: Generate transcript if requested
+        if generate_transcript:
+            log(f"Generating transcript using Whisper ({whisper_model} model)...")
+            transcript_file = transcribe_audio(
+                voice_file_to_process,
+                model_size=whisper_model,
+                with_timestamps=True,
+                log_callback=log
+            )
+            if transcript_file:
+                transcript_file_path = transcript_file
+                log(f"✓ Transcript generated: {os.path.basename(transcript_file)}")
+            else:
+                log("Transcript generation failed or not available")
 
         # Clean up temporary enhanced file if it was created
         if enhance_audio and voice_file_to_process != voice_file and voice_file_to_process != denoised_file_path:
@@ -374,4 +460,4 @@ class AudioProcessor:
             except Exception as e:
                 log(f"Note: Could not clean up temporary file: {e}")
 
-        return output_file, denoised_file_path
+        return output_file, denoised_file_path, transcript_file_path
