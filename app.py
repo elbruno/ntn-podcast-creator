@@ -975,8 +975,9 @@ def suggest_podcast_name(voice_file) -> str:
     original_name = os.path.splitext(original_name)[0]
     
     # Clean filename (remove special characters, replace spaces with underscores)
-    original_name = re.sub(r'[^\w\-_]', '_', original_name)
+    original_name = re.sub(r'[^\w_-]', '_', original_name)
     original_name = re.sub(r'_+', '_', original_name)  # Remove multiple underscores
+    # Note: strip('_') normalizes filenames by removing leading/trailing underscores
     original_name = original_name.strip('_')
     
     # Combine date and filename
