@@ -16,7 +16,8 @@
         "ms-python.python",
         "ms-python.vscode-pylance",
         "ms-python.black-formatter",
-        "charliermarsh.ruff"
+        "charliermarsh.ruff",
+        "ms-playwright.playwright"
       ],
       "settings": {
         "python.defaultInterpreterPath": "/usr/local/bin/python",
