@@ -30,7 +30,7 @@
     }
   },
   
-  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y ffmpeg && pip install --user -r requirements.txt",
+  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y ffmpeg && pip install --user -r requirements.txt && mkdir -p uploads outputs audios/intro_audio audios/outro_audio audios/background_music audios/test && chmod -R 777 uploads outputs",
   
   "forwardPorts": [7860],
   

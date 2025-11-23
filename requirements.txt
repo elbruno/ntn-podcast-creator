@@ -6,4 +6,5 @@ python-dotenv==1.0.1
 audio-denoiser==0.1.2
 torch>=2.6.0
 torchaudio>=2.6.0
+torchcodec>=0.8.1
 soundfile==0.12.1

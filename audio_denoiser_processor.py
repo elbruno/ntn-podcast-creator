@@ -87,7 +87,15 @@ class AudioDenoiserProcessor:
                 f"{base_name}_denoised.wav"
             )
 
-        log(f"Starting audio denoising for: {os.path.basename(input_file)}")
+        # Check file size - audio-denoiser has limitations with very large files
+        file_size_mb = os.path.getsize(input_file) / (1024 * 1024)
+        if file_size_mb > 10:
+            log(f"Warning: Audio file is {file_size_mb:.1f}MB. Audio-denoiser works best with files under 10MB.")
+            log("For large files, consider splitting them or using a shorter recording.")
+            log("Skipping denoising for this large file...")
+            return input_file
+
+        log(f"Starting audio denoising for: {os.path.basename(input_file)} ({file_size_mb:.1f}MB)")
 
         try:
             # Process the audio file
@@ -98,7 +106,8 @@ class AudioDenoiserProcessor:
             )
             
             if os.path.exists(output_file):
-                log(f"✓ Audio denoising complete: {os.path.basename(output_file)}")
+                output_size_mb = os.path.getsize(output_file) / (1024 * 1024)
+                log(f"✓ Audio denoising complete: {os.path.basename(output_file)} ({output_size_mb:.1f}MB)")
                 return output_file
             else:
                 log("Denoising failed, using original audio")
