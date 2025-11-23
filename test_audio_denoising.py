@@ -150,7 +150,7 @@ def test_config_manager_integration():
             print(f"✓ get_denoise_audio() returned: {denoise_setting}")
             
             # Should default to True
-            if denoise_setting == True:
+            if denoise_setting is True:
                 print("  ✓ Default value is True (as expected)")
             
         except Exception as e:
@@ -162,7 +162,7 @@ def test_config_manager_integration():
             config.set_denoise_audio(False)
             new_setting = config.get_denoise_audio()
             
-            if new_setting == False:
+            if new_setting is False:
                 print("✓ set_denoise_audio(False) works correctly")
             else:
                 print(f"❌ set_denoise_audio(False) failed, got: {new_setting}")

@@ -4,6 +4,6 @@ huggingface-hub==1.1.5
 playwright==1.45.0
 python-dotenv==1.0.1
 audio-denoiser==0.1.2
-torch==2.1.0
-torchaudio==2.1.0
+torch>=2.6.0
+torchaudio>=2.6.0
 soundfile==0.12.1
