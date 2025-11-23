@@ -9,7 +9,7 @@ from typing import Dict, List, Any, Optional
 class ConfigManager:
     """Manages application configuration with persistent storage."""
 
-    def __init__(self, config_file: str = "config.json"):
+    def __init__(self, config_file: str = "core/config.json"):
         """Initialize configuration manager.
 
         Args:
@@ -46,7 +46,8 @@ class ConfigManager:
             "background_volume": 10,
             "track_volumes": {},  # Individual volumes per track
             "last_output_name": "podcast_output",
-            "denoise_audio": True,  # Audio denoising feature (enabled by default)
+            # Audio denoising feature (enabled by default)
+            "denoise_audio": True,
             "enhance_audio": False  # Adobe audio enhancement feature
         }
 

@@ -6,10 +6,10 @@ import datetime
 import re
 import gradio as gr
 from typing import Optional, List
-from audio_processor import AudioProcessor
-from config_manager import ConfigManager
-from adobe_audio_enhancer import enhance_audio_file
-from audio_denoiser_processor import denoise_audio_file
+from features.audio_processor import AudioProcessor
+from features.config_manager import ConfigManager
+from features.adobe_audio_enhancer import enhance_audio_file
+from features.audio_denoiser_processor import denoise_audio_file
 
 
 # Initialize components

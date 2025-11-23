@@ -3,8 +3,14 @@
 import os
 import tempfile
 import shutil
+import sys
+
+# Add parent directory to path so we can import modules
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from features.audio_denoiser_processor import AudioDenoiserProcessor
 from pydub import AudioSegment
-from audio_denoiser_processor import AudioDenoiserProcessor
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 def create_test_audio(duration_seconds=120, sample_rate=44100):

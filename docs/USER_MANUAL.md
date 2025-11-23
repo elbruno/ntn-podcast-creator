@@ -21,6 +21,8 @@ Welcome to the **NTN Podcast Creator**! This application helps you create profes
 - ✅ **Smart Episode Naming**: Auto-suggested names with date (yymmdd) + your filename
 - ✅ **Multi-Tab Interface**: Easy navigation with dedicated tabs for different tasks
 - ✅ **AI Audio Denoising**: Clean voice recordings using machine learning (enabled by default)
+  - **NEW**: Supports files of any size with automatic chunking for large recordings
+  - Automatically processes files >10MB by splitting into manageable chunks
 - ✅ **Adobe Enhance Integration**: Standalone tab for audio enhancement or automatic during podcast creation
 - ✅ Add custom intro and outro audio to your podcast
 - ✅ Mix background music that automatically loops to match your recording
@@ -302,7 +304,8 @@ Return to the **🎙️ Create Podcast** tab:
 
 **💡 Tip:** Processing time varies based on file size and options selected:
 - Basic podcast: Few seconds
-- With AI denoiser: 10-30 seconds
+- With AI denoiser (small files): 10-30 seconds
+- With AI denoiser (large files >10MB): 2-7 minutes with automatic chunking
 - With Adobe Enhance: 2-5 minutes additional time
 
 ### Advanced Workflow: Using Adobe Enhance Standalone
@@ -462,6 +465,85 @@ See the dedicated Troubleshooting section below for common issues like:
 - Login failures
 - Timeout errors
 - Network connection issues
+
+### AI Audio Denoising
+
+**What is it?**
+AI Audio Denoising is a machine learning-powered feature that automatically removes background noise from your voice recordings using a 38-million parameter deep neural network. It's enabled by default for the best audio quality.
+
+**Key Features:**
+
+1. **Automatic Noise Removal:**
+   - Removes background hum, air conditioning, fan noise
+   - Eliminates microphone handling noise
+   - Reduces electrical interference and buzzing
+   - Preserves speech quality while cleaning audio
+
+2. **Large File Support (NEW):**
+   - **Supports files of any size** through intelligent chunking
+   - Files >10MB are automatically split into manageable 8MB chunks
+   - Each chunk is processed individually, then seamlessly merged
+   - No file size limitations - process hours-long recordings
+   - Automatic cleanup of temporary files
+
+3. **Smart Processing:**
+   - **10-second minimum chunks** to preserve audio quality
+   - **Proportional splitting** maintains consistent chunk sizes
+   - **Memory efficient** - processes one chunk at a time
+   - **Graceful fallback** - uses original audio if processing fails
+
+**When to Use AI Denoising:**
+
+- ✅ **Always recommended** - enabled by default
+- ✅ Home recording setups with background noise
+- ✅ Interview recordings in non-studio environments
+- ✅ Large files (>10MB) that need noise reduction
+- ✅ Long-form content (hours of audio)
+- ✅ Quick noise reduction without cloud services
+
+**Two Ways to Use AI Denoising:**
+
+#### Method 1: Automatic During Podcast Creation (Recommended)
+1. Navigate to **🎙️ Create Podcast** tab
+2. Upload your voice recording (any size)
+3. Ensure **"Clean audio using AI denoiser"** is checked (default)
+4. Click **"🎬 Create Podcast"**
+5. AI denoising runs automatically before mixing
+6. Download both the final podcast and cleaned voice file
+
+#### Method 2: Standalone Processing
+1. Navigate to **🤖 AI Denoiser** tab
+2. Upload your voice recording (any size)
+3. Choose whether to delete the original after processing
+4. Click **"🤖 Clean Audio"**
+5. Monitor progress - large files show chunk processing details
+6. Download the cleaned audio for any use
+
+**Processing Times:**
+- Small files (<10MB): 10-30 seconds
+- Large files (>10MB): Varies by file size, with progress updates
+  - 50MB file: ~2-3 minutes
+  - 100MB file: ~5-7 minutes
+  - Progress shown for each chunk processed
+
+**Technical Details:**
+- Uses the `audio-denoiser` Python library
+- Runs locally - no internet required
+- GPU acceleration when available (CUDA)
+- Falls back to CPU processing if needed
+- Graceful handling when library unavailable
+
+**Large File Processing Workflow:**
+```
+Large File (>10MB) → Auto-detected → Split into 8MB chunks →
+Process each chunk → Merge chunks → Cleanup → Final output
+```
+
+**Troubleshooting AI Denoising:**
+- If processing fails, the original audio is used automatically
+- Check the Console Log tab for detailed progress and error messages
+- Ensure sufficient disk space for temporary files during chunking
+- For very large files, processing may take several minutes
 
 ### Settings Persistence
 

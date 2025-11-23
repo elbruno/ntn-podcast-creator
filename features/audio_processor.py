@@ -6,8 +6,8 @@ import math
 from typing import List, Optional, Callable
 from pydub import AudioSegment
 from pydub.silence import detect_leading_silence
-from adobe_audio_enhancer import enhance_audio_file
-from audio_denoiser_processor import denoise_audio_file
+from .adobe_audio_enhancer import enhance_audio_file
+from .audio_denoiser_processor import denoise_audio_file
 
 
 class AudioProcessor:
@@ -139,13 +139,13 @@ class AudioProcessor:
 
             try:
                 track = self.load_audio(selected_file)
-                
+
                 # Use individual track volume if available, otherwise use default
                 if track_volumes and selected_file in track_volumes:
                     track_volume = track_volumes[selected_file]
                 else:
                     track_volume = volume_percent
-                
+
                 # Reduce volume of this track
                 track = self.reduce_volume(track, track_volume)
 
@@ -231,7 +231,7 @@ class AudioProcessor:
 
         # Store denoised file path for download
         denoised_file_path = None
-        
+
         # Denoise audio if requested (first pre-processing step)
         voice_file_to_process = voice_file
         if denoise_audio:
@@ -248,7 +248,7 @@ class AudioProcessor:
                 log(f"Using denoised audio: {os.path.basename(denoised_file)}")
             else:
                 log("Using original audio (denoising not available or failed)")
-        
+
         # Enhance audio if requested (second pre-processing step)
         if enhance_audio:
             log("Enhancing audio quality using Adobe Enhance...")
@@ -369,7 +369,8 @@ class AudioProcessor:
             try:
                 if os.path.exists(voice_file_to_process):
                     os.remove(voice_file_to_process)
-                    log(f"Cleaned up temporary enhanced file: {os.path.basename(voice_file_to_process)}")
+                    log(
+                        f"Cleaned up temporary enhanced file: {os.path.basename(voice_file_to_process)}")
             except Exception as e:
                 log(f"Note: Could not clean up temporary file: {e}")
 

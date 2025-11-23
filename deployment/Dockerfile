@@ -18,10 +18,9 @@ RUN pip install --no-cache-dir --upgrade pip && \
 
 # Copy application files
 COPY app.py .
-COPY audio_processor.py .
-COPY config_manager.py .
-COPY audio_denoiser_processor.py .
-COPY adobe_audio_enhancer.py .
+COPY requirements.txt .
+COPY features/ ./features/
+COPY core/ ./core/
 
 # Create necessary directories with proper permissions
 RUN mkdir -p /app/audios/intro_audio \

@@ -36,6 +36,13 @@ NTN Podcast Creator follows a modular, three-tier architecture:
 │  │ UI Handlers  │  │              │  │              │ │
 │  │ Orchestration│  │ Settings     │  │ Audio Mixing │ │
 │  └──────────────┘  └──────────────┘  └──────────────┘  │
+│  ┌──────────────┐  ┌──────────────┐                     │
+│  │audio_denoiser│  │adobe_audio_  │                     │
+│  │_processor.py │  │enhancer.py   │                     │
+│  │              │  │              │                     │
+│  │ AI Denoising │  │ Adobe AI     │                     │
+│  │ + Chunking   │  │ Enhancement  │                     │
+│  └──────────────┘  └──────────────┘                     │
 └─────────────────────┬───────────────────────────────────┘
                       │
 ┌─────────────────────▼───────────────────────────────────┐
@@ -80,9 +87,12 @@ NTN Podcast Creator follows a modular, three-tier architecture:
 ```
 User Audio Files
       ↓
-Optional: Adobe Enhance (Browser automation via Playwright)
+Optional: AI Audio Denoising (audio-denoiser + PyTorch)
+  - Large files: Automatic chunking (8MB chunks)
+  - Small files: Direct processing
+  - Memory-efficient with cleanup
       ↓
-Optional: AI Denoising (audio-denoiser + PyTorch)
+Optional: Adobe Enhance (Browser automation via Playwright)
       ↓
    pydub (AudioSegment)
       ↓
@@ -142,15 +152,17 @@ class AudioProcessor:
 ```
 
 **Audio Processing Pipeline:**
-1. Load voice recording
-2. Optional: Trim silence from voice
-3. Load intro/outro (if provided)
-4. Create looped background music (if provided)
-5. Apply individual track volumes
-6. Mix background with voice
-7. Concatenate: intro → voice+background → outro
-8. Apply 1-second crossfade overlaps
-9. Export to MP3
+1. Optional: AI audio denoising (with chunking for large files)
+2. Optional: Adobe Enhance processing
+3. Load voice recording
+4. Optional: Trim silence from voice
+5. Load intro/outro (if provided)
+6. Create looped background music (if provided)
+7. Apply individual track volumes
+8. Mix background with voice
+9. Concatenate: intro → voice+background → outro
+10. Apply 1-second crossfade overlaps
+11. Export to MP3
 
 ### 3. config_manager.py - Configuration Management
 
@@ -207,6 +219,21 @@ class ConfigManager:
        │
        ▼
 ┌─────────────────┐
+│ File Size Check │
+│ >10MB? Chunking │
+│ ≤10MB? Direct   │
+└──────┬──────────┘
+       │
+       ▼
+┌─────────────────┐
+│ AI Denoising    │
+│ - Remove noise  │
+│ - Auto chunking │
+│ - Merge results │
+└──────┬──────────┘
+       │
+       ▼
+┌─────────────────┐
 │ Load Config     │
 │ - Intro         │
 │ - Outro         │
@@ -248,6 +275,8 @@ class ConfigManager:
 │ Export MP3      │
 │ outputs/        │
 └─────────────────┘
+│ outputs/        │
+└─────────────────┘
 ```
 
 ### Settings Import/Export Flow
@@ -263,6 +292,113 @@ User Upload JSON → Parse & Validate → Update ConfigManager → Refresh UI
 ---
 
 ## Audio Processing Pipeline
+
+### AI Audio Denoising (Latest Enhancement)
+
+The application now includes sophisticated AI-powered audio denoising with support for files of any size through intelligent chunking.
+
+#### Components
+
+**4. audio_denoiser_processor.py - AI Denoising Engine**
+
+**Responsibilities:**
+- ML-based background noise removal
+- Large file chunking and processing
+- Automatic chunk merging and reconstruction
+- Memory-efficient processing with cleanup
+
+**Key Classes:**
+```python
+class AudioDenoiserProcessor:
+    def __init__()  # Initialize with GPU support when available
+    def is_available() -> bool
+    def denoise_audio(input_file, output_file, auto_scale=True) -> str
+    def _denoise_large_file(input_file, output_file, auto_scale) -> str
+    def _chunk_audio(input_file, chunk_size_mb=8.0) -> List[str]
+    def _merge_audio_chunks(chunk_files, output_file) -> bool
+    def _cleanup_chunks(chunk_files) -> None
+```
+
+#### Large File Processing Architecture
+
+```
+Input File Size Check
+        ↓
+[File ≤ 10MB]          [File > 10MB]
+        ↓                     ↓
+Direct Processing      Chunking Pipeline
+        ↓                     ↓
+    Denoise           Split into 8MB chunks
+        ↓                     ↓
+    Return File       Process each chunk individually
+                             ↓
+                      Merge processed chunks
+                             ↓
+                      Cleanup temporary files
+                             ↓
+                      Return merged file
+```
+
+#### Chunking Strategy
+
+**Smart Chunk Sizing:**
+- Target chunk size: 8MB (optimal for audio-denoiser performance)
+- Minimum chunk duration: 10 seconds (preserves audio quality)
+- Proportional splitting based on file size ratio
+
+**Example for a 50MB, 30-minute file:**
+```
+Original: 50MB, 30 minutes
+Chunk size calculation: (30 min × 8MB) / 50MB = 4.8 minutes per chunk
+Result: 7 chunks of ~4.8 minutes each
+```
+
+**Memory Management:**
+- Processes one chunk at a time (memory efficient)
+- Temporary files in system temp directory
+- Automatic cleanup after processing
+- Graceful fallback on any failure
+
+#### Processing Flow Integration
+
+Updated audio processing pipeline with AI denoising:
+
+```
+1. User uploads voice file
+2. File size check → Route to appropriate processing
+3a. Small files (≤10MB): Direct AI denoising
+3b. Large files (>10MB): Chunked AI denoising
+    - Split into 8MB chunks
+    - Process each chunk with AI denoiser
+    - Merge chunks back together
+    - Cleanup temporary files
+4. Optional: Adobe Enhance processing
+5. Optional: Trim silence from voice
+6. Load intro/outro (if provided)
+7. Create looped background music (if provided)
+8. Apply individual track volumes
+9. Mix background with voice
+10. Concatenate: intro → voice+background → outro
+11. Apply 1-second crossfade overlaps
+12. Export to MP3
+```
+
+#### Error Handling & Resilience
+
+**Chunking Failures:**
+- Automatic fallback to original file
+- Detailed logging of each step
+- Graceful handling of partial failures
+
+**Partial Processing:**
+- Successfully processed chunks are kept
+- Failed chunks fall back to original audio
+- Mixed results still produce usable output
+
+**Memory Protection:**
+- Chunk size limits prevent memory overflow
+- Streaming processing (one chunk at a time)
+- Automatic resource cleanup
 
 ### Volume Adjustment Algorithm
 
@@ -575,7 +711,7 @@ docker run -p 7860:7860 ntn-podcast-creator
 ### Production Considerations
 
 1. **File Storage**: Configure persistent volumes for `audios/`, `outputs/`, and `config.json`
-2. **Security**: 
+2. **Security**:
    - Add authentication layer if deploying publicly
    - Validate uploaded file types
    - Set file size limits
@@ -678,6 +814,6 @@ For issues, questions, or contributions:
 
 ---
 
-**Document Version:** 1.0  
-**Last Updated:** November 2025  
+**Document Version:** 1.0
+**Last Updated:** November 2025
 **Author:** NTN Podcast Creator Team

@@ -2,8 +2,12 @@
 
 import os
 import sys
-from audio_processor import AudioProcessor
-from config_manager import ConfigManager
+
+# Add parent directory to path so we can import modules
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from features.config_manager import ConfigManager
+from features.audio_processor import AudioProcessor
 
 
 def main():
