@@ -45,7 +45,8 @@ class ConfigManager:
             "background_tracks": [],
             "background_volume": 10,
             "track_volumes": {},  # Individual volumes per track
-            "last_output_name": "podcast_output"
+            "last_output_name": "podcast_output",
+            "enhance_audio": False  # Adobe audio enhancement feature
         }
 
     def save_config(self) -> None:
@@ -227,6 +228,22 @@ class ConfigManager:
             Dictionary mapping track paths to volumes
         """
         return self.get("track_volumes", {})
+
+    def get_enhance_audio(self) -> bool:
+        """Get audio enhancement setting.
+
+        Returns:
+            True if audio enhancement is enabled, False otherwise
+        """
+        return self.get("enhance_audio", False)
+
+    def set_enhance_audio(self, enabled: bool) -> None:
+        """Set audio enhancement setting.
+
+        Args:
+            enabled: True to enable audio enhancement, False to disable
+        """
+        self.set("enhance_audio", enabled)
 
     def load_default_audio_files(self) -> None:
         """Load default audio files from dedicated directories.

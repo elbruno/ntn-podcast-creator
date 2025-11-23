@@ -6,6 +6,7 @@ import math
 from typing import List, Optional, Callable
 from pydub import AudioSegment
 from pydub.silence import detect_leading_silence
+from adobe_audio_enhancer import enhance_audio_file
 
 
 class AudioProcessor:
@@ -194,6 +195,7 @@ class AudioProcessor:
         track_volumes: Optional[dict] = None,
         output_file: str = "output.mp3",
         trim_silence: bool = False,
+        enhance_audio: bool = False,
         log_callback: Optional[Callable[[str], None]] = None
     ) -> str:
         """Create complete podcast with intro, outro, and background music.
@@ -207,6 +209,7 @@ class AudioProcessor:
             track_volumes: Optional dict mapping track paths to individual volumes
             output_file: Path for output file
             trim_silence: Whether to trim silence from voice recording
+            enhance_audio: Whether to enhance audio using Adobe Enhance (optional)
             log_callback: Optional callback function for logging
 
         Returns:
@@ -223,9 +226,24 @@ class AudioProcessor:
 
         log("Starting podcast creation...")
 
+        # Enhance audio if requested (pre-processing step)
+        voice_file_to_process = voice_file
+        if enhance_audio:
+            log("Enhancing audio quality using Adobe Enhance...")
+            enhanced_file = enhance_audio_file(
+                voice_file,
+                enabled=True,
+                log_callback=log
+            )
+            if enhanced_file and enhanced_file != voice_file:
+                voice_file_to_process = enhanced_file
+                log(f"Using enhanced audio: {os.path.basename(enhanced_file)}")
+            else:
+                log("Using original audio (enhancement not available)")
+
         # Load main voice recording
-        log(f"Loading main voice: {os.path.basename(voice_file)}")
-        voice = self.load_audio(voice_file)
+        log(f"Loading main voice: {os.path.basename(voice_file_to_process)}")
+        voice = self.load_audio(voice_file_to_process)
 
         # Trim silence if requested
         if trim_silence:
@@ -323,5 +341,14 @@ class AudioProcessor:
         log(f"Exporting to: {output_file}")
         podcast.export(output_file, format="mp3")
         log("Podcast creation complete!")
+
+        # Clean up temporary enhanced file if it was created
+        if enhance_audio and voice_file_to_process != voice_file:
+            try:
+                if os.path.exists(voice_file_to_process):
+                    os.remove(voice_file_to_process)
+                    log(f"Cleaned up temporary enhanced file: {os.path.basename(voice_file_to_process)}")
+            except Exception as e:
+                log(f"Note: Could not clean up temporary file: {e}")
 
         return output_file

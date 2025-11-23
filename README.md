@@ -12,6 +12,12 @@ A local Python application with a user-friendly web interface for editing podcas
 ## Features
 
 - **Upload podcast voice file**: Upload your pre-recorded podcast audio
+- **Adobe Enhance Audio (NEW)**:
+  - Clean and enhance audio quality using Adobe's AI-powered Enhance Speech service
+  - Two modes: automatic during podcast creation or standalone with preview/download
+  - Removes background noise, reduces echo, and improves speech clarity
+  - Browser automation via Playwright (2-5 minute processing time)
+  - Optional feature with automatic fallback to original audio
 - **Intro & Outro**: Set custom intro and outro audio files
 - **Background Music**: Add background music tracks that automatically loop to match your podcast duration
 - **Individual Volume Control**: Set different volume levels for each background track
@@ -29,6 +35,7 @@ A local Python application with a user-friendly web interface for editing podcas
 
 - Python 3.8 or higher
 - FFmpeg (required for audio processing)
+- Playwright and Chromium browser (optional, for Adobe Enhance audio feature)
 - (Optional) Docker and VS Code with Dev Containers extension for containerized development
 
 ### Installing FFmpeg
@@ -160,13 +167,27 @@ The interface guides you through simple steps to create your podcast with advanc
 
 ## New Features
 
-### Individual Volume Controls (Latest)
+### Adobe Enhance Audio (Latest - v1.1)
+- **AI-Powered Audio Cleanup**: Enhance voice recordings using Adobe Podcast Enhance Speech
+  - Removes background noise and echo
+  - Enhances speech clarity and audio quality
+  - Normalizes audio levels automatically
+- **Two Usage Modes**:
+  - **Integrated Mode**: Checkbox to automatically enhance during podcast creation
+  - **Standalone Mode**: Enhance-only with preview and download (no mixing)
+- **Browser Automation**: Uses Playwright to interact with Adobe's web service
+- **Progress Monitoring**: Detailed logs show upload, processing, and download status
+- **Automatic Fallback**: Gracefully uses original audio if enhancement service is unavailable
+- **Flexible Configuration**: Optional Adobe credentials via `.env` file
+- **Processing Time**: Typically 2-5 minutes depending on file size
+
+### Individual Volume Controls
 - **Per-Track Volume**: Set different volume levels for each background music file
 - **Global Volume**: Apply a single volume setting to all tracks at once
 - **Preview with Volume**: Listen to each track with the applied volume before creating your podcast
 - **Timeline Display**: See all background tracks and their volume settings in the visual timeline
 
-### Settings Management (Latest)
+### Settings Management
 - **Export Settings**: Save your current configuration (intro, outro, background tracks, and volumes) as a JSON file
 - **Import Settings**: Load previously saved configurations to quickly recreate your setup
 - **Automatic Backup**: Settings are automatically saved, but you can create manual backups for different podcast styles
@@ -179,6 +200,14 @@ Settings are automatically saved to `config.json` in the application directory. 
 - Global volume settings
 - Individual track volume settings
 - Last used output filename
+- Audio enhancement preference (enabled/disabled)
+
+Adobe Enhance credentials (optional) are stored in `.env` file:
+```env
+ADOBE_EMAIL=your-email@example.com
+ADOBE_PASSWORD=your-password
+ADOBE_ENHANCE_HEADLESS=true  # false to see browser (requires X server)
+```
 
 These settings persist between sessions, so you don't need to reconfigure each time. You can also export settings to share with others or backup for different podcast configurations.
 
@@ -194,8 +223,11 @@ ntn-podcast-creator/
 │   └── TECHNICAL_IMPLEMENTATION.md  # Technical details and architecture
 ├── app.py                  # Main application with Gradio UI
 ├── audio_processor.py      # Audio processing logic
+├── adobe_audio_enhancer.py # Adobe Enhance integration (NEW)
 ├── config_manager.py       # Configuration persistence
 ├── requirements.txt        # Python dependencies
+├── .env                    # Adobe credentials (create this, optional)
+├── .env.sample             # Example environment variables
 ├── README.md               # This file
 ├── LICENSE                 # License information
 ├── audios/                 # Audio assets directory

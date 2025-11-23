@@ -80,17 +80,17 @@ If you use Visual Studio Code:
    ```
 
 2. **Install FFmpeg:**
-   
+
    - **Ubuntu/Debian:**
      ```bash
      sudo apt-get update && sudo apt-get install ffmpeg
      ```
-   
+
    - **macOS:**
      ```bash
      brew install ffmpeg
      ```
-   
+
    - **Windows:** Download from [FFmpeg website](https://ffmpeg.org/download.html) and add to PATH
 
 3. **Install Python dependencies:**
@@ -134,7 +134,7 @@ The interface is divided into 6 main sections:
 ### 1. Upload Your Podcast Voice Recording
 - **Purpose:** Upload your main podcast audio file
 - **Supported formats:** MP3, WAV, M4A, OGG, and other common audio formats
-- **Options:** 
+- **Options:**
   - Upload a file from your computer
   - Record audio directly (if your browser supports it)
 
@@ -234,7 +234,7 @@ The interface is divided into 6 main sections:
 
 1. Enter a filename in **"Output Filename"** (without .mp3)
    - Example: `episode_001` or `my_awesome_podcast`
-   
+
 2. Click the **"🎬 Create Podcast"** button
 
 3. Wait while the application:
@@ -260,6 +260,121 @@ The interface is divided into 6 main sections:
 ---
 
 ## Features in Detail
+
+### Adobe Enhance Audio (Optional)
+
+**What is it?**
+Adobe Enhance is an AI-powered audio enhancement tool that automatically cleans up your voice recordings by:
+- Removing background noise
+- Reducing echo and reverb
+- Enhancing speech clarity
+- Normalizing audio levels
+- Improving overall sound quality
+
+**Two Ways to Use Adobe Enhance:**
+
+#### Method 1: Automatic Enhancement During Podcast Creation
+
+1. **Navigate to Create Podcast Tab**
+2. **Find the Adobe Enhance Assistant Section**
+   - Located below the "Trim silence" option
+   - Clearly labeled with heading
+3. **Enable Automatic Enhancement**
+   - Check the box: "Run Adobe Enhance automatically during podcast creation"
+   - This will enhance your voice before mixing with intro/outro/background
+4. **Create Your Podcast**
+   - Upload your voice recording
+   - Click "Create Podcast"
+   - Adobe Enhance runs automatically in the background
+   - Watch the console log for progress updates
+   - Final podcast uses the enhanced audio
+
+#### Method 2: Standalone Enhancement (Preview and Download)
+
+1. **Navigate to Create Podcast Tab**
+2. **Upload Your Voice Recording**
+3. **Expand the Adobe Enhance Section**
+   - Click on "✨ Enhance voice only (no mixing)"
+4. **Run Standalone Enhancement**
+   - (Optional) Check "Delete uploaded file after enhancement"
+   - Click "Run Adobe Enhance Now"
+   - Watch progress in the log viewer
+5. **Download Enhanced Audio**
+   - Listen to the preview
+   - Download the enhanced file
+   - Use it in any project or reuse in podcast creation
+
+**Initial Setup (One-Time):**
+
+1. **Install Playwright Browser**
+   ```bash
+   pip install playwright
+   playwright install chromium
+   ```
+
+2. **Configure Adobe Credentials (Optional)**
+   - Create or edit `.env` file in the project directory
+   - Add your Adobe account details:
+   ```
+   ADOBE_EMAIL=your-email@example.com
+   ADOBE_PASSWORD=your-password
+   ADOBE_ENHANCE_HEADLESS=true
+   ```
+   - **Note:** Adobe Enhance may work without login for basic use
+
+3. **For Docker/Container Users**
+   - If running in a container without display:
+   ```bash
+   # Install xvfb for virtual display
+   sudo apt-get update && sudo apt-get install -y xvfb
+
+   # Run app with virtual display
+   xvfb-run python app.py
+   ```
+
+**How It Works:**
+
+1. **Browser Automation:** The app uses Playwright to automate interaction with Adobe's web service
+2. **File Upload:** Your audio is uploaded to Adobe's servers
+3. **AI Processing:** Adobe's AI enhances the audio (typically 2-5 minutes)
+4. **Download:** Enhanced audio is downloaded automatically
+5. **Integration:** Enhanced audio is used in your podcast or available for download
+
+**Progress Monitoring:**
+- Detailed logs show each step:
+  - Navigating to Adobe Enhance
+  - Uploading file (shows file size and timeout)
+  - Processing status updates
+  - Download completion
+  - Total time elapsed
+
+**Privacy & Security:**
+- Your audio is uploaded to Adobe's servers for processing
+- Adobe credentials stored in `.env` file (not committed to git)
+- Headless mode runs browser invisibly for security
+- Set `ADOBE_ENHANCE_HEADLESS=false` only for debugging
+
+**When to Use Adobe Enhance:**
+- ✅ Voice recorded in noisy environment
+- ✅ Audio with echo or reverb
+- ✅ Inconsistent audio levels
+- ✅ Want professional polish without manual editing
+- ✅ Quick cleanup for interview recordings
+
+**When to Skip:**
+- ❌ Already professionally edited audio
+- ❌ Time-sensitive projects (adds 2-5 minutes)
+- ❌ Very large files (>100MB may timeout)
+- ❌ Offline workflow requirements
+
+**Troubleshooting Adobe Enhance:**
+
+See the dedicated Troubleshooting section below for common issues like:
+- Playwright browser not installed
+- Missing display errors (X server)
+- Login failures
+- Timeout errors
+- Network connection issues
 
 ### Settings Persistence
 
@@ -626,6 +741,63 @@ The exported JSON file looks like this:
 4. Check firewall settings
 5. Try a different browser
 
+#### Adobe Enhance Errors
+
+**Problem:** "Playwright is not installed" error
+
+**Solutions:**
+1. Install Playwright: `pip install playwright`
+2. Download browser: `playwright install chromium`
+3. Verify installation: `python -c "from playwright.sync_api import sync_playwright; print('Ready')"`
+4. Restart the application
+
+**Problem:** "Executable doesn't exist" or "Missing X server" error
+
+**Solutions:**
+1. **For Headless Mode (Recommended):**
+   - Edit `.env` file
+   - Set `ADOBE_ENHANCE_HEADLESS=true`
+   - Restart application
+
+2. **For Headed Mode with Virtual Display:**
+   - Install xvfb: `sudo apt-get install -y xvfb`
+   - Run app with: `xvfb-run python app.py`
+   - Keep `ADOBE_ENHANCE_HEADLESS=false` in `.env`
+
+**Problem:** "Target page, context or browser has been closed"
+
+**Solutions:**
+1. This occurs when running headed mode without a display
+2. Switch to headless mode (see above)
+3. Or use xvfb for virtual display (see above)
+
+**Problem:** Adobe Enhance times out
+
+**Solutions:**
+1. Check internet connection
+2. File may be too large (try under 50MB)
+3. Adobe service may be slow - try again later
+4. Increase timeout in code if needed for large files
+5. Check console log for specific error details
+
+**Problem:** Login fails with credentials
+
+**Solutions:**
+1. Verify credentials in `.env` file
+2. Check for typos in email/password
+3. Try logging in manually at https://podcast.adobe.com/enhance
+4. Account may require MFA - complete it once manually
+5. Some accounts work without login - try removing credentials
+
+**Problem:** Enhancement returns original audio (fallback)
+
+**Solutions:**
+1. Check console log for specific error
+2. Verify Playwright is working: `python -c "from playwright.sync_api import sync_playwright; print('Ready')"`
+3. Test internet connection to podcast.adobe.com
+4. Check if Adobe service is accessible in your region
+5. Review detailed logs in Console Log tab
+
 ---
 
 ## FAQ
@@ -664,7 +836,7 @@ A: Yes! It's open source (MIT License). Fork it, modify it, make it your own.
 **Q: Where are my files stored?**
 A:
 - Uploaded files: `uploads/` directory
-- Output podcasts: `outputs/` directory  
+- Output podcasts: `outputs/` directory
 - Settings: `config.json` file
 - All in the application directory
 
@@ -706,10 +878,29 @@ A: Use the Export/Import feature:
 A: Yes! Export your settings as a JSON file and share it. Your team member can import it, but they'll need access to the same audio files (or files in the same locations).
 
 **Q: Can I edit my voice recording in this app?**
-A: No, this app mixes audio, it doesn't edit. Use audio editing software (Audacity, Adobe Audition) to edit your voice recording first.
+A: No, this app mixes audio, it doesn't edit. However, you can use the Adobe Enhance feature to automatically clean and improve your audio quality before mixing. For advanced editing, use audio editing software (Audacity, Adobe Audition).
+
+**Q: How does Adobe Enhance work?**
+A: The app uses browser automation (Playwright) to upload your audio to Adobe's web service (podcast.adobe.com/enhance), which uses AI to clean and enhance speech. The enhanced audio is then downloaded and used in your podcast. The entire process is automated and takes 2-5 minutes.
+
+**Q: Do I need an Adobe account for audio enhancement?**
+A: Adobe Enhance may work without an account for basic use. However, if Adobe prompts for login, you can add your credentials to the `.env` file. The app will automatically sign in when needed.
+
+**Q: Is my audio safe when using Adobe Enhance?**
+A: Your audio is uploaded to Adobe's servers for processing. This is the same service available at podcast.adobe.com/enhance. Only use Adobe Enhance if you're comfortable with their terms of service and privacy policy. For sensitive content, skip the enhancement or use offline editing tools.
+
+**Q: Why does Adobe Enhance take so long?**
+A: Adobe's AI processing typically takes 2-5 minutes depending on:
+- File size (larger files take longer)
+- Adobe's server load
+- Your internet connection speed
+The app shows progress updates so you can see what's happening.
+
+**Q: Can I use Adobe Enhance offline?**
+A: No, Adobe Enhance requires an internet connection because it uses Adobe's cloud-based AI service. For offline workflows, skip the enhancement feature or use desktop audio editing software.
 
 **Q: How do I make a podcast series with consistent branding?**
-A: 
+A:
 1. Upload your intro/outro once
 2. Add background music tracks
 3. Set your preferred volumes (global or per-track)
@@ -735,7 +926,7 @@ A: Different scenarios:
 A: Make sure you're going to the correct URL: http://127.0.0.1:7860 or http://localhost:7860
 
 **Q: Processing is very slow**
-A: 
+A:
 - Large files take longer to process
 - Close other applications to free up resources
 - Consider using shorter audio files for testing
@@ -783,7 +974,7 @@ Share your experiences, ask questions, and connect with other users:
 
 ## Conclusion
 
-Congratulations! You now know how to use the NTN Podcast Creator to create professional-sounding podcasts with intro/outro audio and background music. 
+Congratulations! You now know how to use the NTN Podcast Creator to create professional-sounding podcasts with intro/outro audio and background music.
 
 Remember:
 - Start simple (voice only) and add features as you get comfortable
@@ -796,5 +987,5 @@ Happy podcasting! 🎙️
 
 ---
 
-*Last updated: November 2025*
-*Version: 1.0*
+*Last updated: November 23, 2025*
+*Version: 1.1 - Added Adobe Enhance Audio feature*
