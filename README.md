@@ -5,6 +5,7 @@ A local Python application with a user-friendly web interface for editing podcas
 ## 📖 Documentation
 
 - **[User Manual](docs/USER_MANUAL.md)** - Complete guide with step-by-step instructions and screenshots
+- **[Phase 2 Features](docs/PHASE2_IMPLEMENTATION.md)** - **NEW!** Advanced audio processing with multiple noise reduction methods, LUFS normalization, and Whisper transcription
 - **[Docker Deployment Guide](docs/DOCKER.md)** - Run with Docker in minutes (no Python/FFmpeg install needed)
 - **[Technical Implementation](docs/TECHNICAL_IMPLEMENTATION.md)** - Architecture, technical details, and API reference
 - **[Dev Container Guide](.devcontainer/README.md)** - Setup instructions for containerized development
@@ -47,6 +48,35 @@ A local Python application with a user-friendly web interface for editing podcas
 - **Download Options**: Download both generated podcasts, cleaned audio, and configuration settings
 
 ## ✨ What's New in Latest Version
+
+### 🎛️ Phase 2: Advanced Audio Processing
+
+Professional-grade audio processing features for broadcast-quality podcasts:
+
+- **🎚️ Multiple Noise Reduction Methods**:
+  - **AI Denoiser** (Recommended): 38M-parameter deep learning model
+  - **Spectral Gating**: Fast spectral subtraction for stationary noise
+  - **FFmpeg RNNoise**: RNN-based noise suppression
+  - Choose the best method for your recording environment
+
+- **📊 LUFS Normalization**:
+  - Professional loudness normalization to broadcast standards
+  - Two-pass processing for maximum accuracy
+  - Configurable target: -16 LUFS (podcast standard) or -14 LUFS
+  - Ensures consistent volume across all episodes
+
+- **📝 Automatic Transcription with Whisper**:
+  - Generate accurate transcripts using OpenAI's Whisper
+  - 5 model sizes from Tiny (fast) to Large (best quality)
+  - Timestamped transcripts with word-level timing
+  - Supports 99+ languages with automatic detection
+  - Completely offline after initial model download
+
+- **🎛️ Modular Architecture**:
+  - Mix and match processing methods
+  - Optimized processing order for best results
+  - All settings automatically saved
+  - Ready for future API integrations
 
 ### 🚀 Large File Support for AI Denoising
 
