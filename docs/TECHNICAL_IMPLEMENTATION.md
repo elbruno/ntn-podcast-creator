@@ -68,12 +68,21 @@ NTN Podcast Creator follows a modular, three-tier architecture:
 | **Gradio** | 6.0.0 | Web-based user interface framework |
 | **pydub** | 0.25.1 | Audio processing and manipulation |
 | **FFmpeg** | Latest | Audio codec handling and conversion |
-| **huggingface-hub** | 1.1.5 | Dependency for Gradio |
+| **Playwright** | 1.45.0 | Browser automation for Adobe Enhance |
+| **python-dotenv** | 1.0.1 | Environment variable management |
+| **audio-denoiser** | 0.1.2 | AI-powered audio noise removal |
+| **PyTorch** | 2.6.0+ | Deep learning framework for audio-denoiser |
+| **torchaudio** | 2.6.0+ | Audio processing for PyTorch |
+| **soundfile** | 0.12.1 | Audio file I/O |
 
 ### Audio Processing Stack
 
 ```
 User Audio Files
+      ↓
+Optional: Adobe Enhance (Browser automation via Playwright)
+      ↓
+Optional: AI Denoising (audio-denoiser + PyTorch)
       ↓
    pydub (AudioSegment)
       ↓
@@ -102,9 +111,12 @@ User Audio Files
 - Timeline visualization generation
 
 **Key Functions:**
-- `create_ui()`: Builds the Gradio interface
-- `create_podcast_handler()`: Orchestrates podcast creation
-- `generate_timeline_chart()`: Creates visual timeline preview
+- `create_ui()`: Builds the Gradio multi-tab interface
+- `suggest_podcast_name()`: Generates auto-suggested episode names with date format
+- `update_on_voice_upload()`: Updates timeline and episode name when voice file is uploaded
+- `create_podcast_handler()`: Orchestrates podcast creation with AI denoising and Adobe Enhance
+- `enhance_audio_only_handler()`: Handles standalone Adobe Enhance processing
+- `generate_timeline_chart()`: Creates visual timeline preview with background tracks
 - `export_settings()`: Exports configuration to JSON
 - `import_settings()`: Imports configuration from JSON
 
@@ -342,32 +354,56 @@ Supported formats: MP3, WAV, M4A, OGG, FLAC
 
 ### Tab Structure
 
-1. **Create Podcast**
-   - Voice recording upload
-   - Output filename input
-   - Options: delete voice after creation, trim silence
-   - Timeline preview (visual representation)
-   - Create button
-   - Audio output player
-   - Download settings button
-   - Import settings control
+The interface uses a multi-tab layout with emoji icons for easy navigation:
 
-2. **Settings**
+1. **🎙️ Create Podcast** (Main Tab)
+   - Voice recording upload (with drag-and-drop support)
+   - Auto-suggested episode name (date + filename format)
+   - Options accordion:
+     - Delete voice after creation
+     - Trim silence
+     - AI audio denoising (enabled by default)
+     - Adobe Enhance integration (optional checkbox)
+   - Timeline preview (visual representation)
+   - Create podcast button
+   - Audio output player
+   - Cleaned voice download (when denoising enabled)
+   - Download & Import Settings accordion
+
+2. **✨ Adobe Enhance** (Standalone Enhancement)
+   - Dedicated workspace for audio enhancement
+   - Instructions and tips section
+   - Voice recording upload
+   - Delete uploaded file option
+   - Enhance button
+   - Enhanced audio preview player
+   - Processing log accordion
+   - Use case: Pre-process audio before podcast creation or for other projects
+
+3. **⚙️ Settings** (Audio Configuration)
    - Intro audio management
+     - Upload/delete intro
+     - Audio player for preview
    - Outro audio management
+     - Upload/delete outro
+     - Audio player for preview
    - Background music management
-     - Add/delete tracks
+     - Upload multiple tracks
      - Track selector dropdown
+     - Delete individual tracks
      - Individual track audio player
-     - Global volume slider
-     - Individual track volume slider
-     - "Apply to All" button
+     - Global volume slider (0-50%)
+     - Individual track volume slider (0-50%)
+     - "Apply Volume to All Tracks" button
      - Preview with applied volume
    - Current configuration display
+   - Refresh settings button
 
-3. **Console Log**
+4. **📋 Console Log** (Debugging & Monitoring)
    - Real-time processing logs
-   - Error messages
+   - Podcast creation progress
+   - Adobe Enhance status
+   - Error messages and warnings
    - Refresh/clear controls
 
 ### Visual Components
@@ -375,15 +411,29 @@ Supported formats: MP3, WAV, M4A, OGG, FLAC
 **Timeline Chart:**
 - Color-coded segments (intro, voice, outro)
 - Background music overlay visualization
-- Duration labels
-- Overlap indicators
-- Legend with track volumes
+- Duration labels for each segment
+- Overlap indicators (1-second crossfades)
+- Legend with track volumes and file names
+- Updates dynamically when voice file is uploaded
+
+**Smart Episode Naming:**
+- Automatic suggestion format: `yymmdd_filename`
+- Example: `251123_my_recording` (for Nov 23, 2025)
+- Fully editable field
+- Updates when voice file is uploaded
 
 **Volume Controls:**
 - Global slider (0-50%)
 - Per-track sliders (0-50%)
-- Apply to all functionality
-- Live preview generation
+- "Apply to all" functionality
+- Live preview generation with applied volume
+- Recommended range: 10-12% for optimal voice clarity
+
+**Processing Options:**
+- Checkbox-based configuration
+- Default values for common use cases
+- Tooltips with helpful information
+- Visual grouping in accordion
 
 ---
 
