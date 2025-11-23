@@ -14,13 +14,16 @@ A local Python application with a user-friendly web interface for editing podcas
 - **Intuitive Multi-Tab Interface**: Easy navigation with dedicated tabs for podcast creation, Adobe Enhance, settings, and logs
 - **Smart Episode Naming**: Automatically suggests episode names with date (yymmdd) + your file name
 - **Upload podcast voice file**: Upload your pre-recorded podcast audio
-- **AI Audio Denoising (NEW)**:
+- **AI Audio Denoising (Latest)**:
   - Automatically clean voice recordings using machine learning
   - Removes background noise using the `audio-denoiser` library
   - 38-million parameter deep learning model for speech enhancement
+  - **NEW**: Supports files of any size with automatic chunking for large files (>10MB)
+  - **NEW**: Intelligent chunk processing with seamless audio reconstruction
   - Enabled by default for all podcast creations
   - Download the cleaned audio separately for other uses
   - Graceful fallback to original audio if library unavailable
+  - Dedicated **🤖 AI Denoiser** tab for standalone processing
 - **Adobe Enhance Audio**:
   - Clean and enhance audio quality using Adobe's AI-powered Enhance Speech service
   - Available in dedicated **✨ Adobe Enhance** tab for standalone processing

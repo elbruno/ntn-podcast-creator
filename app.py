@@ -1011,19 +1011,19 @@ def import_settings(settings_file) -> str:
 
 def suggest_podcast_name(voice_file) -> str:
     """Generate suggested podcast filename with date and original filename.
-    
+
     Args:
         voice_file: Uploaded voice file
-        
+
     Returns:
         Suggested filename in format: yymmdd_originalname
     """
     # Get current date in yymmdd format
     date_str = datetime.datetime.now().strftime("%y%m%d")
-    
+
     if voice_file is None:
         return f"{date_str}_podcast"
-    
+
     # Extract original filename without extension
     if isinstance(voice_file, str):
         original_name = os.path.basename(voice_file)
@@ -1031,19 +1031,20 @@ def suggest_podcast_name(voice_file) -> str:
         original_name = os.path.basename(voice_file.name)
     else:
         original_name = "podcast"
-    
+
     # Remove extension
     original_name = os.path.splitext(original_name)[0]
-    
+
     # Clean filename (remove special characters, replace spaces with underscores)
     original_name = re.sub(r'[^\w_-]', '_', original_name)
-    original_name = re.sub(r'_+', '_', original_name)  # Remove multiple underscores
+    # Remove multiple underscores
+    original_name = re.sub(r'_+', '_', original_name)
     # Note: strip('_') normalizes filenames by removing leading/trailing underscores
     original_name = original_name.strip('_')
-    
+
     # Combine date and filename
     suggested_name = f"{date_str}_{original_name}"
-    
+
     return suggested_name
 
 
@@ -1129,7 +1130,7 @@ def create_ui():
                             label="🎧 Your Podcast",
                             type="filepath"
                         )
-                        
+
                         denoised_audio_output = gr.Audio(
                             label="🎵 Cleaned Voice (Download)",
                             type="filepath",
@@ -1177,7 +1178,7 @@ def create_ui():
                 Use machine learning to remove background noise from your audio recordings.
                 This is a standalone tool - upload audio, clean it, and download the result.
                 """)
-                
+
                 with gr.Row():
                     with gr.Column():
                         gr.Markdown("""
@@ -1186,14 +1187,14 @@ def create_ui():
                         2. Click "Clean Audio"
                         3. Wait for processing (usually under 30 seconds)
                         4. Download the cleaned audio
-                        
+
                         **What it does:**
                         - Removes background noise using AI
                         - Preserves speech quality
-                        - Works best with files under 10MB
+                        - **NEW**: Supports files of any size (auto-chunking for large files)
                         - No cloud processing - runs locally
                         """)
-                        
+
                         denoise_tab_voice_input = gr.Audio(
                             label="🎤 Voice Recording to Clean",
                             type="filepath"
@@ -1210,7 +1211,7 @@ def create_ui():
                             variant="primary",
                             size="lg"
                         )
-                        
+
                     with gr.Column():
                         denoise_only_status = gr.Textbox(
                             label="Status",
@@ -1231,13 +1232,13 @@ def create_ui():
                                 lines=15,
                                 max_lines=30
                             )
-                
+
                 gr.Markdown("""
                 ---
                 ### 💡 AI Denoiser Tips
                 - Processing is very fast, typically under 30 seconds
-                - Works best with recordings under 10MB
-                - Larger files will be skipped automatically with a warning
+                - **NEW**: Now supports files of any size with automatic chunking
+                - Large files (>10MB) are automatically split into smaller chunks for processing
                 - You can also enable automatic denoising in the **🎙️ Create Podcast** tab
                 - No internet connection required - everything runs on your machine
                 - Install `audio-denoiser` package for this feature to work
@@ -1250,7 +1251,7 @@ def create_ui():
                 Use Adobe's Enhance Speech AI to clean and improve your audio files.
                 This is a standalone tool - upload audio, enhance it, and download the result.
                 """)
-                
+
                 with gr.Row():
                     with gr.Column():
                         gr.Markdown("""
@@ -1259,14 +1260,14 @@ def create_ui():
                         2. Click "Enhance Audio"
                         3. Wait 2-5 minutes for processing
                         4. Download the enhanced audio
-                        
+
                         **What it does:**
                         - Removes background noise
                         - Reduces echo
                         - Improves speech clarity
                         - Normalizes audio levels
                         """)
-                        
+
                         enhance_tab_voice_input = gr.Audio(
                             label="🎤 Voice Recording to Enhance",
                             type="filepath"
@@ -1283,7 +1284,7 @@ def create_ui():
                             variant="primary",
                             size="lg"
                         )
-                        
+
                     with gr.Column():
                         enhance_only_status = gr.Textbox(
                             label="Status",
@@ -1304,7 +1305,7 @@ def create_ui():
                                 lines=15,
                                 max_lines=30
                             )
-                
+
                 gr.Markdown("""
                 ---
                 ### 💡 Adobe Enhance Tips
@@ -1667,7 +1668,7 @@ def create_ui():
             timeline = preview_timeline(voice_file)
             suggested_name = suggest_podcast_name(voice_file)
             return timeline, suggested_name
-        
+
         voice_input.change(
             fn=update_on_voice_upload,
             inputs=[voice_input],
@@ -1678,7 +1679,8 @@ def create_ui():
             fn=create_podcast_handler,
             inputs=[voice_input, output_name_input,
                     delete_voice_checkbox, trim_silence_checkbox, denoise_audio_checkbox, enhance_audio_checkbox],
-            outputs=[status_output, audio_output, denoised_audio_output, console_output]
+            outputs=[status_output, audio_output,
+                     denoised_audio_output, console_output]
         )
 
         create_button_event.then(
