@@ -946,6 +946,46 @@ def import_settings(settings_file) -> str:
         return error_msg
 
 
+def suggest_podcast_name(voice_file) -> str:
+    """Generate suggested podcast filename with date and original filename.
+    
+    Args:
+        voice_file: Uploaded voice file
+        
+    Returns:
+        Suggested filename in format: yymmdd_originalname
+    """
+    import datetime
+    
+    # Get current date in yymmdd format
+    date_str = datetime.datetime.now().strftime("%y%m%d")
+    
+    if voice_file is None:
+        return f"{date_str}_podcast"
+    
+    # Extract original filename without extension
+    if isinstance(voice_file, str):
+        original_name = os.path.basename(voice_file)
+    elif hasattr(voice_file, 'name'):
+        original_name = os.path.basename(voice_file.name)
+    else:
+        original_name = "podcast"
+    
+    # Remove extension
+    original_name = os.path.splitext(original_name)[0]
+    
+    # Clean filename (remove special characters, replace spaces with underscores)
+    import re
+    original_name = re.sub(r'[^\w\-_]', '_', original_name)
+    original_name = re.sub(r'_+', '_', original_name)  # Remove multiple underscores
+    original_name = original_name.strip('_')
+    
+    # Combine date and filename
+    suggested_name = f"{date_str}_{original_name}"
+    
+    return suggested_name
+
+
 def create_ui():
     """Create Gradio user interface."""
 
@@ -962,7 +1002,7 @@ def create_ui():
 
         with gr.Tabs():
             # Main Tab - Podcast Creation
-            with gr.Tab("Create Podcast"):
+            with gr.Tab("🎙️ Create Podcast"):
                 gr.Markdown("""
                 ### Upload your voice recording and create your podcast
                 Default intro, outro, and background music are automatically applied.
@@ -971,32 +1011,28 @@ def create_ui():
                 with gr.Row():
                     with gr.Column():
                         voice_input = gr.Audio(
-                            label="Voice Recording (Required)",
+                            label="🎤 Voice Recording (Required)",
                             type="filepath"
                         )
 
                         output_name_input = gr.Textbox(
-                            label="Podcast Filename (without .mp3)",
+                            label="📝 Podcast Episode Name",
                             value=saved_output_name,
-                            placeholder="my_podcast"
+                            placeholder="podcast_episode",
+                            info="Auto-suggested based on date (yymmdd) + your file name"
                         )
 
-                        delete_voice_checkbox = gr.Checkbox(
-                            label="Delete voice recording after creation",
-                            value=True,
-                            info="Saves storage space"
-                        )
+                        with gr.Accordion("⚙️ Options", open=True):
+                            delete_voice_checkbox = gr.Checkbox(
+                                label="Delete voice recording after creation",
+                                value=True,
+                                info="Saves storage space"
+                            )
 
-                        trim_silence_checkbox = gr.Checkbox(
-                            label="Trim silence from voice recording",
-                            value=True,
-                            info="Removes silence from start and end"
-                        )
-
-                        with gr.Group():
-                            gr.Markdown("#### Audio Preprocessing")
-                            gr.Markdown(
-                                "Clean and enhance your voice recording before creating the podcast."
+                            trim_silence_checkbox = gr.Checkbox(
+                                label="Trim silence from voice recording",
+                                value=True,
+                                info="Removes silence from start and end"
                             )
 
                             denoise_audio_checkbox = gr.Checkbox(
@@ -1005,53 +1041,11 @@ def create_ui():
                                 info="Removes background noise using machine learning"
                             )
 
-                        with gr.Group():
-                            gr.Markdown("#### Adobe Enhance Assistant")
-                            gr.Markdown(
-                                "Use Adobe's Enhance Speech AI in two ways: **(1)** keep the checkbox enabled to run automatically before mixing the podcast, "
-                                "or **(2)** use the quick action below to enhance only your voice track and download it immediately."
-                            )
-
                             enhance_audio_checkbox = gr.Checkbox(
-                                label="Run Adobe Enhance automatically during podcast creation",
+                                label="Apply Adobe Enhance (optional)",
                                 value=config_manager.get_enhance_audio(),
-                                info="Disable if you want to skip pre-processing"
+                                info="Uses Adobe's AI to improve audio quality (adds 2-5 minutes)"
                             )
-
-                            with gr.Accordion("✨ Enhance voice only (no mixing)", open=False):
-                                gr.Markdown(
-                                    "Click the button to upload the voice recording above to Adobe Enhance, preview the cleaned audio, and reuse it anywhere."
-                                )
-
-                                enhance_only_delete_checkbox = gr.Checkbox(
-                                    label="Delete uploaded file after enhancement",
-                                    value=True,
-                                    info="Keeps the uploads folder tidy"
-                                )
-
-                                enhance_only_button = gr.Button(
-                                    "Run Adobe Enhance Now",
-                                    variant="secondary"
-                                )
-
-                                enhance_only_status = gr.Textbox(
-                                    label="Standalone Enhance Status",
-                                    interactive=False,
-                                    lines=2
-                                )
-
-                                enhance_only_output = gr.Audio(
-                                    label="Enhanced Voice Preview",
-                                    type="filepath"
-                                )
-
-                                enhance_only_log = gr.Textbox(
-                                    label="Latest Enhance Log",
-                                    value=get_console_log(),
-                                    interactive=False,
-                                    lines=10,
-                                    max_lines=20
-                                )
 
                         create_button = gr.Button(
                             "🎬 Create Podcast",
@@ -1071,20 +1065,20 @@ def create_ui():
                             lines=3
                         )
                         audio_output = gr.Audio(
-                            label="Your Podcast",
+                            label="🎧 Your Podcast",
                             type="filepath"
                         )
                         
                         denoised_audio_output = gr.Audio(
-                            label="Cleaned Voice (Download)",
+                            label="🎵 Cleaned Voice (Download)",
                             type="filepath",
                             visible=True
                         )
 
-                        gr.Markdown("**Download Options**")
-                        with gr.Row():
+                        with gr.Accordion("📥 Download & Import Settings", open=False):
+                            gr.Markdown("**Export Settings**")
                             export_settings_button = gr.Button(
-                                "💾 Download Settings",
+                                "💾 Download Current Settings",
                                 variant="secondary",
                                 size="sm"
                             )
@@ -1093,8 +1087,7 @@ def create_ui():
                                 visible=True
                             )
 
-                        gr.Markdown("**Import Settings**")
-                        with gr.Row():
+                            gr.Markdown("**Import Settings**")
                             import_settings_input = gr.File(
                                 label="Upload Settings File (JSON)",
                                 file_types=[".json"]
@@ -1107,15 +1100,87 @@ def create_ui():
                 gr.Markdown("""
                 ---
                 ### 💡 Quick Tips
-                - Upload your voice recording and click "Create Podcast"
+                - Upload your voice recording - the episode name is auto-suggested with today's date
                 - Default audio files are automatically loaded from `audios/` folder
-                - Background tracks are randomly selected and mixed to match your recording length
+                - Background tracks are randomly mixed to match your recording length
                 - Generated podcasts are saved in the `outputs/` directory
-                - Configure intro, outro, and background music in the Settings tab
+                - Configure intro, outro, and background music in the **⚙️ Settings** tab
+                - Use the **✨ Adobe Enhance** tab to clean audio files before creating podcasts
+                """)
+
+            # Adobe Enhance Tab - Standalone Enhancement
+            with gr.Tab("✨ Adobe Enhance"):
+                gr.Markdown("""
+                ### Enhance Voice Recordings with Adobe AI
+                Use Adobe's Enhance Speech AI to clean and improve your audio files.
+                This is a standalone tool - upload audio, enhance it, and download the result.
+                """)
+                
+                with gr.Row():
+                    with gr.Column():
+                        gr.Markdown("""
+                        **How to use:**
+                        1. Upload a voice recording below
+                        2. Click "Enhance Audio"
+                        3. Wait 2-5 minutes for processing
+                        4. Download the enhanced audio
+                        
+                        **What it does:**
+                        - Removes background noise
+                        - Reduces echo
+                        - Improves speech clarity
+                        - Normalizes audio levels
+                        """)
+                        
+                        enhance_tab_voice_input = gr.Audio(
+                            label="🎤 Voice Recording to Enhance",
+                            type="filepath"
+                        )
+
+                        enhance_only_delete_checkbox = gr.Checkbox(
+                            label="Delete uploaded file after enhancement",
+                            value=True,
+                            info="Keeps the uploads folder tidy"
+                        )
+
+                        enhance_only_button = gr.Button(
+                            "✨ Enhance Audio",
+                            variant="primary",
+                            size="lg"
+                        )
+                        
+                    with gr.Column():
+                        enhance_only_status = gr.Textbox(
+                            label="Status",
+                            interactive=False,
+                            lines=3
+                        )
+
+                        enhance_only_output = gr.Audio(
+                            label="🎧 Enhanced Voice Preview",
+                            type="filepath"
+                        )
+
+                        with gr.Accordion("📋 Processing Log", open=False):
+                            enhance_only_log = gr.Textbox(
+                                label="Enhancement Log",
+                                value=get_console_log(),
+                                interactive=False,
+                                lines=15,
+                                max_lines=30
+                            )
+                
+                gr.Markdown("""
+                ---
+                ### 💡 Adobe Enhance Tips
+                - Processing typically takes 2-5 minutes depending on file size
+                - You can also enable automatic enhancement in the **🎙️ Create Podcast** tab
+                - Adobe credentials can be configured via `.env` file (optional)
+                - The service is free to use via Adobe Podcast web interface
                 """)
 
             # Settings Tab - Audio Configuration
-            with gr.Tab("Settings"):
+            with gr.Tab("⚙️ Settings"):
                 gr.Markdown("""
                 ### Configure Audio Settings
                 Customize intro, outro, and background music for your podcasts.
@@ -1327,7 +1392,7 @@ def create_ui():
                 )
 
             # Console Log Tab
-            with gr.Tab("Console Log"):
+            with gr.Tab("📋 Console Log"):
                 gr.Markdown("""
                 ### Application Console Log
                 View detailed logs of podcast creation process and any errors.
@@ -1462,10 +1527,16 @@ def create_ui():
         )
 
         # Update timeline when voice file is uploaded
+        def update_on_voice_upload(voice_file):
+            """Update both timeline and suggested filename when voice is uploaded."""
+            timeline = preview_timeline(voice_file)
+            suggested_name = suggest_podcast_name(voice_file)
+            return timeline, suggested_name
+        
         voice_input.change(
-            fn=preview_timeline,
+            fn=update_on_voice_upload,
             inputs=[voice_input],
-            outputs=[timeline_html]
+            outputs=[timeline_html, output_name_input]
         )
 
         create_button_event = create_button.click(
@@ -1481,9 +1552,10 @@ def create_ui():
             outputs=[enhance_only_log]
         )
 
+        # Adobe Enhance tab handlers
         enhance_only_button_event = enhance_only_button.click(
             fn=enhance_audio_only_handler,
-            inputs=[voice_input, enhance_only_delete_checkbox],
+            inputs=[enhance_tab_voice_input, enhance_only_delete_checkbox],
             outputs=[enhance_only_status,
                      enhance_only_output, enhance_only_log]
         )
