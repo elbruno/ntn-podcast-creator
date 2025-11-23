@@ -18,6 +18,10 @@ Welcome to the **NTN Podcast Creator**! This application helps you create profes
 
 ### What Can You Do?
 
+- ✅ **Smart Episode Naming**: Auto-suggested names with date (yymmdd) + your filename
+- ✅ **Multi-Tab Interface**: Easy navigation with dedicated tabs for different tasks
+- ✅ **AI Audio Denoising**: Clean voice recordings using machine learning (enabled by default)
+- ✅ **Adobe Enhance Integration**: Standalone tab for audio enhancement or automatic during podcast creation
 - ✅ Add custom intro and outro audio to your podcast
 - ✅ Mix background music that automatically loops to match your recording
 - ✅ Control background music volume with precision - both globally and per-track
@@ -28,6 +32,7 @@ Welcome to the **NTN Podcast Creator**! This application helps you create profes
 - ✅ View all background tracks and their volumes in the visual timeline
 - ✅ Save all settings automatically for future podcast episodes
 - ✅ Export professional MP3 files ready for distribution
+- ✅ Download cleaned voice audio separately for other uses
 
 ---
 
@@ -127,47 +132,78 @@ Access at `http://localhost:7860`
 
 ## Interface Overview
 
-![NTN Podcast Creator Interface](https://github.com/user-attachments/assets/84e1807d-889c-4546-8614-6aef13d2c798)
+![NTN Podcast Creator Interface](https://github.com/user-attachments/assets/d4d6010f-fec0-4a44-b15c-a2fe40809dc6)
 
-The interface is divided into 6 main sections:
+The interface features a modern tabbed layout for easy navigation:
 
-### 1. Upload Your Podcast Voice Recording
-- **Purpose:** Upload your main podcast audio file
-- **Supported formats:** MP3, WAV, M4A, OGG, and other common audio formats
-- **Options:**
-  - Upload a file from your computer
-  - Record audio directly (if your browser supports it)
+### Tabs Overview
 
-### 2. Optional: Set Intro Audio
-- **Purpose:** Add audio that plays before your main recording
-- **Use cases:** Theme music, podcast intro jingle, sponsor message
-- **Status display:** Shows confirmation when intro is uploaded
+#### 🎙️ Create Podcast Tab (Main Tab)
+The primary workspace for creating your podcast episodes.
 
-### 3. Optional: Set Outro Audio
-- **Purpose:** Add audio that plays after your main recording
-- **Use cases:** Closing music, call-to-action, credits
-- **Status display:** Shows confirmation when outro is uploaded
+**Key Elements:**
+- **Voice Recording Upload:** Upload your main podcast audio file
+  - Supported formats: MP3, WAV, M4A, OGG, and other common audio formats
+  - Options: Upload from computer or record directly in browser
+- **Podcast Episode Name:** Auto-suggested based on today's date (yymmdd) + your file name
+  - Example: "251123_my_podcast" for a file uploaded on November 23, 2025
+  - Fully editable - modify as needed
+- **⚙️ Options Accordion:**
+  - Delete voice recording after creation (saves storage)
+  - Trim silence from voice recording
+  - Clean audio using AI denoiser (recommended)
+  - Apply Adobe Enhance (optional, adds 2-5 minutes processing time)
+- **Timeline Preview:** Visual representation of how your podcast segments are arranged
+- **Status Display:** Real-time feedback during processing
+- **Download Areas:**
+  - Your Podcast: The final mixed episode
+  - Cleaned Voice: AI-denoised audio (if denoising enabled)
+  - Settings Download & Import: Export/import configuration
 
-### 4. Optional: Add Background Music
-- **Purpose:** Add background music tracks that play throughout your podcast
-- **Features:**
-  - Upload multiple tracks
-  - Random selection (one track chosen per podcast creation)
-  - Automatic looping to match your podcast duration
-  - View list of all uploaded background tracks
-  - Clear all tracks with one button
+#### ✨ Adobe Enhance Tab
+Dedicated workspace for standalone audio enhancement.
 
-### 5. Configure Background Volume
-- **Purpose:** Adjust how loud the background music is relative to your voice
-- **Range:** 0% to 50%
-- **Recommended:** 10-12% for clear voice quality
-- **Live preview:** Shows current volume setting
+![Adobe Enhance Tab](https://github.com/user-attachments/assets/6f086408-0b87-49e4-b465-0714e4c82188)
 
-### 6. Create Your Podcast
-- **Output filename:** Choose the name for your final podcast (without .mp3 extension)
-- **Create button:** Process and mix all audio elements
-- **Status:** Real-time feedback during processing
-- **Download:** Play or download your finished podcast
+**Purpose:** Clean and enhance audio files using Adobe's AI before creating podcasts
+**Features:**
+- Upload voice recordings for enhancement
+- 2-5 minute processing time
+- Preview enhanced audio
+- Download enhanced files for other uses
+- Detailed processing logs
+
+**Use Cases:**
+- Pre-process audio before podcast creation
+- Clean recordings for other projects
+- Test Adobe Enhance without creating a full podcast
+
+#### ⚙️ Settings Tab
+Configure audio files and volume settings.
+
+**Sections:**
+1. **Intro Audio:** Upload and manage intro audio that plays before your recording
+2. **Outro Audio:** Upload and manage outro audio that plays after your recording
+3. **Background Music:** Add and manage multiple background tracks
+   - Upload multiple tracks
+   - Delete individual tracks
+   - Play/preview tracks
+   - Set individual volume for each track
+   - Apply global volume to all tracks
+4. **Volume Settings:**
+   - Global volume control (0-50%, recommended: 10-12%)
+   - Individual track volume adjustment
+   - Preview tracks with applied volume
+
+#### 📋 Console Log Tab
+View detailed processing logs and troubleshooting information.
+
+**Shows:**
+- Podcast creation progress
+- Adobe Enhance processing status
+- Error messages and warnings
+- Configuration changes
+- File operations
 
 ---
 
@@ -175,75 +211,126 @@ The interface is divided into 6 main sections:
 
 ### Basic Workflow: Creating Your First Podcast
 
-#### Step 1: Upload Your Main Voice Recording
+#### Step 1: Upload Your Main Voice Recording (🎙️ Create Podcast Tab)
 
-1. Click on the **"Main Voice Recording"** upload area
-2. Select your podcast audio file from your computer
-3. Wait for the upload to complete
-4. You'll see a waveform or audio player appear
+1. Navigate to the **🎙️ Create Podcast** tab (default tab)
+2. Click on the **"🎤 Voice Recording (Required)"** upload area
+3. Select your podcast audio file from your computer
+4. Wait for the upload to complete
+5. Notice the **Podcast Episode Name** field automatically fills with today's date + your filename
+   - Example: "251123_my_recording" for a file uploaded on November 23, 2025
+6. Edit the episode name if desired
+7. The timeline preview will update showing your recording duration
 
 **💡 Tip:** Make sure your voice recording is already edited and ready. This tool combines audio but doesn't edit individual tracks.
 
-#### Step 2: (Optional) Add an Intro
+#### Step 2: (Optional) Configure Processing Options
 
-1. Click on the **"Intro Audio"** upload area
+Expand the **⚙️ Options** accordion to adjust:
+
+1. **Delete voice recording after creation** (enabled by default)
+   - Saves storage space by removing the uploaded file after processing
+2. **Trim silence from voice recording** (enabled by default)
+   - Automatically removes silence from start and end
+3. **Clean audio using AI denoiser** (enabled by default, recommended)
+   - Uses machine learning to remove background noise
+   - Results in clearer, more professional sound
+4. **Apply Adobe Enhance** (disabled by default, optional)
+   - Uses Adobe's AI to further enhance audio quality
+   - Adds 2-5 minutes to processing time
+   - Alternatively, use the **✨ Adobe Enhance** tab for standalone processing
+
+**💡 Tip:** For best results, keep AI denoiser enabled. Only enable Adobe Enhance if you need additional processing.
+
+#### Step 3: (Optional) Configure Audio Settings (⚙️ Settings Tab)
+
+Switch to the **⚙️ Settings** tab to add intro, outro, or background music:
+
+##### Add an Intro
+
+1. In the **Intro Audio** section, click the **"Upload New Intro"** button
 2. Select your intro audio file
-3. The "Intro Status" field will confirm the upload
-4. Your intro will play before your main recording
+3. The current intro display will update
+4. Play the intro in the audio player to verify
 
 **💡 Tip:** Keep intros short (10-30 seconds) to maintain listener engagement.
 
-#### Step 3: (Optional) Add an Outro
+##### Add an Outro
 
-1. Click on the **"Outro Audio"** upload area
+1. In the **Outro Audio** section, click the **"Upload New Outro"** button
 2. Select your outro audio file
-3. The "Outro Status" field will confirm the upload
+3. The current outro display will update
+4. Play the outro in the audio player to verify
 4. Your outro will play after your main recording
 
 **💡 Tip:** Use outros to encourage listeners to subscribe, rate, or visit your website.
 
-#### Step 4: (Optional) Add Background Music
+##### Add Background Music
 
-1. Click on the **"Upload Background Music Track"** area
+1. In the **Background Music** section, click the **"Upload Background Track"** button
 2. Select a music file
-3. Click the **"Add Background Track"** button
-4. The track appears in the "Current Background Tracks" list
+3. Click the **"Add Track"** button
+4. The track appears in the "Current Tracks" list
 5. Repeat to add more tracks (optional)
 
-**💡 Tip:** Upload multiple tracks for variety. The app randomly selects one each time you create a podcast.
+**💡 Tip:** Upload multiple tracks for variety. The app randomly selects and mixes tracks to match your podcast duration.
 
-**Features:**
-- **Random selection:** One track is chosen randomly from your library
-- **Automatic looping:** The selected track repeats to fill your entire podcast duration
-- **Track management:** View all uploaded tracks and clear them if needed
+##### Adjust Volume Settings
 
-#### Step 5: Adjust Background Music Volume
+**Global Volume Control:**
+1. Use the **"Default Background Music Volume (%)"** slider (0-50%)
+2. Recommended: 10-12% for clear voice quality
+3. Click **"📢 Apply Volume to All Tracks"** to set all tracks to the same volume
 
-1. Use the slider under **"Background Music Volume (%)"**
-2. Drag left to decrease, right to increase
-3. Recommended: 10-12% for clear voice
-4. The "Volume Status" updates as you adjust
+**Individual Track Volume:**
+1. Select a track from the dropdown
+2. Use the **"Selected Track Volume (%)"** slider to adjust
+3. Preview the track with applied volume in the audio player below
+4. Each track can have its own volume level
 
-**Volume Guidelines:**
-- **5-8%:** Very subtle background ambiance
-- **10-12%:** Recommended for most podcasts (clear voice, pleasant background)
-- **15-20%:** More prominent music (ensure voice remains clear)
-- **25%+:** Only for segments without speaking
+#### Step 4: Create Your Podcast (🎙️ Create Podcast Tab)
 
-#### Step 6: Create Your Podcast
+Return to the **🎙️ Create Podcast** tab:
 
-1. Enter a filename in **"Output Filename"** (without .mp3)
-   - Example: `episode_001` or `my_awesome_podcast`
+1. Review the automatically generated episode name or modify it
+2. Check the timeline preview to see your podcast structure
+3. Verify your processing options in the **⚙️ Options** accordion
+4. Click the **"🎬 Create Podcast"** button
+5. Wait for processing to complete (progress shown in Status area)
+6. Download your finished podcast from the **"🎧 Your Podcast"** player
+7. Optionally download the **"🎵 Cleaned Voice"** file
 
-2. Click the **"🎬 Create Podcast"** button
+**💡 Tip:** Processing time varies based on file size and options selected:
+- Basic podcast: Few seconds
+- With AI denoiser: 10-30 seconds
+- With Adobe Enhance: 2-5 minutes additional time
 
-3. Wait while the application:
-   - Loads all audio files
-   - Adds intro (if provided)
-   - Adds your main voice recording
-   - Adds outro (if provided)
-   - Creates and loops background music
-   - Mixes background at your specified volume
+### Advanced Workflow: Using Adobe Enhance Standalone
+
+#### When to Use the ✨ Adobe Enhance Tab
+
+Use this tab when you want to:
+- Clean audio files before creating podcasts
+- Enhance recordings for other projects
+- Test Adobe Enhance without full podcast creation
+- Pre-process multiple files
+
+#### Steps:
+
+1. Navigate to the **✨ Adobe Enhance** tab
+2. Read the instructions and tips provided
+3. Upload your voice recording
+4. Choose whether to delete the uploaded file after enhancement
+5. Click **"✨ Enhance Audio"**
+6. Wait 2-5 minutes for processing
+7. Monitor progress in the Processing Log accordion
+8. Download the enhanced audio from the preview player
+
+**💡 Tip:** You can enhance audio in this tab, then upload the enhanced file to the **🎙️ Create Podcast** tab for final podcast creation.
+
+---
+
+## Features in Detail
    - Exports as MP3
 
 4. Progress updates appear in the "Status" field
