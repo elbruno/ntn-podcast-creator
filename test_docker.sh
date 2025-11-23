@@ -197,11 +197,6 @@ else
     # Non-interactive mode - skip cleanup prompts
     echo "Note: Running in non-interactive mode. Use --cleanup flag for automatic cleanup."
 fi
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        rm -rf test_docker
-        echo "✓ Test directories removed"
-    fi
-fi
 
 echo ""
 echo "Happy podcasting! 🎙️"
