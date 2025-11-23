@@ -9,6 +9,7 @@ from typing import Optional, List
 from audio_processor import AudioProcessor
 from config_manager import ConfigManager
 from adobe_audio_enhancer import enhance_audio_file
+from audio_denoiser_processor import denoise_audio_file
 
 
 # Initialize components
@@ -766,6 +767,66 @@ def create_podcast_handler(voice_file, output_name, delete_voice, trim_silence, 
         return error_msg, None, None, get_console_log()
 
 
+def denoise_audio_only_handler(voice_file, delete_after):
+    """Run AI Denoiser as a standalone preprocessing step.
+
+    Args:
+        voice_file: Uploaded voice file to denoise
+        delete_after: Whether to delete the uploaded original after processing
+
+    Returns:
+        Tuple of (status message, denoised audio file path or None, console log)
+    """
+    log_message("=" * 50)
+    log_message("Starting standalone AI Denoiser run")
+
+    if voice_file is None:
+        log_message("Error: Please upload a voice recording to denoise")
+        return "Error: Please upload a voice recording", None, get_console_log()
+
+    saved_voice = save_uploaded_file(voice_file, "denoise")
+    if not saved_voice:
+        log_message("Error: Could not save uploaded voice file")
+        return "Error: Could not save uploaded voice file", None, get_console_log()
+
+    try:
+        denoised_path = denoise_audio_file(
+            input_file=saved_voice,
+            enabled=True,
+            log_callback=log_message
+        )
+
+        if delete_after and os.path.exists(saved_voice):
+            try:
+                os.remove(saved_voice)
+                log_message(
+                    f"Deleted original upload: {os.path.basename(saved_voice)}")
+            except Exception as delete_error:
+                log_message(
+                    f"Warning: Unable to delete original upload: {delete_error}")
+
+        if denoised_path and os.path.exists(denoised_path) and denoised_path != saved_voice:
+            log_message(
+                f"Standalone denoising ready: {os.path.basename(denoised_path)}")
+            log_message("=" * 50)
+            return f"✓ Denoised audio ready: {os.path.basename(denoised_path)}", denoised_path, get_console_log()
+        elif denoised_path == saved_voice:
+            log_message(
+                "Audio denoiser skipped processing (not available or file too large)")
+            log_message("=" * 50)
+            return "Audio denoiser skipped - check console log for details", denoised_path, get_console_log()
+
+        log_message(
+            "AI Denoiser returned no file. Please check console log for details.")
+        log_message("=" * 50)
+        return "Denoising failed. Please check the console log for details.", None, get_console_log()
+
+    except Exception as exc:
+        log_message(f"Error denoising audio: {exc}")
+        log_message("=" * 50)
+        return f"Error denoising audio: {exc}", None, get_console_log()
+
+
 def enhance_audio_only_handler(voice_file, delete_after):
     """Run Adobe Enhance as a standalone preprocessing step.
 
@@ -1105,7 +1166,81 @@ def create_ui():
                 - Background tracks are randomly mixed to match your recording length
                 - Generated podcasts are saved in the `outputs/` directory
                 - Configure intro, outro, and background music in the **⚙️ Settings** tab
-                - Use the **✨ Adobe Enhance** tab to clean audio files before creating podcasts
+                - Use the **🤖 AI Denoiser** tab to clean audio files with machine learning
+                - Use the **✨ Adobe Enhance** tab to enhance audio files with Adobe AI
+                """)
+
+            # AI Denoiser Tab - Standalone Audio Denoising
+            with gr.Tab("🤖 AI Denoiser"):
+                gr.Markdown("""
+                ### Clean Audio with AI-Based Noise Removal
+                Use machine learning to remove background noise from your audio recordings.
+                This is a standalone tool - upload audio, clean it, and download the result.
+                """)
+                
+                with gr.Row():
+                    with gr.Column():
+                        gr.Markdown("""
+                        **How to use:**
+                        1. Upload a voice recording below
+                        2. Click "Clean Audio"
+                        3. Wait for processing (usually under 30 seconds)
+                        4. Download the cleaned audio
+                        
+                        **What it does:**
+                        - Removes background noise using AI
+                        - Preserves speech quality
+                        - Works best with files under 10MB
+                        - No cloud processing - runs locally
+                        """)
+                        
+                        denoise_tab_voice_input = gr.Audio(
+                            label="🎤 Voice Recording to Clean",
+                            type="filepath"
+                        )
+
+                        denoise_only_delete_checkbox = gr.Checkbox(
+                            label="Delete uploaded file after cleaning",
+                            value=True,
+                            info="Keeps the uploads folder tidy"
+                        )
+
+                        denoise_only_button = gr.Button(
+                            "🤖 Clean Audio",
+                            variant="primary",
+                            size="lg"
+                        )
+                        
+                    with gr.Column():
+                        denoise_only_status = gr.Textbox(
+                            label="Status",
+                            interactive=False,
+                            lines=3
+                        )
+
+                        denoise_only_output = gr.Audio(
+                            label="🎧 Cleaned Audio Preview",
+                            type="filepath"
+                        )
+
+                        with gr.Accordion("📋 Processing Log", open=False):
+                            denoise_only_log = gr.Textbox(
+                                label="Denoising Log",
+                                value=get_console_log(),
+                                interactive=False,
+                                lines=15,
+                                max_lines=30
+                            )
+                
+                gr.Markdown("""
+                ---
+                ### 💡 AI Denoiser Tips
+                - Processing is very fast, typically under 30 seconds
+                - Works best with recordings under 10MB
+                - Larger files will be skipped automatically with a warning
+                - You can also enable automatic denoising in the **🎙️ Create Podcast** tab
+                - No internet connection required - everything runs on your machine
+                - Install `audio-denoiser` package for this feature to work
                 """)
 
             # Adobe Enhance Tab - Standalone Enhancement
@@ -1552,6 +1687,20 @@ def create_ui():
             outputs=[enhance_only_log]
         )
 
+        # AI Denoiser tab handlers
+        denoise_only_button_event = denoise_only_button.click(
+            fn=denoise_audio_only_handler,
+            inputs=[denoise_tab_voice_input, denoise_only_delete_checkbox],
+            outputs=[denoise_only_status,
+                     denoise_only_output, denoise_only_log]
+        )
+
+        denoise_only_button_event.then(
+            fn=get_console_log,
+            inputs=[],
+            outputs=[console_output]
+        )
+
         # Adobe Enhance tab handlers
         enhance_only_button_event = enhance_only_button.click(
             fn=enhance_audio_only_handler,
@@ -1581,6 +1730,12 @@ def create_ui():
         refresh_log_event.then(
             fn=get_console_log,
             inputs=[],
+            outputs=[denoise_only_log]
+        )
+
+        refresh_log_event.then(
+            fn=get_console_log,
+            inputs=[],
             outputs=[enhance_only_log]
         )
 
@@ -1588,6 +1743,12 @@ def create_ui():
             fn=clear_console_log,
             inputs=[],
             outputs=[console_output]
+        )
+
+        clear_log_event.then(
+            fn=get_console_log,
+            inputs=[],
+            outputs=[denoise_only_log]
         )
 
         clear_log_event.then(
