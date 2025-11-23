@@ -2,8 +2,15 @@
 
 # Docker Test Script for NTN Podcast Creator
 # This script helps verify your Docker setup is working correctly
+# Usage: ./test_docker.sh [--cleanup]
 
 set -e
+
+# Parse arguments
+AUTO_CLEANUP=false
+if [[ "$1" == "--cleanup" ]]; then
+    AUTO_CLEANUP=true
+fi
 
 echo "=================================="
 echo "NTN Podcast Creator - Docker Test"
@@ -101,11 +108,32 @@ fi
 # Check if application is responding
 echo ""
 echo "Testing application endpoint..."
-if curl -s -f http://localhost:7860 > /dev/null; then
-    echo "✓ Application is responding"
+
+# Try curl first, fall back to wget or python if not available
+if command -v curl &> /dev/null; then
+    if curl -s -f http://localhost:7860 > /dev/null 2>&1; then
+        echo "✓ Application is responding"
+    else
+        echo "⚠️  Application may not be fully ready yet"
+        echo "   Try accessing http://localhost:7860 in your browser"
+    fi
+elif command -v wget &> /dev/null; then
+    if wget -q --spider http://localhost:7860 2>&1; then
+        echo "✓ Application is responding"
+    else
+        echo "⚠️  Application may not be fully ready yet"
+        echo "   Try accessing http://localhost:7860 in your browser"
+    fi
+elif command -v python3 &> /dev/null; then
+    if python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:7860', timeout=5)" 2>&1; then
+        echo "✓ Application is responding"
+    else
+        echo "⚠️  Application may not be fully ready yet"
+        echo "   Try accessing http://localhost:7860 in your browser"
+    fi
 else
-    echo "⚠️  Application may not be fully ready yet"
-    echo "   Try accessing http://localhost:7860 in your browser"
+    echo "⚠️  Cannot test endpoint (curl, wget, or python not available)"
+    echo "   Please manually check http://localhost:7860 in your browser"
 fi
 
 echo ""
@@ -140,16 +168,35 @@ echo "  docker stop ntn-podcast-test"
 echo "  docker rm ntn-podcast-test"
 echo "  rm -rf test_docker"
 echo ""
-echo "To clean up now, run:"
-read -p "Stop and remove test container? (y/N) " -n 1 -r
-echo ""
-if [[ $REPLY =~ ^[Yy]$ ]]; then
+
+# Cleanup based on mode
+if [ "$AUTO_CLEANUP" = true ]; then
+    echo "Auto-cleanup enabled, removing test container and directories..."
     docker stop ntn-podcast-test
     docker rm ntn-podcast-test
-    echo "✓ Test container removed"
+    rm -rf test_docker
+    echo "✓ Cleanup complete"
+elif [ -t 0 ]; then
+    # Interactive mode - prompt user
+    echo "To clean up now, run:"
+    read -p "Stop and remove test container? (y/N) " -n 1 -r
     echo ""
-    read -p "Remove test directories? (y/N) " -n 1 -r
-    echo ""
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        docker stop ntn-podcast-test
+        docker rm ntn-podcast-test
+        echo "✓ Test container removed"
+        echo ""
+        read -p "Remove test directories? (y/N) " -n 1 -r
+        echo ""
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            rm -rf test_docker
+            echo "✓ Test directories removed"
+        fi
+    fi
+else
+    # Non-interactive mode - skip cleanup prompts
+    echo "Note: Running in non-interactive mode. Use --cleanup flag for automatic cleanup."
+fi
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         rm -rf test_docker
         echo "✓ Test directories removed"

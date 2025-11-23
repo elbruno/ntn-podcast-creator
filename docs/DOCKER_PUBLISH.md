@@ -80,10 +80,15 @@ docker buildx build \
 ## Versioning Strategy
 
 Use semantic versioning for tags:
-- `latest` - Always points to the most recent stable release
-- `v1.0.0` - Specific version number
-- `v1.0` - Minor version (automatically gets patch updates)
-- `v1` - Major version (automatically gets minor and patch updates)
+- `latest` - Always points to the most recent stable release (use for quick starts and examples)
+- `v1.0.0` - Specific version number (use for production deployments requiring exact versions)
+- `v1.0` - Minor version (receives patch updates automatically, good for production)
+- `v1` - Major version (receives all updates within major version, good for development/testing)
+
+**Recommended Usage:**
+- **Production**: Use specific versions like `v1.0.0` or minor versions like `v1.0` for stability
+- **Development/Testing**: Use `latest` or major versions like `v1` for latest features
+- **Documentation/Examples**: Use `latest` for simplicity
 
 Example:
 ```bash
