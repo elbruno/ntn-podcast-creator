@@ -100,6 +100,12 @@ class NoiseReducer:
 
             # Use first noise_duration seconds as noise sample
             noise_len = int(rate * noise_duration)
+            
+            # Ensure we don't exceed audio length
+            if noise_len > len(data):
+                noise_len = min(int(rate * 0.1), len(data))  # Use 0.1s or all available
+                log(f"Audio shorter than {noise_duration}s, using {noise_len/rate:.2f}s as noise profile")
+            
             noise_clip = data[:noise_len]
 
             log(f"Using first {noise_duration}s as noise profile")

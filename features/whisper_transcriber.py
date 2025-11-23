@@ -130,8 +130,9 @@ class WhisperTranscriber:
         result = self.transcribe(audio_file, output_file, log_callback=log_callback)
 
         if result and output_file:
-            # Generate timestamped version
-            timestamped_file = output_file.replace(".txt", "_timestamped.txt")
+            # Generate timestamped version with safe extension replacement
+            base_name = os.path.splitext(output_file)[0]
+            timestamped_file = f"{base_name}_timestamped.txt"
 
             try:
                 with open(timestamped_file, 'w', encoding='utf-8') as f:

@@ -3,7 +3,8 @@
 import os
 import random
 import math
-from typing import List, Optional, Callable
+import tempfile
+from typing import List, Optional, Callable, Tuple
 from pydub import AudioSegment
 from pydub.silence import detect_leading_silence
 from .adobe_audio_enhancer import enhance_audio_file
@@ -207,7 +208,7 @@ class AudioProcessor:
         generate_transcript: bool = False,
         whisper_model: str = "base",
         log_callback: Optional[Callable[[str], None]] = None
-    ) -> tuple[str, Optional[str], Optional[str]]:
+    ) -> Tuple[str, Optional[str], Optional[str]]:
         """Create complete podcast with intro, outro, and background music.
 
         Args:

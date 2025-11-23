@@ -75,12 +75,22 @@ class LUFSNormalizer:
             # Parse JSON output from stderr
             stderr = result.stderr
 
-            # Find JSON data in output
-            json_start = stderr.rfind("{")
-            json_end = stderr.rfind("}") + 1
+            # Find JSON data in output - look for the last complete JSON object
+            # FFmpeg outputs JSON after "Parsed_loudnorm" in its log
+            json_str = None
+            for line in reversed(stderr.split('\n')):
+                line = line.strip()
+                if line.startswith('{') and line.endswith('}'):
+                    try:
+                        # Try to parse as JSON
+                        test_parse = json.loads(line)
+                        if 'input_i' in test_parse:  # Verify it's loudnorm stats
+                            json_str = line
+                            break
+                    except json.JSONDecodeError:
+                        continue
 
-            if json_start != -1 and json_end > json_start:
-                json_str = stderr[json_start:json_end]
+            if json_str:
                 stats = json.loads(json_str)
                 log(f"Measured loudness: {stats.get('input_i', 'N/A')} LUFS")
                 return stats

@@ -8,6 +8,9 @@ from features.noise_reducer import NoiseReducer, reduce_noise
 from features.lufs_normalizer import LUFSNormalizer, normalize_audio_lufs
 from features.whisper_transcriber import WhisperTranscriber, transcribe_audio
 
+# Test file configuration
+TEST_AUDIO_FILE = "audios/test/test_brunos_project.mp3"
+
 def test_noise_reducer():
     """Test noise reduction with different methods."""
     print("\n" + "="*60)
@@ -15,9 +18,8 @@ def test_noise_reducer():
     print("="*60)
     
     # Use test audio file
-    test_file = "audios/test/test_brunos_project.mp3"
-    if not os.path.exists(test_file):
-        print(f"✗ Test file not found: {test_file}")
+    if not os.path.exists(TEST_AUDIO_FILE):
+        print(f"✗ Test file not found: {TEST_AUDIO_FILE}")
         return False
     
     reducer = NoiseReducer()
@@ -27,7 +29,7 @@ def test_noise_reducer():
     if reducer.is_noisereduce_available():
         print("\n1. Testing Spectral Gating (noisereduce)...")
         output = os.path.join(temp_dir, "test_spectral.wav")
-        result = reducer.reduce_noise_spectral(test_file, output)
+        result = reducer.reduce_noise_spectral(TEST_AUDIO_FILE, output)
         if result and os.path.exists(result):
             size = os.path.getsize(result) / (1024 * 1024)
             print(f"✓ Spectral reduction succeeded: {size:.2f}MB")
@@ -40,7 +42,7 @@ def test_noise_reducer():
     if reducer.is_ffmpeg_rnnoise_available():
         print("\n2. Testing FFmpeg RNNoise...")
         output = os.path.join(temp_dir, "test_rnnoise.wav")
-        result = reducer.reduce_noise_rnnoise(test_file, output)
+        result = reducer.reduce_noise_rnnoise(TEST_AUDIO_FILE, output)
         if result and os.path.exists(result):
             size = os.path.getsize(result) / (1024 * 1024)
             print(f"✓ RNNoise reduction succeeded: {size:.2f}MB")
@@ -57,9 +59,8 @@ def test_lufs_normalizer():
     print("Testing LUFS Normalization")
     print("="*60)
     
-    test_file = "audios/test/test_brunos_project.mp3"
-    if not os.path.exists(test_file):
-        print(f"✗ Test file not found: {test_file}")
+    if not os.path.exists(TEST_AUDIO_FILE):
+        print(f"✗ Test file not found: {TEST_AUDIO_FILE}")
         return False
     
     normalizer = LUFSNormalizer()
@@ -72,7 +73,7 @@ def test_lufs_normalizer():
     output = os.path.join(temp_dir, "test_normalized.wav")
     
     result = normalizer.normalize_lufs(
-        test_file,
+        TEST_AUDIO_FILE,
         output,
         target_lufs=-16.0,
         two_pass=True
@@ -92,9 +93,8 @@ def test_whisper_transcriber():
     print("Testing Whisper Transcription")
     print("="*60)
     
-    test_file = "audios/test/test_brunos_project.mp3"
-    if not os.path.exists(test_file):
-        print(f"✗ Test file not found: {test_file}")
+    if not os.path.exists(TEST_AUDIO_FILE):
+        print(f"✗ Test file not found: {TEST_AUDIO_FILE}")
         return False
     
     print("\nInitializing Whisper (tiny model for quick test)...")
@@ -110,7 +110,7 @@ def test_whisper_transcriber():
         temp_dir = tempfile.mkdtemp()
         output = os.path.join(temp_dir, "test_transcript.txt")
         
-        result = transcriber.transcribe(test_file, output)
+        result = transcriber.transcribe(TEST_AUDIO_FILE, output)
         
         if result and os.path.exists(result.get("output_file", "")):
             with open(result["output_file"], 'r') as f:
