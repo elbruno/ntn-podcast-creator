@@ -321,7 +321,7 @@ ntn-podcast-creator/
 │   ├── USER_MANUAL.md          # Complete user guide
 │   ├── TECHNICAL_IMPLEMENTATION.md # Technical architecture
 │   ├── AUDIO_DENOISING_IMPLEMENTATION.md # AI denoising guide
-│   ├── STRUCTURE_IMPROVEMENTS.md # Project organization guide
+│   ├── docs/STRUCTURE_IMPROVEMENTS.md # Project organization guide
 │   └── RELEASE_NOTES_CHUNKING.md # Latest release notes
 │
 ├── 🚀 scripts/                 # Utility scripts
