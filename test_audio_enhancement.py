@@ -2,6 +2,7 @@
 
 import os
 import sys
+import tempfile
 from adobe_audio_enhancer import AdobeAudioEnhancer, enhance_audio_file
 from config_manager import ConfigManager
 
@@ -56,7 +57,6 @@ def test_enhance_when_disabled():
     print("\nTesting enhancement when disabled...")
     
     # Create a test file using tempfile
-    import tempfile
     with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
         test_file = f.name
         f.write("test audio content")
@@ -76,7 +76,6 @@ def test_enhance_with_fallback():
     print("\nTesting enhancement with fallback...")
     
     # Create a test file using tempfile
-    import tempfile
     with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
         test_file = f.name
         f.write("test audio content")
