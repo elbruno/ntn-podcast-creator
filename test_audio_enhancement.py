@@ -20,10 +20,10 @@ def test_enhancer_availability():
     """Test service availability check."""
     print("\nTesting service availability check...")
     enhancer = AdobeAudioEnhancer(playwright_available=True)
-    assert enhancer.is_available() == True
+    assert enhancer.is_available() is True
     
     enhancer_unavailable = AdobeAudioEnhancer(playwright_available=False)
-    assert enhancer_unavailable.is_available() == False
+    assert enhancer_unavailable.is_available() is False
     print("✓ Service availability check works correctly")
 
 
@@ -33,17 +33,17 @@ def test_config_manager():
     config = ConfigManager("test_config.json")
     
     # Test default value
-    assert config.get_enhance_audio() == False
+    assert config.get_enhance_audio() is False
     print("  ✓ Default enhancement setting is False")
     
     # Test setting to True
     config.set_enhance_audio(True)
-    assert config.get_enhance_audio() == True
+    assert config.get_enhance_audio() is True
     print("  ✓ Can set enhancement to True")
     
     # Test setting to False
     config.set_enhance_audio(False)
-    assert config.get_enhance_audio() == False
+    assert config.get_enhance_audio() is False
     print("  ✓ Can set enhancement to False")
     
     # Clean up test config
