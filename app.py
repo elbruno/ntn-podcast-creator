@@ -70,7 +70,9 @@ def get_audio_duration_seconds(file_path: str) -> float:
 
 
 def generate_timeline_chart(voice_file: Optional[str], intro_file: Optional[str],
-                            outro_file: Optional[str], has_background: bool) -> str:
+                            outro_file: Optional[str], has_background: bool, 
+                            background_tracks: Optional[List[str]] = None,
+                            track_volumes: Optional[dict] = None) -> str:
     """Generate a visual timeline chart showing how audio segments are organized.
 
     Args:
@@ -78,6 +80,8 @@ def generate_timeline_chart(voice_file: Optional[str], intro_file: Optional[str]
         intro_file: Path to intro audio
         outro_file: Path to outro audio
         has_background: Whether background music will be applied
+        background_tracks: List of background track paths
+        track_volumes: Dictionary mapping track paths to volumes
 
     Returns:
         HTML string with timeline visualization
@@ -216,6 +220,18 @@ def generate_timeline_chart(voice_file: Optional[str], intro_file: Optional[str]
         html += "<div style='margin: 3px 0;'>🔵 <strong>OUTRO</strong> - Plays last (no background music)</div>"
     if has_background and voice_duration > 0:
         html += "<div style='margin: 3px 0;'>🎵 <strong>BACKGROUND MUSIC</strong> - Plays only during voice recording</div>"
+        
+        # Show background tracks with volumes
+        if background_tracks and len(background_tracks) > 0:
+            html += "<div style='margin-top: 10px; padding: 8px; background: #f8f9fa; border-radius: 3px;'>"
+            html += "<div style='font-size: 12px; font-weight: bold; margin-bottom: 5px;'>🎼 Background Tracks:</div>"
+            for track in background_tracks:
+                if os.path.exists(track):
+                    track_name = os.path.basename(track)
+                    volume = track_volumes.get(track, config_manager.get_volume()) if track_volumes else config_manager.get_volume()
+                    html += f"<div style='font-size: 11px; margin-left: 10px;'>• {track_name} - Volume: {volume}%</div>"
+            html += "</div>"
+            
     if overlap_seconds > 0:
         html += "<div style='margin: 3px 0; padding: 5px; background: #fff3cd; border-radius: 3px;'>⚡ <strong>Overlaps:</strong> 1-second smooth transitions between segments (shown as lighter areas)</div>"
 
@@ -260,10 +276,11 @@ def preview_timeline(voice_file: Optional[str]) -> str:
     intro_file = config_manager.get_intro()
     outro_file = config_manager.get_outro()
     background_tracks = config_manager.get_background_tracks()
+    track_volumes = config_manager.get_all_track_volumes()
     has_background = background_tracks is not None and len(
         background_tracks) > 0
 
-    return generate_timeline_chart(voice_file, intro_file, outro_file, has_background)
+    return generate_timeline_chart(voice_file, intro_file, outro_file, has_background, background_tracks, track_volumes)
 
 
 def save_uploaded_file(uploaded_file, prefix: str = "file") -> Optional[str]:
@@ -546,6 +563,87 @@ def update_volume(volume):
     return f"Volume set to {int(volume)}%"
 
 
+def apply_volume_to_all():
+    """Apply current global volume to all tracks."""
+    volume = config_manager.get_volume()
+    config_manager.apply_volume_to_all_tracks(volume)
+    log_message(f"Applied {volume}% volume to all background tracks")
+    return f"Applied {volume}% volume to all tracks"
+
+
+def update_track_volume(track_choice, new_volume):
+    """Update volume for a specific track."""
+    if track_choice is None:
+        return "No track selected", None, None
+    
+    # Find the track path
+    display_list, paths = get_background_tracks_list()
+    try:
+        idx = display_list.index(track_choice)
+        track_path = paths[idx]
+        
+        # Update the volume for this track
+        config_manager.set_track_volume(track_path, int(new_volume))
+        log_message(f"Set volume for {os.path.basename(track_path)} to {int(new_volume)}%")
+        
+        # Generate preview audio with new volume
+        preview_audio = generate_volume_preview(track_path, int(new_volume))
+        
+        return f"Volume for {os.path.basename(track_path)} set to {int(new_volume)}%", preview_audio, preview_audio
+    except (ValueError, IndexError):
+        return "Track not found", None, None
+
+
+def generate_volume_preview(track_path: str, volume: int) -> Optional[str]:
+    """Generate a preview of the track with applied volume.
+    
+    Args:
+        track_path: Path to the track
+        volume: Volume percentage to apply
+        
+    Returns:
+        Path to the preview file or None
+        
+    Note:
+        Generated temporary files persist until system cleanup (temp directory
+        is periodically cleaned by OS) or until the application is restarted.
+        This is acceptable for preview files as they are small and short-lived.
+    """
+    try:
+        from pydub import AudioSegment
+        import tempfile
+        
+        # Load the track
+        audio = AudioSegment.from_file(track_path)
+        
+        # Apply volume
+        audio_with_volume = audio_processor.reduce_volume(audio, volume)
+        
+        # Save to temp file - persists until OS cleanup or app restart
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3", dir=tempfile.gettempdir())
+        audio_with_volume.export(temp_file.name, format="mp3")
+        
+        return temp_file.name
+    except Exception as e:
+        log_message(f"Error generating volume preview: {e}")
+        return None
+
+
+def get_track_volume(track_choice):
+    """Get volume setting for the selected track."""
+    if track_choice is None:
+        return config_manager.get_volume()
+    
+    # Find the track path
+    display_list, paths = get_background_tracks_list()
+    try:
+        idx = display_list.index(track_choice)
+        track_path = paths[idx]
+        return config_manager.get_track_volume(track_path)
+    except (ValueError, IndexError):
+        return config_manager.get_volume()
+
+
 def get_current_settings():
     """Get current audio settings as formatted text."""
     intro = config_manager.get_intro()
@@ -607,6 +705,7 @@ def create_podcast_handler(voice_file, output_name, delete_voice, trim_silence):
     outro_path = config_manager.get_outro()
     background_tracks = config_manager.get_background_tracks()
     volume = config_manager.get_volume()
+    track_volumes = config_manager.get_all_track_volumes()
 
     log_message(f"Configuration loaded:")
     log_message(f"  Intro: {intro_path if intro_path else 'None'}")
@@ -630,6 +729,7 @@ def create_podcast_handler(voice_file, output_name, delete_voice, trim_silence):
             outro_file=outro_path,
             background_files=background_tracks if background_tracks else None,
             background_volume=volume,
+            track_volumes=track_volumes if track_volumes else None,
             output_file=output_path,
             trim_silence=trim_silence,
             log_callback=log_message
@@ -652,6 +752,132 @@ def create_podcast_handler(voice_file, output_name, delete_voice, trim_silence):
         log_message(error_msg)
         log_message("=" * 50)
         return error_msg, None, get_console_log()
+
+
+def export_settings() -> str:
+    """Export current settings to a JSON file.
+    
+    Returns:
+        Path to the exported settings file
+    """
+    import json
+    import datetime
+    
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"podcast_settings_{timestamp}.json"
+    filepath = os.path.join("outputs", filename)
+    
+    try:
+        # Get current configuration
+        settings = {
+            "intro_file": config_manager.get_intro(),
+            "outro_file": config_manager.get_outro(),
+            "background_tracks": config_manager.get_background_tracks(),
+            "background_volume": config_manager.get_volume(),
+            "track_volumes": config_manager.get_all_track_volumes(),
+            "last_output_name": config_manager.get_last_output_name(),
+            "export_date": datetime.datetime.now().isoformat()
+        }
+        
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(settings, f, indent=2)
+        
+        log_message(f"Settings exported to: {filename}")
+        return filepath
+    except Exception as e:
+        log_message(f"Error exporting settings: {e}")
+        return None
+
+
+def import_settings(settings_file) -> str:
+    """Import settings from a JSON file.
+    
+    Args:
+        settings_file: Uploaded settings file
+        
+    Returns:
+        Status message
+    """
+    import json
+    
+    if settings_file is None:
+        return "No settings file provided"
+    
+    try:
+        # Handle Gradio file path
+        if isinstance(settings_file, str):
+            file_path = settings_file
+        elif hasattr(settings_file, 'name'):
+            file_path = settings_file.name
+        else:
+            file_path = str(settings_file)
+        
+        # Basic security check - ensure it's a JSON file
+        if not file_path.lower().endswith('.json'):
+            return "Error: Only JSON files are supported"
+        
+        # Check if file exists
+        if not os.path.exists(file_path):
+            return "Error: Settings file not found"
+        
+        # Read settings file with size limit (1MB max)
+        file_size = os.path.getsize(file_path)
+        if file_size > 1024 * 1024:  # 1MB
+            return "Error: Settings file too large (max 1MB)"
+        
+        # Validate JSON content
+        with open(file_path, 'r', encoding='utf-8') as f:
+            try:
+                settings = json.load(f)
+            except json.JSONDecodeError as e:
+                return f"Error: Invalid JSON format - {str(e)}"
+        
+        # Ensure settings is a dictionary
+        if not isinstance(settings, dict):
+            return "Error: Settings file must contain a JSON object"
+        
+        # Validate and import settings
+        if "intro_file" in settings:
+            intro = settings["intro_file"]
+            if intro and os.path.exists(intro):
+                config_manager.update_intro(intro)
+        
+        if "outro_file" in settings:
+            outro = settings["outro_file"]
+            if outro and os.path.exists(outro):
+                config_manager.update_outro(outro)
+        
+        if "background_tracks" in settings:
+            tracks = settings["background_tracks"]
+            valid_tracks = [t for t in tracks if os.path.exists(t)]
+            if valid_tracks:
+                config_manager.update_background_tracks(valid_tracks)
+        
+        if "background_volume" in settings:
+            config_manager.update_volume(settings["background_volume"])
+        
+        if "track_volumes" in settings:
+            # Import track volumes
+            track_volumes = settings["track_volumes"]
+            for track, volume in track_volumes.items():
+                if os.path.exists(track):
+                    config_manager.set_track_volume(track, volume)
+        
+        if "last_output_name" in settings:
+            config_manager.update_last_output_name(settings["last_output_name"])
+        
+        log_message(f"Settings imported successfully from {os.path.basename(file_path)}")
+        return f"✓ Settings imported successfully from {os.path.basename(file_path)}"
+        
+    except json.JSONDecodeError as e:
+        error_msg = f"Error: Invalid settings file format - {e}"
+        log_message(error_msg)
+        return error_msg
+    except Exception as e:
+        error_msg = f"Error importing settings: {e}"
+        log_message(error_msg)
+        return error_msg
+
 
 
 def create_ui():
@@ -722,6 +948,30 @@ def create_ui():
                             label="Your Podcast",
                             type="filepath"
                         )
+                        
+                        gr.Markdown("**Download Options**")
+                        with gr.Row():
+                            export_settings_button = gr.Button(
+                                "💾 Download Settings",
+                                variant="secondary",
+                                size="sm"
+                            )
+                            settings_file_output = gr.File(
+                                label="Settings File",
+                                visible=True
+                            )
+                        
+                        gr.Markdown("**Import Settings**")
+                        with gr.Row():
+                            import_settings_input = gr.File(
+                                label="Upload Settings File (JSON)",
+                                file_types=[".json"]
+                            )
+                            import_status = gr.Textbox(
+                                label="Import Status",
+                                interactive=False
+                            )
+
 
                 gr.Markdown("""
                 ---
@@ -872,17 +1122,51 @@ def create_ui():
                         gr.Markdown("---")
 
                         gr.Markdown("#### Volume Settings")
+                        
+                        gr.Markdown("**Global Volume Control**")
                         volume_slider = gr.Slider(
                             minimum=0,
                             maximum=50,
                             value=saved_volume,
                             step=1,
-                            label="Background Music Volume (%)",
+                            label="Default Background Music Volume (%)",
                             info="Recommended: 10-12%"
                         )
+                        
+                        apply_to_all_button = gr.Button(
+                            "📢 Apply Volume to All Tracks",
+                            variant="primary",
+                            size="sm"
+                        )
+                        
                         volume_status = gr.Textbox(
                             label="Volume Status",
                             interactive=False
+                        )
+                        
+                        gr.Markdown("---")
+                        
+                        gr.Markdown("**Individual Track Volume**")
+                        gr.Markdown("*Select a track above to adjust its volume individually*")
+                        
+                        track_volume_slider = gr.Slider(
+                            minimum=0,
+                            maximum=50,
+                            value=saved_volume,
+                            step=1,
+                            label="Selected Track Volume (%)",
+                            info="Volume for the track selected above"
+                        )
+                        
+                        track_volume_status = gr.Textbox(
+                            label="Track Volume Status",
+                            interactive=False
+                        )
+                        
+                        # Audio player with volume applied
+                        bg_track_player_with_volume = gr.Audio(
+                            label="Preview Track with Applied Volume",
+                            type="filepath"
                         )
 
                 gr.Markdown("""
@@ -1018,6 +1302,32 @@ def create_ui():
             inputs=[volume_slider],
             outputs=[volume_status]
         )
+        
+        # Apply volume to all tracks
+        apply_to_all_button.click(
+            fn=apply_volume_to_all,
+            inputs=[],
+            outputs=[volume_status]
+        )
+        
+        # When track is selected, update the track volume slider
+        def update_track_volume_slider(track_choice):
+            volume = get_track_volume(track_choice)
+            return volume
+        
+        bg_track_selector.change(
+            fn=update_track_volume_slider,
+            inputs=[bg_track_selector],
+            outputs=[track_volume_slider]
+        )
+        
+        # When track volume slider changes, update the track volume and generate preview
+        track_volume_slider.change(
+            fn=update_track_volume,
+            inputs=[bg_track_selector, track_volume_slider],
+            outputs=[track_volume_status, bg_track_player_with_volume, bg_track_player]
+        )
+
 
         # Update timeline when voice file is uploaded
         voice_input.change(
@@ -1049,6 +1359,20 @@ def create_ui():
             fn=clear_console_log,
             inputs=[],
             outputs=[console_output]
+        )
+        
+        # Export settings
+        export_settings_button.click(
+            fn=export_settings,
+            inputs=[],
+            outputs=[settings_file_output]
+        )
+        
+        # Import settings
+        import_settings_input.change(
+            fn=import_settings,
+            inputs=[import_settings_input],
+            outputs=[import_status]
         )
 
     return app
