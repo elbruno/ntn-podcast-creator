@@ -675,7 +675,7 @@ def get_current_settings():
     return "\\n".join(settings)
 
 
-def create_podcast_handler(voice_file, output_name, delete_voice, trim_silence, denoise_audio, enhance_audio):
+def create_podcast_handler(voice_file, output_name, delete_voice, trim_silence, denoise_audio, denoise_method, enhance_audio, normalize_lufs, target_lufs, generate_transcript, whisper_model):
     """Handle podcast creation request.
 
     Args:
@@ -683,18 +683,23 @@ def create_podcast_handler(voice_file, output_name, delete_voice, trim_silence, 
         output_name: Desired output filename
         delete_voice: Whether to delete voice file after creation
         trim_silence: Whether to trim silence from start/end
-        denoise_audio: Whether to denoise audio using audio-denoiser
+        denoise_audio: Whether to denoise audio
+        denoise_method: Noise reduction method to use
         enhance_audio: Whether to enhance audio using Adobe Enhance
+        normalize_lufs: Whether to normalize to target LUFS
+        target_lufs: Target LUFS level
+        generate_transcript: Whether to generate transcript
+        whisper_model: Whisper model size to use
 
     Returns:
-        Tuple of (status message, output file path or None, denoised file path or None, console log)
+        Tuple of (status message, output file path or None, denoised file path or None, transcript file path or None, console log)
     """
     log_message("=" * 50)
     log_message("Starting new podcast creation")
 
     if voice_file is None:
         log_message("Error: No voice file provided")
-        return "Error: Please upload a voice recording file", None, None, get_console_log()
+        return "Error: Please upload a voice recording file", None, None, None, get_console_log()
 
     if not output_name or output_name.strip() == "":
         output_name = "podcast_output"
@@ -707,7 +712,7 @@ def create_podcast_handler(voice_file, output_name, delete_voice, trim_silence, 
     voice_path = save_uploaded_file(voice_file, "voice")
     if not voice_path:
         log_message("Error: Could not save voice file")
-        return "Error: Could not save voice file", None, None, get_console_log()
+        return "Error: Could not save voice file", None, None, None, get_console_log()
 
     # Get configuration
     intro_path = config_manager.get_intro()
@@ -723,8 +728,10 @@ def create_podcast_handler(voice_file, output_name, delete_voice, trim_silence, 
         f"  Background tracks: {len(background_tracks) if background_tracks else 0}")
     log_message(f"  Volume: {volume}%")
     log_message(f"  Trim silence: {trim_silence}")
-    log_message(f"  Denoise audio: {denoise_audio}")
+    log_message(f"  Denoise audio: {denoise_audio} (method: {denoise_method})")
     log_message(f"  Enhance audio: {enhance_audio}")
+    log_message(f"  Normalize LUFS: {normalize_lufs} (target: {target_lufs})")
+    log_message(f"  Generate transcript: {generate_transcript} (model: {whisper_model})")
 
     # Create output path
     output_path = os.path.join("outputs", f"{output_name}.mp3")
@@ -733,8 +740,8 @@ def create_podcast_handler(voice_file, output_name, delete_voice, trim_silence, 
     config_manager.update_last_output_name(output_name)
 
     try:
-        # Create podcast
-        result_path, denoised_path = audio_processor.create_podcast(
+        # Create podcast with Phase 2 features
+        result_path, denoised_path, transcript_path = audio_processor.create_podcast(
             voice_file=voice_path,
             intro_file=intro_path,
             outro_file=outro_path,
@@ -744,7 +751,12 @@ def create_podcast_handler(voice_file, output_name, delete_voice, trim_silence, 
             output_file=output_path,
             trim_silence=trim_silence,
             denoise_audio=denoise_audio,
+            denoise_method=denoise_method,
             enhance_audio=enhance_audio,
+            normalize_lufs=normalize_lufs,
+            target_lufs=target_lufs,
+            generate_transcript=generate_transcript,
+            whisper_model=whisper_model,
             log_callback=log_message
         )
 
@@ -758,13 +770,13 @@ def create_podcast_handler(voice_file, output_name, delete_voice, trim_silence, 
 
         log_message(f"✓ Podcast created successfully: {output_name}.mp3")
         log_message("=" * 50)
-        return f"✓ Podcast created successfully: {output_name}.mp3", result_path, denoised_path, get_console_log()
+        return f"✓ Podcast created successfully: {output_name}.mp3", result_path, denoised_path, transcript_path, get_console_log()
 
     except Exception as e:
         error_msg = f"Error creating podcast: {str(e)}"
         log_message(error_msg)
         log_message("=" * 50)
-        return error_msg, None, None, get_console_log()
+        return error_msg, None, None, None, get_console_log()
 
 
 def denoise_audio_only_handler(voice_file, delete_after):
@@ -1084,7 +1096,7 @@ def create_ui():
                             info="Auto-suggested based on date (yymmdd) + your file name"
                         )
 
-                        with gr.Accordion("⚙️ Options", open=True):
+                        with gr.Accordion("⚙️ Basic Options", open=True):
                             delete_voice_checkbox = gr.Checkbox(
                                 label="Delete voice recording after creation",
                                 value=True,
@@ -1097,16 +1109,70 @@ def create_ui():
                                 info="Removes silence from start and end"
                             )
 
+                        with gr.Accordion("🎛️ Phase 2: Advanced Audio Processing", open=False):
+                            gr.Markdown("### Noise Reduction")
+                            
                             denoise_audio_checkbox = gr.Checkbox(
-                                label="Clean audio using AI denoiser (recommended)",
+                                label="Enable noise reduction",
                                 value=config_manager.get_denoise_audio(),
-                                info="Removes background noise using machine learning"
+                                info="Remove background noise from your recording"
                             )
 
+                            denoise_method_dropdown = gr.Dropdown(
+                                label="Noise Reduction Method",
+                                choices=[
+                                    ("AI Denoiser (Recommended)", "audio_denoiser"),
+                                    ("Spectral Gating (noisereduce)", "spectral"),
+                                    ("FFmpeg RNNoise", "rnnoise")
+                                ],
+                                value=config_manager.get_denoise_method(),
+                                info="Choose your preferred noise reduction algorithm"
+                            )
+
+                            gr.Markdown("### Audio Enhancement")
+
                             enhance_audio_checkbox = gr.Checkbox(
-                                label="Apply Adobe Enhance (optional)",
+                                label="Apply Adobe Enhance (cloud-based)",
                                 value=config_manager.get_enhance_audio(),
                                 info="Uses Adobe's AI to improve audio quality (adds 2-5 minutes)"
+                            )
+
+                            gr.Markdown("### Volume Normalization")
+
+                            normalize_lufs_checkbox = gr.Checkbox(
+                                label="Normalize audio to professional LUFS level",
+                                value=config_manager.get_normalize_lufs(),
+                                info="Ensures consistent loudness across episodes"
+                            )
+
+                            target_lufs_slider = gr.Slider(
+                                minimum=-20,
+                                maximum=-10,
+                                value=config_manager.get_target_lufs(),
+                                step=1,
+                                label="Target LUFS Level",
+                                info="-16 for podcasts (recommended), -14 for louder content"
+                            )
+
+                            gr.Markdown("### Automatic Transcription")
+
+                            generate_transcript_checkbox = gr.Checkbox(
+                                label="Generate transcript with Whisper",
+                                value=config_manager.get_generate_transcript(),
+                                info="Creates text transcript of your voice recording"
+                            )
+
+                            whisper_model_dropdown = gr.Dropdown(
+                                label="Whisper Model Size",
+                                choices=[
+                                    ("Tiny (Fastest)", "tiny"),
+                                    ("Base (Recommended)", "base"),
+                                    ("Small (Better Quality)", "small"),
+                                    ("Medium (High Quality)", "medium"),
+                                    ("Large (Best Quality)", "large")
+                                ],
+                                value=config_manager.get_whisper_model(),
+                                info="Larger models are more accurate but slower"
                             )
 
                         create_button = gr.Button(
@@ -1134,6 +1200,11 @@ def create_ui():
                         denoised_audio_output = gr.Audio(
                             label="🎵 Cleaned Voice (Download)",
                             type="filepath",
+                            visible=True
+                        )
+
+                        transcript_output = gr.File(
+                            label="📝 Transcript (Download)",
                             visible=True
                         )
 
@@ -1169,6 +1240,12 @@ def create_ui():
                 - Configure intro, outro, and background music in the **⚙️ Settings** tab
                 - Use the **🤖 AI Denoiser** tab to clean audio files with machine learning
                 - Use the **✨ Adobe Enhance** tab to enhance audio files with Adobe AI
+                
+                ### 🎛️ Phase 2 Features
+                - **Multiple Noise Reduction Methods**: Choose between AI Denoiser, Spectral Gating, or FFmpeg RNNoise
+                - **LUFS Normalization**: Automatically normalize audio to professional broadcast standards (-16 LUFS for podcasts)
+                - **Whisper Transcription**: Generate accurate transcripts with timestamps using OpenAI Whisper
+                - All Phase 2 features are in the "Advanced Audio Processing" accordion above
                 """)
 
             # AI Denoiser Tab - Standalone Audio Denoising
@@ -1678,9 +1755,13 @@ def create_ui():
         create_button_event = create_button.click(
             fn=create_podcast_handler,
             inputs=[voice_input, output_name_input,
-                    delete_voice_checkbox, trim_silence_checkbox, denoise_audio_checkbox, enhance_audio_checkbox],
+                    delete_voice_checkbox, trim_silence_checkbox, 
+                    denoise_audio_checkbox, denoise_method_dropdown,
+                    enhance_audio_checkbox,
+                    normalize_lufs_checkbox, target_lufs_slider,
+                    generate_transcript_checkbox, whisper_model_dropdown],
             outputs=[status_output, audio_output,
-                     denoised_audio_output, console_output]
+                     denoised_audio_output, transcript_output, console_output]
         )
 
         create_button_event.then(
@@ -1766,10 +1847,43 @@ def create_ui():
             outputs=[]
         )
 
+        # Save denoise method when changed
+        denoise_method_dropdown.change(
+            fn=lambda method: config_manager.set_denoise_method(method),
+            inputs=[denoise_method_dropdown],
+            outputs=[]
+        )
+
         # Save enhance audio setting when changed
         enhance_audio_checkbox.change(
             fn=lambda enabled: config_manager.set_enhance_audio(enabled),
             inputs=[enhance_audio_checkbox],
+            outputs=[]
+        )
+
+        # Save LUFS normalization settings
+        normalize_lufs_checkbox.change(
+            fn=lambda enabled: config_manager.set_normalize_lufs(enabled),
+            inputs=[normalize_lufs_checkbox],
+            outputs=[]
+        )
+
+        target_lufs_slider.change(
+            fn=lambda target: config_manager.set_target_lufs(target),
+            inputs=[target_lufs_slider],
+            outputs=[]
+        )
+
+        # Save transcript generation settings
+        generate_transcript_checkbox.change(
+            fn=lambda enabled: config_manager.set_generate_transcript(enabled),
+            inputs=[generate_transcript_checkbox],
+            outputs=[]
+        )
+
+        whisper_model_dropdown.change(
+            fn=lambda model: config_manager.set_whisper_model(model),
+            inputs=[whisper_model_dropdown],
             outputs=[]
         )
 
