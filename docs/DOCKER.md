@@ -8,9 +8,37 @@ This guide explains how to run the NTN Podcast Creator using Docker.
 - Docker installed on your system ([Install Docker](https://docs.docker.com/get-docker/))
 - Docker Compose (included with Docker Desktop)
 
-### Option 1: Using Docker Compose (Recommended)
+### Option 1: Using Pre-built Image (Fastest)
 
-The easiest way to run the application is with Docker Compose:
+Once the image is published to Docker Hub, you can run it directly without cloning the repository:
+
+```bash
+# Create directories for your audio files
+mkdir -p audios/intro_audio audios/outro_audio audios/background_music outputs uploads
+
+# Run the container
+docker run -d \
+  --name ntn-podcast-creator \
+  -p 7860:7860 \
+  -v $(pwd)/audios/intro_audio:/app/audios/intro_audio \
+  -v $(pwd)/audios/outro_audio:/app/audios/outro_audio \
+  -v $(pwd)/audios/background_music:/app/audios/background_music \
+  -v $(pwd)/outputs:/app/outputs \
+  -v $(pwd)/uploads:/app/uploads \
+  elbruno/ntn-podcast-creator:latest
+
+# View logs
+docker logs -f ntn-podcast-creator
+
+# Stop and remove
+docker stop ntn-podcast-creator && docker rm ntn-podcast-creator
+```
+
+The application will be available at http://localhost:7860
+
+### Option 2: Using Docker Compose (Recommended for Development)
+
+If you want to build from source or modify the application:
 
 ```bash
 # Clone the repository
@@ -29,11 +57,15 @@ docker-compose down
 
 The application will be available at http://localhost:7860
 
-### Option 2: Using Docker Commands
+### Option 3: Build from Source
 
-If you prefer to use Docker directly:
+If you want to build from source and customize the Docker image:
 
 ```bash
+# Clone the repository
+git clone https://github.com/elbruno/ntn-podcast-creator.git
+cd ntn-podcast-creator
+
 # Build the image
 docker build -t ntn-podcast-creator .
 
