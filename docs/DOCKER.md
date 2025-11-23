@@ -101,7 +101,8 @@ The Docker setup uses volume mounts to persist your data:
 | `./audios/background_music` | Your background music tracks |
 | `./outputs` | Generated podcast files |
 | `./uploads` | Uploaded voice recordings |
-| `./config.json` | Application settings (auto-created) |
+
+**Note**: Settings (config.json) are stored inside the container and will persist as long as the container exists. To preserve settings across container deletions, you can optionally mount config.json, but ensure the file exists first: `touch config.json` before starting the container.
 
 All these files and directories remain on your host machine, so your data persists even if you stop or remove the container.
 

@@ -118,14 +118,14 @@ if command -v curl &> /dev/null; then
         echo "   Try accessing http://localhost:7860 in your browser"
     fi
 elif command -v wget &> /dev/null; then
-    if wget -q --spider http://localhost:7860 2>&1; then
+    if wget -q --spider http://localhost:7860 2>&1 > /dev/null; then
         echo "✓ Application is responding"
     else
         echo "⚠️  Application may not be fully ready yet"
         echo "   Try accessing http://localhost:7860 in your browser"
     fi
 elif command -v python3 &> /dev/null; then
-    if python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:7860', timeout=5)" 2>&1; then
+    if python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:7860', timeout=5)" > /dev/null 2>&1; then
         echo "✓ Application is responding"
     else
         echo "⚠️  Application may not be fully ready yet"
