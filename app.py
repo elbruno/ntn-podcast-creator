@@ -668,7 +668,7 @@ def get_current_settings():
     return "\\n".join(settings)
 
 
-def create_podcast_handler(voice_file, output_name, delete_voice, trim_silence):
+def create_podcast_handler(voice_file, output_name, delete_voice, trim_silence, enhance_audio):
     """Handle podcast creation request.
 
     Args:
@@ -676,6 +676,7 @@ def create_podcast_handler(voice_file, output_name, delete_voice, trim_silence):
         output_name: Desired output filename
         delete_voice: Whether to delete voice file after creation
         trim_silence: Whether to trim silence from start/end
+        enhance_audio: Whether to enhance audio using Adobe Enhance
 
     Returns:
         Tuple of (status message, output file path or None, console log)
@@ -714,6 +715,7 @@ def create_podcast_handler(voice_file, output_name, delete_voice, trim_silence):
         f"  Background tracks: {len(background_tracks) if background_tracks else 0}")
     log_message(f"  Volume: {volume}%")
     log_message(f"  Trim silence: {trim_silence}")
+    log_message(f"  Enhance audio: {enhance_audio}")
 
     # Create output path
     output_path = os.path.join("outputs", f"{output_name}.mp3")
@@ -732,6 +734,7 @@ def create_podcast_handler(voice_file, output_name, delete_voice, trim_silence):
             track_volumes=track_volumes if track_volumes else None,
             output_file=output_path,
             trim_silence=trim_silence,
+            enhance_audio=enhance_audio,
             log_callback=log_message
         )
 
@@ -925,6 +928,12 @@ def create_ui():
                             label="Trim silence from voice recording",
                             value=True,
                             info="Removes silence from start and end"
+                        )
+
+                        enhance_audio_checkbox = gr.Checkbox(
+                            label="Enhance audio quality (Adobe Enhance)",
+                            value=config_manager.get_enhance_audio(),
+                            info="Clean and enhance audio using Adobe's AI (experimental)"
                         )
 
                         create_button = gr.Button(
@@ -1339,7 +1348,7 @@ def create_ui():
         create_button.click(
             fn=create_podcast_handler,
             inputs=[voice_input, output_name_input,
-                    delete_voice_checkbox, trim_silence_checkbox],
+                    delete_voice_checkbox, trim_silence_checkbox, enhance_audio_checkbox],
             outputs=[status_output, audio_output, console_output]
         )
 
@@ -1359,6 +1368,13 @@ def create_ui():
             fn=clear_console_log,
             inputs=[],
             outputs=[console_output]
+        )
+        
+        # Save enhance audio setting when changed
+        enhance_audio_checkbox.change(
+            fn=lambda enabled: config_manager.set_enhance_audio(enabled),
+            inputs=[enhance_audio_checkbox],
+            outputs=[]
         )
         
         # Export settings
