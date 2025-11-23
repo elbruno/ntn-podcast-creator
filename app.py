@@ -2,6 +2,8 @@
 
 import os
 import shutil
+import datetime
+import re
 import gradio as gr
 from typing import Optional, List
 from audio_processor import AudioProcessor
@@ -955,8 +957,6 @@ def suggest_podcast_name(voice_file) -> str:
     Returns:
         Suggested filename in format: yymmdd_originalname
     """
-    import datetime
-    
     # Get current date in yymmdd format
     date_str = datetime.datetime.now().strftime("%y%m%d")
     
@@ -975,7 +975,6 @@ def suggest_podcast_name(voice_file) -> str:
     original_name = os.path.splitext(original_name)[0]
     
     # Clean filename (remove special characters, replace spaces with underscores)
-    import re
     original_name = re.sub(r'[^\w\-_]', '_', original_name)
     original_name = re.sub(r'_+', '_', original_name)  # Remove multiple underscores
     original_name = original_name.strip('_')
