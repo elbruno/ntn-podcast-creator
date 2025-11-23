@@ -15,7 +15,8 @@
         "ms-python.vscode-pylance",
         "ms-python.black-formatter",
         "charliermarsh.ruff",
-        "ms-playwright.playwright"
+        "ms-playwright.playwright",
+        "openai.chatgpt"
       ],
       "settings": {
         "python.defaultInterpreterPath": "/usr/local/bin/python",
