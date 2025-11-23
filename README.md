@@ -5,6 +5,7 @@ A local Python application with a user-friendly web interface for editing podcas
 ## 📖 Documentation
 
 - **[User Manual](docs/USER_MANUAL.md)** - Complete guide with step-by-step instructions and screenshots
+- **[Docker Deployment Guide](docs/DOCKER.md)** - Run with Docker in minutes (no Python/FFmpeg install needed)
 - **[Technical Implementation](docs/TECHNICAL_IMPLEMENTATION.md)** - Architecture, technical details, and API reference
 - **[Dev Container Guide](.devcontainer/README.md)** - Setup instructions for containerized development
 
@@ -48,9 +49,26 @@ Download from [FFmpeg website](https://ffmpeg.org/download.html) and add to PATH
 
 ## Installation
 
-### Option 1: Using Dev Container (Recommended)
+### Option 1: Using Docker (Recommended for Easy Setup)
 
-If you use Visual Studio Code, you can use the included dev container for the easiest setup:
+The fastest way to get started is with Docker. No need to install Python or FFmpeg manually!
+
+```bash
+# Clone the repository
+git clone https://github.com/elbruno/ntn-podcast-creator.git
+cd ntn-podcast-creator
+
+# Start with Docker Compose
+docker-compose up -d
+
+# Access the application at http://localhost:7860
+```
+
+**📖 For detailed Docker instructions, see [Docker Deployment Guide](docs/DOCKER.md)**
+
+### Option 2: Using Dev Container (For Development)
+
+If you use Visual Studio Code, you can use the included dev container:
 
 1. Install [Docker Desktop](https://www.docker.com/products/docker-desktop)
 2. Install the [Dev Containers extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers) for VS Code
@@ -61,7 +79,7 @@ If you use Visual Studio Code, you can use the included dev container for the ea
 
 The dev container includes everything you need: Python 3.12, FFmpeg, and all Python dependencies.
 
-### Option 2: Local Installation
+### Option 3: Local Installation
 
 1. Clone this repository:
 ```bash
@@ -96,12 +114,29 @@ Download from [FFmpeg website](https://ffmpeg.org/download.html) and add to PATH
 
 ### Quick Start
 
+#### If Using Docker:
+```bash
+# Start the application (if not already running)
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Stop the application
+docker-compose down
+```
+
+Access the application at http://localhost:7860
+
+#### If Using Local Installation:
 1. Start the application:
 ```bash
 python app.py
 ```
 
 2. Open your browser and navigate to http://127.0.0.1:7860
+
+### Creating Your Podcast
 
 3. Follow the interface steps:
    - Upload your main podcast voice recording

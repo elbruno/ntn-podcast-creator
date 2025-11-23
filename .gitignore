@@ -211,6 +211,7 @@ config.json
 uploads/
 outputs/
 test_audio/
+test_docker/
 
 # Audio files (except test folder)
 audios/intro_audio/*.mp3

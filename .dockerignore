@@ -1,0 +1,65 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Python cache
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info
+dist
+build
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Documentation (will be copied separately if needed)
+docs/
+.devcontainer/
+*.md
+!README.md
+
+# Test files
+test_*.py
+*_test.py
+
+# User data and generated files
+config.json
+uploads/
+outputs/
+test_audio/
+
+# Audio files (will be mounted as volumes)
+audios/intro_audio/*.mp3
+audios/intro_audio/*.wav
+audios/intro_audio/*.m4a
+audios/outro_audio/*.mp3
+audios/outro_audio/*.wav
+audios/outro_audio/*.m4a
+audios/background_music/*.mp3
+audios/background_music/*.wav
+audios/background_music/*.m4a
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Misc
+*.log
+.env
+.envrc
