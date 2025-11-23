@@ -12,7 +12,14 @@ A local Python application with a user-friendly web interface for editing podcas
 ## Features
 
 - **Upload podcast voice file**: Upload your pre-recorded podcast audio
-- **Adobe Enhance Audio (NEW)**:
+- **AI Audio Denoising (NEW)**:
+  - Automatically clean voice recordings using machine learning
+  - Removes background noise using the `audio-denoiser` library
+  - 38-million parameter deep learning model for speech enhancement
+  - Enabled by default for all podcast creations
+  - Download the cleaned audio separately for other uses
+  - Graceful fallback to original audio if library unavailable
+- **Adobe Enhance Audio**:
   - Clean and enhance audio quality using Adobe's AI-powered Enhance Speech service
   - Two modes: automatic during podcast creation or standalone with preview/download
   - Removes background noise, reduces echo, and improves speech clarity
@@ -29,12 +36,13 @@ A local Python application with a user-friendly web interface for editing podcas
 - **Settings Persistence**: All settings are automatically saved for future sessions
 - **Export/Import Settings**: Save and load your configuration as JSON files
 - **Easy Export**: Generate final podcast as MP3 file
-- **Download Options**: Download both generated podcasts and configuration settings
+- **Download Options**: Download both generated podcasts, cleaned audio, and configuration settings
 
 ## Requirements
 
 - Python 3.8 or higher
 - FFmpeg (required for audio processing)
+- PyTorch and audio-denoiser (optional, for AI audio denoising feature)
 - Playwright and Chromium browser (optional, for Adobe Enhance audio feature)
 - (Optional) Docker and VS Code with Dev Containers extension for containerized development
 
@@ -167,7 +175,19 @@ The interface guides you through simple steps to create your podcast with advanc
 
 ## New Features
 
-### Adobe Enhance Audio (Latest - v1.1)
+### AI Audio Denoising (Latest)
+- **Machine Learning Audio Cleanup**: Automatically clean voice recordings before podcast creation
+  - Uses a 38-million parameter deep learning model
+  - Removes background noise, hum, and ambient sounds
+  - Works offline once the model is downloaded
+  - Significantly improves speech clarity
+- **Enabled by Default**: Audio denoising runs automatically for all podcasts
+- **Download Cleaned Audio**: Get the denoised voice file separately for other projects
+- **Graceful Fallback**: Continues with original audio if denoising library unavailable
+- **Processing Chain**: Denoising runs first, then optionally Adobe Enhance, then podcast mixing
+- **Fast Processing**: Typically completes in seconds (much faster than Adobe Enhance)
+
+### Adobe Enhance Audio (v1.1)
 - **AI-Powered Audio Cleanup**: Enhance voice recordings using Adobe Podcast Enhance Speech
   - Removes background noise and echo
   - Enhances speech clarity and audio quality
@@ -200,6 +220,7 @@ Settings are automatically saved to `config.json` in the application directory. 
 - Global volume settings
 - Individual track volume settings
 - Last used output filename
+- Audio denoising preference (enabled/disabled, defaults to enabled)
 - Audio enhancement preference (enabled/disabled)
 
 Adobe Enhance credentials (optional) are stored in `.env` file:

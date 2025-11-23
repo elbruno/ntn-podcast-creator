@@ -7,6 +7,7 @@ from typing import List, Optional, Callable
 from pydub import AudioSegment
 from pydub.silence import detect_leading_silence
 from adobe_audio_enhancer import enhance_audio_file
+from audio_denoiser_processor import denoise_audio_file
 
 
 class AudioProcessor:
@@ -195,9 +196,10 @@ class AudioProcessor:
         track_volumes: Optional[dict] = None,
         output_file: str = "output.mp3",
         trim_silence: bool = False,
+        denoise_audio: bool = True,
         enhance_audio: bool = False,
         log_callback: Optional[Callable[[str], None]] = None
-    ) -> str:
+    ) -> tuple[str, Optional[str]]:
         """Create complete podcast with intro, outro, and background music.
 
         Args:
@@ -209,11 +211,12 @@ class AudioProcessor:
             track_volumes: Optional dict mapping track paths to individual volumes
             output_file: Path for output file
             trim_silence: Whether to trim silence from voice recording
+            denoise_audio: Whether to denoise audio using audio-denoiser (optional)
             enhance_audio: Whether to enhance audio using Adobe Enhance (optional)
             log_callback: Optional callback function for logging
 
         Returns:
-            Path to output file
+            Tuple of (path to output file, path to denoised audio or None)
 
         Raises:
             Exception: If processing fails
@@ -226,20 +229,39 @@ class AudioProcessor:
 
         log("Starting podcast creation...")
 
-        # Enhance audio if requested (pre-processing step)
+        # Store denoised file path for download
+        denoised_file_path = None
+        
+        # Denoise audio if requested (first pre-processing step)
         voice_file_to_process = voice_file
+        if denoise_audio:
+            log("Denoising audio using audio-denoiser...")
+            denoised_file = denoise_audio_file(
+                voice_file,
+                enabled=True,
+                auto_scale=True,
+                log_callback=log
+            )
+            if denoised_file and denoised_file != voice_file:
+                voice_file_to_process = denoised_file
+                denoised_file_path = denoised_file
+                log(f"Using denoised audio: {os.path.basename(denoised_file)}")
+            else:
+                log("Using original audio (denoising not available or failed)")
+        
+        # Enhance audio if requested (second pre-processing step)
         if enhance_audio:
             log("Enhancing audio quality using Adobe Enhance...")
             enhanced_file = enhance_audio_file(
-                voice_file,
+                voice_file_to_process,
                 enabled=True,
                 log_callback=log
             )
-            if enhanced_file and enhanced_file != voice_file:
+            if enhanced_file and enhanced_file != voice_file_to_process:
                 voice_file_to_process = enhanced_file
                 log(f"Using enhanced audio: {os.path.basename(enhanced_file)}")
             else:
-                log("Using original audio (enhancement not available)")
+                log("Using current audio (enhancement not available)")
 
         # Load main voice recording
         log(f"Loading main voice: {os.path.basename(voice_file_to_process)}")
@@ -343,7 +365,7 @@ class AudioProcessor:
         log("Podcast creation complete!")
 
         # Clean up temporary enhanced file if it was created
-        if enhance_audio and voice_file_to_process != voice_file:
+        if enhance_audio and voice_file_to_process != voice_file and voice_file_to_process != denoised_file_path:
             try:
                 if os.path.exists(voice_file_to_process):
                     os.remove(voice_file_to_process)
@@ -351,4 +373,4 @@ class AudioProcessor:
             except Exception as e:
                 log(f"Note: Could not clean up temporary file: {e}")
 
-        return output_file
+        return output_file, denoised_file_path

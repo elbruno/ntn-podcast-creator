@@ -28,7 +28,8 @@ RUN mkdir -p /app/audios/intro_audio \
     /app/audios/test \
     /app/uploads \
     /app/outputs \
-    && chmod -R 755 /app
+    && chmod -R 777 /app/uploads \
+    && chmod -R 777 /app/outputs
 
 # Expose Gradio port
 EXPOSE 7860
