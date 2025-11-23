@@ -12,6 +12,7 @@ A local Python application with a user-friendly web interface for editing podcas
 ## Features
 
 - **Upload podcast voice file**: Upload your pre-recorded podcast audio
+- **Audio Enhancement (NEW)**: Clean and enhance audio quality using Adobe's AI-powered enhancement tool (experimental)
 - **Intro & Outro**: Set custom intro and outro audio files
 - **Background Music**: Add background music tracks that automatically loop to match your podcast duration
 - **Individual Volume Control**: Set different volume levels for each background track
@@ -160,13 +161,19 @@ The interface guides you through simple steps to create your podcast with advanc
 
 ## New Features
 
-### Individual Volume Controls (Latest)
+### Audio Enhancement (Latest)
+- **AI-Powered Audio Cleanup**: Enhance voice recordings using Adobe Podcast Enhance Speech
+- **Optional Pre-Processing**: Enable/disable audio enhancement via simple checkbox
+- **Automatic Fallback**: Gracefully uses original audio if enhancement service is unavailable
+- **Seamless Integration**: Enhancement happens automatically before podcast creation
+
+### Individual Volume Controls
 - **Per-Track Volume**: Set different volume levels for each background music file
 - **Global Volume**: Apply a single volume setting to all tracks at once
 - **Preview with Volume**: Listen to each track with the applied volume before creating your podcast
 - **Timeline Display**: See all background tracks and their volume settings in the visual timeline
 
-### Settings Management (Latest)
+### Settings Management
 - **Export Settings**: Save your current configuration (intro, outro, background tracks, and volumes) as a JSON file
 - **Import Settings**: Load previously saved configurations to quickly recreate your setup
 - **Automatic Backup**: Settings are automatically saved, but you can create manual backups for different podcast styles
@@ -179,6 +186,7 @@ Settings are automatically saved to `config.json` in the application directory. 
 - Global volume settings
 - Individual track volume settings
 - Last used output filename
+- Audio enhancement preference
 
 These settings persist between sessions, so you don't need to reconfigure each time. You can also export settings to share with others or backup for different podcast configurations.
 
