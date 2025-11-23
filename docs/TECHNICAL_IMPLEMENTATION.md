@@ -36,6 +36,13 @@ NTN Podcast Creator follows a modular, three-tier architecture:
 │  │ UI Handlers  │  │              │  │              │ │
 │  │ Orchestration│  │ Settings     │  │ Audio Mixing │ │
 │  └──────────────┘  └──────────────┘  └──────────────┘  │
+│  ┌──────────────┐  ┌──────────────┐                     │
+│  │audio_denoiser│  │adobe_audio_  │                     │
+│  │_processor.py │  │enhancer.py   │                     │
+│  │              │  │              │                     │
+│  │ AI Denoising │  │ Adobe AI     │                     │
+│  │ + Chunking   │  │ Enhancement  │                     │
+│  └──────────────┘  └──────────────┘                     │
 └─────────────────────┬───────────────────────────────────┘
                       │
 ┌─────────────────────▼───────────────────────────────────┐
@@ -68,12 +75,24 @@ NTN Podcast Creator follows a modular, three-tier architecture:
 | **Gradio** | 6.0.0 | Web-based user interface framework |
 | **pydub** | 0.25.1 | Audio processing and manipulation |
 | **FFmpeg** | Latest | Audio codec handling and conversion |
-| **huggingface-hub** | 1.1.5 | Dependency for Gradio |
+| **Playwright** | 1.45.0 | Browser automation for Adobe Enhance |
+| **python-dotenv** | 1.0.1 | Environment variable management |
+| **audio-denoiser** | 0.1.2 | AI-powered audio noise removal |
+| **PyTorch** | 2.6.0+ | Deep learning framework for audio-denoiser |
+| **torchaudio** | 2.6.0+ | Audio processing for PyTorch |
+| **soundfile** | 0.12.1 | Audio file I/O |
 
 ### Audio Processing Stack
 
 ```
 User Audio Files
+      ↓
+Optional: AI Audio Denoising (audio-denoiser + PyTorch)
+  - Large files: Automatic chunking (8MB chunks)
+  - Small files: Direct processing
+  - Memory-efficient with cleanup
+      ↓
+Optional: Adobe Enhance (Browser automation via Playwright)
       ↓
    pydub (AudioSegment)
       ↓
@@ -102,9 +121,12 @@ User Audio Files
 - Timeline visualization generation
 
 **Key Functions:**
-- `create_ui()`: Builds the Gradio interface
-- `create_podcast_handler()`: Orchestrates podcast creation
-- `generate_timeline_chart()`: Creates visual timeline preview
+- `create_ui()`: Builds the Gradio multi-tab interface
+- `suggest_podcast_name()`: Generates auto-suggested episode names with date format
+- `update_on_voice_upload()`: Updates timeline and episode name when voice file is uploaded
+- `create_podcast_handler()`: Orchestrates podcast creation with AI denoising and Adobe Enhance
+- `enhance_audio_only_handler()`: Handles standalone Adobe Enhance processing
+- `generate_timeline_chart()`: Creates visual timeline preview with background tracks
 - `export_settings()`: Exports configuration to JSON
 - `import_settings()`: Imports configuration from JSON
 
@@ -130,15 +152,17 @@ class AudioProcessor:
 ```
 
 **Audio Processing Pipeline:**
-1. Load voice recording
-2. Optional: Trim silence from voice
-3. Load intro/outro (if provided)
-4. Create looped background music (if provided)
-5. Apply individual track volumes
-6. Mix background with voice
-7. Concatenate: intro → voice+background → outro
-8. Apply 1-second crossfade overlaps
-9. Export to MP3
+1. Optional: AI audio denoising (with chunking for large files)
+2. Optional: Adobe Enhance processing
+3. Load voice recording
+4. Optional: Trim silence from voice
+5. Load intro/outro (if provided)
+6. Create looped background music (if provided)
+7. Apply individual track volumes
+8. Mix background with voice
+9. Concatenate: intro → voice+background → outro
+10. Apply 1-second crossfade overlaps
+11. Export to MP3
 
 ### 3. config_manager.py - Configuration Management
 
@@ -195,6 +219,21 @@ class ConfigManager:
        │
        ▼
 ┌─────────────────┐
+│ File Size Check │
+│ >10MB? Chunking │
+│ ≤10MB? Direct   │
+└──────┬──────────┘
+       │
+       ▼
+┌─────────────────┐
+│ AI Denoising    │
+│ - Remove noise  │
+│ - Auto chunking │
+│ - Merge results │
+└──────┬──────────┘
+       │
+       ▼
+┌─────────────────┐
 │ Load Config     │
 │ - Intro         │
 │ - Outro         │
@@ -236,6 +275,8 @@ class ConfigManager:
 │ Export MP3      │
 │ outputs/        │
 └─────────────────┘
+│ outputs/        │
+└─────────────────┘
 ```
 
 ### Settings Import/Export Flow
@@ -251,6 +292,113 @@ User Upload JSON → Parse & Validate → Update ConfigManager → Refresh UI
 ---
 
 ## Audio Processing Pipeline
+
+### AI Audio Denoising (Latest Enhancement)
+
+The application now includes sophisticated AI-powered audio denoising with support for files of any size through intelligent chunking.
+
+#### Components
+
+**4. audio_denoiser_processor.py - AI Denoising Engine**
+
+**Responsibilities:**
+- ML-based background noise removal
+- Large file chunking and processing
+- Automatic chunk merging and reconstruction
+- Memory-efficient processing with cleanup
+
+**Key Classes:**
+```python
+class AudioDenoiserProcessor:
+    def __init__()  # Initialize with GPU support when available
+    def is_available() -> bool
+    def denoise_audio(input_file, output_file, auto_scale=True) -> str
+    def _denoise_large_file(input_file, output_file, auto_scale) -> str
+    def _chunk_audio(input_file, chunk_size_mb=8.0) -> List[str]
+    def _merge_audio_chunks(chunk_files, output_file) -> bool
+    def _cleanup_chunks(chunk_files) -> None
+```
+
+#### Large File Processing Architecture
+
+```
+Input File Size Check
+        ↓
+[File ≤ 10MB]          [File > 10MB]
+        ↓                     ↓
+Direct Processing      Chunking Pipeline
+        ↓                     ↓
+    Denoise           Split into 8MB chunks
+        ↓                     ↓
+    Return File       Process each chunk individually
+                             ↓
+                      Merge processed chunks
+                             ↓
+                      Cleanup temporary files
+                             ↓
+                      Return merged file
+```
+
+#### Chunking Strategy
+
+**Smart Chunk Sizing:**
+- Target chunk size: 8MB (optimal for audio-denoiser performance)
+- Minimum chunk duration: 10 seconds (preserves audio quality)
+- Proportional splitting based on file size ratio
+
+**Example for a 50MB, 30-minute file:**
+```
+Original: 50MB, 30 minutes
+Chunk size calculation: (30 min × 8MB) / 50MB = 4.8 minutes per chunk
+Result: 7 chunks of ~4.8 minutes each
+```
+
+**Memory Management:**
+- Processes one chunk at a time (memory efficient)
+- Temporary files in system temp directory
+- Automatic cleanup after processing
+- Graceful fallback on any failure
+
+#### Processing Flow Integration
+
+Updated audio processing pipeline with AI denoising:
+
+```
+1. User uploads voice file
+2. File size check → Route to appropriate processing
+3a. Small files (≤10MB): Direct AI denoising
+3b. Large files (>10MB): Chunked AI denoising
+    - Split into 8MB chunks
+    - Process each chunk with AI denoiser
+    - Merge chunks back together
+    - Cleanup temporary files
+4. Optional: Adobe Enhance processing
+5. Optional: Trim silence from voice
+6. Load intro/outro (if provided)
+7. Create looped background music (if provided)
+8. Apply individual track volumes
+9. Mix background with voice
+10. Concatenate: intro → voice+background → outro
+11. Apply 1-second crossfade overlaps
+12. Export to MP3
+```
+
+#### Error Handling & Resilience
+
+**Chunking Failures:**
+- Automatic fallback to original file
+- Detailed logging of each step
+- Graceful handling of partial failures
+
+**Partial Processing:**
+- Successfully processed chunks are kept
+- Failed chunks fall back to original audio
+- Mixed results still produce usable output
+
+**Memory Protection:**
+- Chunk size limits prevent memory overflow
+- Streaming processing (one chunk at a time)
+- Automatic resource cleanup
 
 ### Volume Adjustment Algorithm
 
@@ -342,32 +490,56 @@ Supported formats: MP3, WAV, M4A, OGG, FLAC
 
 ### Tab Structure
 
-1. **Create Podcast**
-   - Voice recording upload
-   - Output filename input
-   - Options: delete voice after creation, trim silence
-   - Timeline preview (visual representation)
-   - Create button
-   - Audio output player
-   - Download settings button
-   - Import settings control
+The interface uses a multi-tab layout with emoji icons for easy navigation:
 
-2. **Settings**
+1. **🎙️ Create Podcast** (Main Tab)
+   - Voice recording upload (with drag-and-drop support)
+   - Auto-suggested episode name (date + filename format)
+   - Options accordion:
+     - Delete voice after creation
+     - Trim silence
+     - AI audio denoising (enabled by default)
+     - Adobe Enhance integration (optional checkbox)
+   - Timeline preview (visual representation)
+   - Create podcast button
+   - Audio output player
+   - Cleaned voice download (when denoising enabled)
+   - Download & Import Settings accordion
+
+2. **✨ Adobe Enhance** (Standalone Enhancement)
+   - Dedicated workspace for audio enhancement
+   - Instructions and tips section
+   - Voice recording upload
+   - Delete uploaded file option
+   - Enhance button
+   - Enhanced audio preview player
+   - Processing log accordion
+   - Use case: Pre-process audio before podcast creation or for other projects
+
+3. **⚙️ Settings** (Audio Configuration)
    - Intro audio management
+     - Upload/delete intro
+     - Audio player for preview
    - Outro audio management
+     - Upload/delete outro
+     - Audio player for preview
    - Background music management
-     - Add/delete tracks
+     - Upload multiple tracks
      - Track selector dropdown
+     - Delete individual tracks
      - Individual track audio player
-     - Global volume slider
-     - Individual track volume slider
-     - "Apply to All" button
+     - Global volume slider (0-50%)
+     - Individual track volume slider (0-50%)
+     - "Apply Volume to All Tracks" button
      - Preview with applied volume
    - Current configuration display
+   - Refresh settings button
 
-3. **Console Log**
+4. **📋 Console Log** (Debugging & Monitoring)
    - Real-time processing logs
-   - Error messages
+   - Podcast creation progress
+   - Adobe Enhance status
+   - Error messages and warnings
    - Refresh/clear controls
 
 ### Visual Components
@@ -375,15 +547,29 @@ Supported formats: MP3, WAV, M4A, OGG, FLAC
 **Timeline Chart:**
 - Color-coded segments (intro, voice, outro)
 - Background music overlay visualization
-- Duration labels
-- Overlap indicators
-- Legend with track volumes
+- Duration labels for each segment
+- Overlap indicators (1-second crossfades)
+- Legend with track volumes and file names
+- Updates dynamically when voice file is uploaded
+
+**Smart Episode Naming:**
+- Automatic suggestion format: `yymmdd_filename`
+- Example: `251123_my_recording` (for Nov 23, 2025)
+- Fully editable field
+- Updates when voice file is uploaded
 
 **Volume Controls:**
 - Global slider (0-50%)
 - Per-track sliders (0-50%)
-- Apply to all functionality
-- Live preview generation
+- "Apply to all" functionality
+- Live preview generation with applied volume
+- Recommended range: 10-12% for optimal voice clarity
+
+**Processing Options:**
+- Checkbox-based configuration
+- Default values for common use cases
+- Tooltips with helpful information
+- Visual grouping in accordion
 
 ---
 
@@ -525,7 +711,7 @@ docker run -p 7860:7860 ntn-podcast-creator
 ### Production Considerations
 
 1. **File Storage**: Configure persistent volumes for `audios/`, `outputs/`, and `config.json`
-2. **Security**: 
+2. **Security**:
    - Add authentication layer if deploying publicly
    - Validate uploaded file types
    - Set file size limits
@@ -628,6 +814,6 @@ For issues, questions, or contributions:
 
 ---
 
-**Document Version:** 1.0  
-**Last Updated:** November 2025  
+**Document Version:** 1.0
+**Last Updated:** November 2025
 **Author:** NTN Podcast Creator Team

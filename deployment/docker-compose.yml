@@ -2,19 +2,21 @@ version: '3.8'
 
 services:
   ntn-podcast-creator:
-    build: .
+    build: 
+      context: ..
+      dockerfile: deployment/Dockerfile
     container_name: ntn-podcast-creator
     ports:
       - "7860:7860"
     volumes:
       # Mount audio directories for persistence
-      - ./audios/intro_audio:/app/audios/intro_audio
-      - ./audios/outro_audio:/app/audios/outro_audio
-      - ./audios/background_music:/app/audios/background_music
+      - ../audios/intro_audio:/app/audios/intro_audio
+      - ../audios/outro_audio:/app/audios/outro_audio
+      - ../audios/background_music:/app/audios/background_music
       # Mount output directory to access generated podcasts
-      - ./outputs:/app/outputs
+      - ../outputs:/app/outputs
       # Mount uploads directory for uploaded files
-      - ./uploads:/app/uploads
+      - ../uploads:/app/uploads
     environment:
       - GRADIO_SERVER_NAME=0.0.0.0
       - GRADIO_SERVER_PORT=7860

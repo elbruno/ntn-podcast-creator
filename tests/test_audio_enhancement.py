@@ -4,8 +4,12 @@ import os
 import sys
 import tempfile
 from unittest import mock
-from adobe_audio_enhancer import AdobeAudioEnhancer, enhance_audio_file
-from config_manager import ConfigManager
+
+# Add parent directory to path so we can import modules
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from features.config_manager import ConfigManager
+from features.adobe_audio_enhancer import AdobeAudioEnhancer, enhance_audio_file
 
 
 def test_enhancer_initialization():

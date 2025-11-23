@@ -8,20 +8,28 @@ A local Python application with a user-friendly web interface for editing podcas
 - **[Docker Deployment Guide](docs/DOCKER.md)** - Run with Docker in minutes (no Python/FFmpeg install needed)
 - **[Technical Implementation](docs/TECHNICAL_IMPLEMENTATION.md)** - Architecture, technical details, and API reference
 - **[Dev Container Guide](.devcontainer/README.md)** - Setup instructions for containerized development
+- **[AI Denoising Implementation](docs/AUDIO_DENOISING_IMPLEMENTATION.md)** - Complete documentation of the AI denoising feature
+- **[Release Notes](docs/RELEASE_NOTES_CHUNKING.md)** - Latest feature updates and enhancements
 
 ## Features
 
+- **Intuitive Multi-Tab Interface**: Easy navigation with dedicated tabs for podcast creation, Adobe Enhance, settings, and logs
+- **Smart Episode Naming**: Automatically suggests episode names with date (yymmdd) + your file name
 - **Upload podcast voice file**: Upload your pre-recorded podcast audio
-- **AI Audio Denoising (NEW)**:
+- **AI Audio Denoising (Latest)**:
   - Automatically clean voice recordings using machine learning
   - Removes background noise using the `audio-denoiser` library
   - 38-million parameter deep learning model for speech enhancement
+  - **NEW**: Supports files of any size with automatic chunking for large files (>10MB)
+  - **NEW**: Intelligent chunk processing with seamless audio reconstruction
   - Enabled by default for all podcast creations
   - Download the cleaned audio separately for other uses
   - Graceful fallback to original audio if library unavailable
+  - Dedicated **🤖 AI Denoiser** tab for standalone processing
 - **Adobe Enhance Audio**:
   - Clean and enhance audio quality using Adobe's AI-powered Enhance Speech service
-  - Two modes: automatic during podcast creation or standalone with preview/download
+  - Available in dedicated **✨ Adobe Enhance** tab for standalone processing
+  - Optional checkbox in main tab for automatic enhancement during podcast creation
   - Removes background noise, reduces echo, and improves speech clarity
   - Browser automation via Playwright (2-5 minute processing time)
   - Optional feature with automatic fallback to original audio
@@ -37,6 +45,35 @@ A local Python application with a user-friendly web interface for editing podcas
 - **Export/Import Settings**: Save and load your configuration as JSON files
 - **Easy Export**: Generate final podcast as MP3 file
 - **Download Options**: Download both generated podcasts, cleaned audio, and configuration settings
+
+## ✨ What's New in Latest Version
+
+### 🚀 Large File Support for AI Denoising
+
+The AI denoiser now supports **files of any size** through intelligent automatic chunking:
+
+- **🎯 No File Size Limits**: Process recordings of any length (previously limited to 10MB)
+- **🧠 Intelligent Chunking**: Large files automatically split into 8MB chunks for optimal processing
+- **🔄 Seamless Reconstruction**: Processed chunks merged back with perfect audio continuity
+- **💾 Memory Efficient**: Process 100MB+ files without memory issues
+- **🧹 Auto Cleanup**: Temporary files automatically removed after processing
+- **📊 Progress Tracking**: Real-time updates during chunk processing
+- **🛡️ Robust Error Handling**: Graceful fallback if any chunk fails
+- **⚡ Performance Optimized**: Faster processing for large files vs. cloud alternatives
+
+**Perfect for:**
+- Long-form podcasts (1+ hours)
+- Interview recordings
+- Conference presentations
+- Educational content
+- Any high-quality audio file >10MB
+
+**Example Processing Times:**
+- 50MB file (30 minutes): ~2-3 minutes
+- 100MB file (60 minutes): ~5-7 minutes
+- 200MB file (2 hours): ~10-12 minutes
+
+The feature is completely transparent - upload any size file and the system automatically handles the complexity!
 
 ## Requirements
 
@@ -74,6 +111,7 @@ git clone https://github.com/elbruno/ntn-podcast-creator.git
 cd ntn-podcast-creator
 
 # Start with Docker Compose
+cd deployment
 docker-compose up -d
 
 # Access the application at http://localhost:7860
@@ -102,9 +140,15 @@ git clone https://github.com/elbruno/ntn-podcast-creator.git
 cd ntn-podcast-creator
 ```
 
-2. Install FFmpeg (see instructions below)
+2. Run the setup script (recommended):
+```bash
+chmod +x scripts/setup.sh
+./scripts/setup.sh
+```
 
-3. Install Python dependencies:
+Or install manually:
+3. Install FFmpeg (see instructions below)
+4. Install Python dependencies:
 ```bash
 pip install -r requirements.txt
 ```
@@ -132,6 +176,7 @@ Download from [FFmpeg website](https://ffmpeg.org/download.html) and add to PATH
 #### If Using Docker:
 ```bash
 # Start the application (if not already running)
+cd deployment
 docker-compose up -d
 
 # View logs
@@ -153,29 +198,40 @@ python app.py
 
 ### Creating Your Podcast
 
-3. Follow the interface steps:
+3. Follow the interface steps in the **🎙️ Create Podcast** tab:
    - Upload your main podcast voice recording
-   - (Optional) Upload intro audio file
-   - (Optional) Upload outro audio file
-   - (Optional) Upload background music tracks
-   - Adjust global or individual track volume settings (default: 10%)
-   - Preview tracks with applied volume
-   - Enter output filename
+   - The episode name is auto-suggested with today's date (yymmdd) + your file name
+   - Adjust options in the accordion (denoise, trim silence, Adobe Enhance)
    - Click "Create Podcast"
-   - Download your finished podcast
-   - (Optional) Download or import settings
+   - Download your finished podcast and cleaned audio
+   - (Optional) Configure intro, outro, and background music in the **⚙️ Settings** tab
+   - (Optional) Use the **✨ Adobe Enhance** tab to clean audio files before creating podcasts
 
 **📖 For detailed instructions with screenshots, see the [User Manual](docs/USER_MANUAL.md)**
 
 ### Interface Preview
 
-![NTN Podcast Creator Interface](https://github.com/user-attachments/assets/84e1807d-889c-4546-8614-6aef13d2c798)
+![NTN Podcast Creator Interface](https://github.com/user-attachments/assets/d4d6010f-fec0-4a44-b15c-a2fe40809dc6)
 
-The interface guides you through simple steps to create your podcast with advanced volume controls.
+The interface features multiple tabs for easy navigation:
+- **🎙️ Create Podcast**: Main tab for uploading voice and creating podcasts
+- **✨ Adobe Enhance**: Standalone audio enhancement tool
+- **⚙️ Settings**: Configure intro, outro, and background music
+- **📋 Console Log**: View detailed processing logs
 
 ## New Features
 
-### AI Audio Denoising (Latest)
+### Improved UI/UX (Latest)
+- **Multi-Tab Interface**: Organized tabs with emoji icons for easy navigation
+  - 🎙️ **Create Podcast**: Main tab for podcast creation
+  - ✨ **Adobe Enhance**: Dedicated tab for standalone audio enhancement
+  - ⚙️ **Settings**: Configure audio files and volumes
+  - 📋 **Console Log**: View detailed processing logs
+- **Smart Episode Naming**: Automatically suggests episode names with date (yymmdd) + your file name
+- **Simplified Main Tab**: Cleaner interface with options in an accordion
+- **Improved Adobe Enhance Workflow**: Separate tab with clear instructions and dedicated upload
+
+### AI Audio Denoising
 - **Machine Learning Audio Cleanup**: Automatically clean voice recordings before podcast creation
   - Uses a 38-million parameter deep learning model
   - Removes background noise, hum, and ambient sounds
@@ -187,14 +243,14 @@ The interface guides you through simple steps to create your podcast with advanc
 - **Processing Chain**: Denoising runs first, then optionally Adobe Enhance, then podcast mixing
 - **Fast Processing**: Typically completes in seconds (much faster than Adobe Enhance)
 
-### Adobe Enhance Audio (v1.1)
+### Adobe Enhance Audio
 - **AI-Powered Audio Cleanup**: Enhance voice recordings using Adobe Podcast Enhance Speech
   - Removes background noise and echo
   - Enhances speech clarity and audio quality
   - Normalizes audio levels automatically
 - **Two Usage Modes**:
   - **Integrated Mode**: Checkbox to automatically enhance during podcast creation
-  - **Standalone Mode**: Enhance-only with preview and download (no mixing)
+  - **Standalone Mode**: Dedicated **✨ Adobe Enhance** tab with preview and download
 - **Browser Automation**: Uses Playwright to interact with Adobe's web service
 - **Progress Monitoring**: Detailed logs show upload, processing, and download status
 - **Automatic Fallback**: Gracefully uses original audio if enhancement service is unavailable
@@ -236,28 +292,57 @@ These settings persist between sessions, so you don't need to reconfigure each t
 
 ```
 ntn-podcast-creator/
-├── .devcontainer/          # Dev container configuration
-│   ├── devcontainer.json   # Container setup
-│   └── README.md           # Dev container documentation
-├── docs/                   # Documentation
-│   ├── USER_MANUAL.md      # Complete user guide with screenshots
-│   └── TECHNICAL_IMPLEMENTATION.md  # Technical details and architecture
-├── app.py                  # Main application with Gradio UI
-├── audio_processor.py      # Audio processing logic
-├── adobe_audio_enhancer.py # Adobe Enhance integration (NEW)
-├── config_manager.py       # Configuration persistence
-├── requirements.txt        # Python dependencies
-├── .env                    # Adobe credentials (create this, optional)
-├── .env.sample             # Example environment variables
-├── README.md               # This file
-├── LICENSE                 # License information
-├── audios/                 # Audio assets directory
-│   ├── intro_audio/        # Intro audio files
-│   ├── outro_audio/        # Outro audio files
-│   └── background_music/   # Background music tracks
-├── config.json            # User settings (auto-generated)
-├── uploads/               # Uploaded files (auto-generated)
-└── outputs/               # Generated podcasts (auto-generated)
+├── 📱 app.py                   # Main application entry point
+├── 📄 requirements.txt         # Python dependencies
+├── 📜 README.md                # Project overview and quick start
+├── 📄 LICENSE                  # License file
+│
+├── 🔧 core/                    # Core application data
+│   ├── __init__.py             # Core utilities and constants
+│   └── config.json             # Application configuration
+│
+├── ⚙️ features/                # Feature implementations
+│   ├── __init__.py             # Features package exports
+│   ├── audio_processor.py      # Audio mixing and processing
+│   ├── audio_denoiser_processor.py # AI denoising with chunking
+│   ├── adobe_audio_enhancer.py # Adobe AI enhancement
+│   └── config_manager.py       # Configuration management
+│
+├── 🧪 tests/                   # Test suite
+│   ├── __init__.py             # Test package
+│   ├── README.md               # Testing documentation
+│   ├── test_audio_denoising.py # AI denoising tests
+│   ├── test_audio_enhancement.py # Adobe enhancement tests
+│   ├── test_large_file_denoising.py # Large file chunking tests
+│   └── test_podcast_creation.py # End-to-end tests
+│
+├── 📚 docs/                    # Documentation
+│   ├── README.md               # Documentation index
+│   ├── USER_MANUAL.md          # Complete user guide
+│   ├── TECHNICAL_IMPLEMENTATION.md # Technical architecture
+│   ├── AUDIO_DENOISING_IMPLEMENTATION.md # AI denoising guide
+│   ├── STRUCTURE_IMPROVEMENTS.md # Project organization guide
+│   └── RELEASE_NOTES_CHUNKING.md # Latest release notes
+│
+├── 🚀 scripts/                 # Utility scripts
+│   ├── setup.sh               # Environment setup and verification
+│   └── test_docker.sh          # Docker testing script
+│
+├── 🐳 deployment/              # Deployment configurations
+│   ├── docker-compose.yml      # Docker Compose setup
+│   ├── Dockerfile              # Container definition
+│   ├── .dockerignore           # Docker ignore rules
+│   └── .env.sample             # Environment variables template
+│
+├── 🎵 audios/                  # Audio assets
+│   ├── intro_audio/            # Intro audio files
+│   ├── outro_audio/            # Outro audio files
+│   ├── background_music/       # Background music tracks
+│   └── test/                   # Test audio files
+│
+├── 📤 outputs/                 # Generated podcasts (auto-generated)
+├── 📥 uploads/                 # Temporary uploaded files (auto-generated)
+└── 🔧 .devcontainer/           # VS Code dev container config
 ```
 
 ## Technical Details
@@ -269,6 +354,34 @@ For developers and those interested in the technical implementation:
 - Logarithmic volume scaling for natural sound perception
 - Random track selection with looping for varied background music
 - 1-second crossfade overlaps between segments for smooth transitions
+
+## 🧪 Testing
+
+Comprehensive test suite available in the `tests/` folder:
+
+### Running Tests
+```bash
+# Individual tests
+python tests/test_audio_denoising.py
+python tests/test_podcast_creation.py
+python tests/test_large_file_denoising.py
+python tests/test_audio_enhancement.py
+
+# Docker deployment test
+chmod +x tests/test_docker.sh
+./tests/test_docker.sh
+```
+
+### Test Coverage
+- ✅ AI audio denoising (including large file chunking)
+- ✅ Podcast creation workflow
+- ✅ Audio processing and mixing
+- ✅ Configuration management
+- ✅ Adobe enhancement integration
+- ✅ Docker deployment validation
+- ✅ Error handling and graceful degradation
+
+See [tests/README.md](tests/README.md) for detailed testing information.
 
 ## License
 

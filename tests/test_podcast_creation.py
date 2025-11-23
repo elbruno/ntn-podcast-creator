@@ -2,8 +2,12 @@
 
 import os
 import sys
-from audio_processor import AudioProcessor
-from config_manager import ConfigManager
+
+# Add parent directory to path so we can import modules
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from features.config_manager import ConfigManager
+from features.audio_processor import AudioProcessor
 
 
 def main():
@@ -60,10 +64,19 @@ def main():
         print("-" * 60)
         print(f"✓ SUCCESS! Podcast created: {result}")
 
-        # Check file size
-        if os.path.exists(result):
-            size_mb = os.path.getsize(result) / (1024 * 1024)
+        # Check file size - result is now a tuple (podcast_path, denoised_path)
+        podcast_path = result[0] if isinstance(result, tuple) else result
+        if os.path.exists(podcast_path):
+            size_mb = os.path.getsize(podcast_path) / (1024 * 1024)
             print(f"✓ File size: {size_mb:.2f} MB")
+
+        # Check if denoised file was created
+        if isinstance(result, tuple) and len(result) > 1:
+            denoised_path = result[1]
+            if denoised_path and os.path.exists(denoised_path):
+                denoised_size_mb = os.path.getsize(
+                    denoised_path) / (1024 * 1024)
+                print(f"✓ Denoised file created: {denoised_size_mb:.2f} MB")
 
         print("=" * 60)
         return 0
