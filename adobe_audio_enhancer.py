@@ -143,21 +143,34 @@ class AdobeAudioEnhancer:
                 print(message)
         
         # This is a placeholder implementation
-        # In a real scenario with access to Adobe Enhance, this would:
+        # In a real scenario with access to Adobe Enhance, this would use Playwright MCP server:
         # 
-        # 1. Use playwright-browser_navigate to go to the enhance URL
-        # 2. Use playwright-browser_snapshot to check the page state
-        # 3. Use playwright-browser_file_upload to upload the audio file
-        # 4. Use playwright-browser_wait_for to wait for processing
-        # 5. Use playwright-browser_click to download the result
-        # 6. Return the path to the downloaded enhanced audio
+        # Step 1: Navigate to Adobe Enhance
+        #   playwright-browser_navigate(url="https://podcast.adobe.com/enhance")
+        # 
+        # Step 2: Take snapshot to verify page loaded
+        #   playwright-browser_snapshot() - to see page structure
+        # 
+        # Step 3: Find and click the upload button or input element
+        #   Use ref from snapshot to identify upload element
+        #   playwright-browser_file_upload(paths=[input_file])
+        # 
+        # Step 4: Wait for processing to complete
+        #   playwright-browser_wait_for(text="Download", time=timeout_seconds)
+        #   or wait for processing indicator to disappear
+        # 
+        # Step 5: Click download button and save enhanced audio
+        #   playwright-browser_click(element="Download button", ref="...")
+        #   Monitor browser_network_requests() to capture download
+        # 
+        # Step 6: Return path to downloaded enhanced audio file
         
         log("Browser automation for Adobe Enhance is not fully implemented yet")
         log("This feature requires access to podcast.adobe.com which may be restricted")
         log("To enable this feature:")
         log("  1. Ensure the adobe.com domain is accessible")
-        log("  2. Complete the browser automation implementation")
-        log("  3. Consider authentication requirements")
+        log("  2. Complete the browser automation implementation using Playwright MCP server tools")
+        log("  3. Consider authentication requirements (may need Adobe account login)")
         
         # For now, return None to indicate enhancement is not available
         return None

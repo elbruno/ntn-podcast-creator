@@ -342,4 +342,13 @@ class AudioProcessor:
         podcast.export(output_file, format="mp3")
         log("Podcast creation complete!")
 
+        # Clean up temporary enhanced file if it was created
+        if enhance_audio and voice_file_to_process != voice_file:
+            try:
+                if os.path.exists(voice_file_to_process):
+                    os.remove(voice_file_to_process)
+                    log(f"Cleaned up temporary enhanced file: {os.path.basename(voice_file_to_process)}")
+            except Exception as e:
+                log(f"Note: Could not clean up temporary file: {e}")
+
         return output_file

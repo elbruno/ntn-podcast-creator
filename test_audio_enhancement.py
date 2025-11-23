@@ -55,41 +55,45 @@ def test_enhance_when_disabled():
     """Test enhancement when disabled."""
     print("\nTesting enhancement when disabled...")
     
-    # Create a test file
-    test_file = "/tmp/test_audio.txt"
-    with open(test_file, "w") as f:
+    # Create a test file using tempfile
+    import tempfile
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+        test_file = f.name
         f.write("test audio content")
     
-    result = enhance_audio_file(test_file, enabled=False)
-    assert result == test_file
-    print("✓ Enhancement returns original file when disabled")
-    
-    # Clean up
-    if os.path.exists(test_file):
-        os.remove(test_file)
+    try:
+        result = enhance_audio_file(test_file, enabled=False)
+        assert result == test_file
+        print("✓ Enhancement returns original file when disabled")
+    finally:
+        # Clean up
+        if os.path.exists(test_file):
+            os.remove(test_file)
 
 
 def test_enhance_with_fallback():
     """Test enhancement with fallback to original."""
     print("\nTesting enhancement with fallback...")
     
-    # Create a test file
-    test_file = "/tmp/test_audio2.txt"
-    with open(test_file, "w") as f:
+    # Create a test file using tempfile
+    import tempfile
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+        test_file = f.name
         f.write("test audio content")
     
-    # This should use fallback since we don't have actual audio processing
-    result = enhance_audio_file(test_file, enabled=True)
-    
-    # Should return a path (either enhanced or fallback)
-    assert result is not None
-    print("✓ Enhancement with fallback works correctly")
-    
-    # Clean up
-    if os.path.exists(test_file):
-        os.remove(test_file)
-    if result and result != test_file and os.path.exists(result):
-        os.remove(result)
+    try:
+        # This should use fallback since we don't have actual audio processing
+        result = enhance_audio_file(test_file, enabled=True)
+        
+        # Should return a path (either enhanced or fallback)
+        assert result is not None
+        print("✓ Enhancement with fallback works correctly")
+    finally:
+        # Clean up
+        if os.path.exists(test_file):
+            os.remove(test_file)
+        if result and result != test_file and os.path.exists(result):
+            os.remove(result)
 
 
 def main():
