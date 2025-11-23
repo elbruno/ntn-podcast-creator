@@ -6,6 +6,7 @@ import gradio as gr
 from typing import Optional, List
 from audio_processor import AudioProcessor
 from config_manager import ConfigManager
+from adobe_audio_enhancer import enhance_audio_file
 
 
 # Initialize components
@@ -70,7 +71,7 @@ def get_audio_duration_seconds(file_path: str) -> float:
 
 
 def generate_timeline_chart(voice_file: Optional[str], intro_file: Optional[str],
-                            outro_file: Optional[str], has_background: bool, 
+                            outro_file: Optional[str], has_background: bool,
                             background_tracks: Optional[List[str]] = None,
                             track_volumes: Optional[dict] = None) -> str:
     """Generate a visual timeline chart showing how audio segments are organized.
@@ -220,7 +221,7 @@ def generate_timeline_chart(voice_file: Optional[str], intro_file: Optional[str]
         html += "<div style='margin: 3px 0;'>🔵 <strong>OUTRO</strong> - Plays last (no background music)</div>"
     if has_background and voice_duration > 0:
         html += "<div style='margin: 3px 0;'>🎵 <strong>BACKGROUND MUSIC</strong> - Plays only during voice recording</div>"
-        
+
         # Show background tracks with volumes
         if background_tracks and len(background_tracks) > 0:
             html += "<div style='margin-top: 10px; padding: 8px; background: #f8f9fa; border-radius: 3px;'>"
@@ -228,10 +229,11 @@ def generate_timeline_chart(voice_file: Optional[str], intro_file: Optional[str]
             for track in background_tracks:
                 if os.path.exists(track):
                     track_name = os.path.basename(track)
-                    volume = track_volumes.get(track, config_manager.get_volume()) if track_volumes else config_manager.get_volume()
+                    volume = track_volumes.get(track, config_manager.get_volume(
+                    )) if track_volumes else config_manager.get_volume()
                     html += f"<div style='font-size: 11px; margin-left: 10px;'>• {track_name} - Volume: {volume}%</div>"
             html += "</div>"
-            
+
     if overlap_seconds > 0:
         html += "<div style='margin: 3px 0; padding: 5px; background: #fff3cd; border-radius: 3px;'>⚡ <strong>Overlaps:</strong> 1-second smooth transitions between segments (shown as lighter areas)</div>"
 
@@ -575,20 +577,21 @@ def update_track_volume(track_choice, new_volume):
     """Update volume for a specific track."""
     if track_choice is None:
         return "No track selected", None, None
-    
+
     # Find the track path
     display_list, paths = get_background_tracks_list()
     try:
         idx = display_list.index(track_choice)
         track_path = paths[idx]
-        
+
         # Update the volume for this track
         config_manager.set_track_volume(track_path, int(new_volume))
-        log_message(f"Set volume for {os.path.basename(track_path)} to {int(new_volume)}%")
-        
+        log_message(
+            f"Set volume for {os.path.basename(track_path)} to {int(new_volume)}%")
+
         # Generate preview audio with new volume
         preview_audio = generate_volume_preview(track_path, int(new_volume))
-        
+
         return f"Volume for {os.path.basename(track_path)} set to {int(new_volume)}%", preview_audio, preview_audio
     except (ValueError, IndexError):
         return "Track not found", None, None
@@ -596,14 +599,14 @@ def update_track_volume(track_choice, new_volume):
 
 def generate_volume_preview(track_path: str, volume: int) -> Optional[str]:
     """Generate a preview of the track with applied volume.
-    
+
     Args:
         track_path: Path to the track
         volume: Volume percentage to apply
-        
+
     Returns:
         Path to the preview file or None
-        
+
     Note:
         Generated temporary files persist until system cleanup (temp directory
         is periodically cleaned by OS) or until the application is restarted.
@@ -612,17 +615,18 @@ def generate_volume_preview(track_path: str, volume: int) -> Optional[str]:
     try:
         from pydub import AudioSegment
         import tempfile
-        
+
         # Load the track
         audio = AudioSegment.from_file(track_path)
-        
+
         # Apply volume
         audio_with_volume = audio_processor.reduce_volume(audio, volume)
-        
+
         # Save to temp file - persists until OS cleanup or app restart
-        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3", dir=tempfile.gettempdir())
+        temp_file = tempfile.NamedTemporaryFile(
+            delete=False, suffix=".mp3", dir=tempfile.gettempdir())
         audio_with_volume.export(temp_file.name, format="mp3")
-        
+
         return temp_file.name
     except Exception as e:
         log_message(f"Error generating volume preview: {e}")
@@ -633,7 +637,7 @@ def get_track_volume(track_choice):
     """Get volume setting for the selected track."""
     if track_choice is None:
         return config_manager.get_volume()
-    
+
     # Find the track path
     display_list, paths = get_background_tracks_list()
     try:
@@ -757,19 +761,74 @@ def create_podcast_handler(voice_file, output_name, delete_voice, trim_silence, 
         return error_msg, None, get_console_log()
 
 
+def enhance_audio_only_handler(voice_file, delete_after):
+    """Run Adobe Enhance as a standalone preprocessing step.
+
+    Args:
+        voice_file: Uploaded voice file to enhance
+        delete_after: Whether to delete the uploaded original after processing
+
+    Returns:
+        Tuple of (status message, enhanced audio file path or None, console log)
+    """
+    log_message("=" * 50)
+    log_message("Starting standalone Adobe Enhance run")
+
+    if voice_file is None:
+        log_message("Error: Please upload a voice recording to enhance")
+        return "Error: Please upload a voice recording", None, get_console_log()
+
+    saved_voice = save_uploaded_file(voice_file, "enhance")
+    if not saved_voice:
+        log_message("Error: Could not save uploaded voice file")
+        return "Error: Could not save uploaded voice file", None, get_console_log()
+
+    try:
+        enhanced_path = enhance_audio_file(
+            input_file=saved_voice,
+            enabled=True,
+            log_callback=log_message
+        )
+
+        if delete_after and os.path.exists(saved_voice):
+            try:
+                os.remove(saved_voice)
+                log_message(
+                    f"Deleted original upload: {os.path.basename(saved_voice)}")
+            except Exception as delete_error:
+                log_message(
+                    f"Warning: Unable to delete original upload: {delete_error}")
+
+        if enhanced_path and os.path.exists(enhanced_path):
+            log_message(
+                f"Standalone enhancement ready: {os.path.basename(enhanced_path)}")
+            log_message("=" * 50)
+            return f"✓ Enhanced audio ready: {os.path.basename(enhanced_path)}", enhanced_path, get_console_log()
+
+        log_message(
+            "Adobe Enhance returned no file. Please check credentials or try again later.")
+        log_message("=" * 50)
+        return "Enhancement failed. Please check the console log for details.", None, get_console_log()
+
+    except Exception as exc:
+        log_message(f"Error enhancing audio: {exc}")
+        log_message("=" * 50)
+        return f"Error enhancing audio: {exc}", None, get_console_log()
+
+
 def export_settings() -> str:
     """Export current settings to a JSON file.
-    
+
     Returns:
         Path to the exported settings file
     """
     import json
     import datetime
-    
+
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"podcast_settings_{timestamp}.json"
     filepath = os.path.join("outputs", filename)
-    
+
     try:
         # Get current configuration
         settings = {
@@ -781,10 +840,10 @@ def export_settings() -> str:
             "last_output_name": config_manager.get_last_output_name(),
             "export_date": datetime.datetime.now().isoformat()
         }
-        
+
         with open(filepath, 'w', encoding='utf-8') as f:
             json.dump(settings, f, indent=2)
-        
+
         log_message(f"Settings exported to: {filename}")
         return filepath
     except Exception as e:
@@ -794,18 +853,18 @@ def export_settings() -> str:
 
 def import_settings(settings_file) -> str:
     """Import settings from a JSON file.
-    
+
     Args:
         settings_file: Uploaded settings file
-        
+
     Returns:
         Status message
     """
     import json
-    
+
     if settings_file is None:
         return "No settings file provided"
-    
+
     try:
         # Handle Gradio file path
         if isinstance(settings_file, str):
@@ -814,64 +873,66 @@ def import_settings(settings_file) -> str:
             file_path = settings_file.name
         else:
             file_path = str(settings_file)
-        
+
         # Basic security check - ensure it's a JSON file
         if not file_path.lower().endswith('.json'):
             return "Error: Only JSON files are supported"
-        
+
         # Check if file exists
         if not os.path.exists(file_path):
             return "Error: Settings file not found"
-        
+
         # Read settings file with size limit (1MB max)
         file_size = os.path.getsize(file_path)
         if file_size > 1024 * 1024:  # 1MB
             return "Error: Settings file too large (max 1MB)"
-        
+
         # Validate JSON content
         with open(file_path, 'r', encoding='utf-8') as f:
             try:
                 settings = json.load(f)
             except json.JSONDecodeError as e:
                 return f"Error: Invalid JSON format - {str(e)}"
-        
+
         # Ensure settings is a dictionary
         if not isinstance(settings, dict):
             return "Error: Settings file must contain a JSON object"
-        
+
         # Validate and import settings
         if "intro_file" in settings:
             intro = settings["intro_file"]
             if intro and os.path.exists(intro):
                 config_manager.update_intro(intro)
-        
+
         if "outro_file" in settings:
             outro = settings["outro_file"]
             if outro and os.path.exists(outro):
                 config_manager.update_outro(outro)
-        
+
         if "background_tracks" in settings:
             tracks = settings["background_tracks"]
             valid_tracks = [t for t in tracks if os.path.exists(t)]
             if valid_tracks:
                 config_manager.update_background_tracks(valid_tracks)
-        
+
         if "background_volume" in settings:
             config_manager.update_volume(settings["background_volume"])
-        
+
         if "track_volumes" in settings:
             # Import track volumes
             track_volumes = settings["track_volumes"]
             for track, volume in track_volumes.items():
                 if os.path.exists(track):
                     config_manager.set_track_volume(track, volume)
-        
+
         if "last_output_name" in settings:
-            config_manager.update_last_output_name(settings["last_output_name"])
-        
-        log_message(f"Settings imported successfully from {os.path.basename(file_path)}")
+            config_manager.update_last_output_name(
+                settings["last_output_name"])
+
+        log_message(
+            f"Settings imported successfully from {os.path.basename(file_path)}")
         return f"✓ Settings imported successfully from {os.path.basename(file_path)}"
-        
+
     except json.JSONDecodeError as e:
         error_msg = f"Error: Invalid settings file format - {e}"
         log_message(error_msg)
@@ -880,7 +941,6 @@ def import_settings(settings_file) -> str:
         error_msg = f"Error importing settings: {e}"
         log_message(error_msg)
         return error_msg
-
 
 
 def create_ui():
@@ -930,11 +990,53 @@ def create_ui():
                             info="Removes silence from start and end"
                         )
 
-                        enhance_audio_checkbox = gr.Checkbox(
-                            label="Enhance audio quality (Adobe Enhance)",
-                            value=config_manager.get_enhance_audio(),
-                            info="Clean and enhance audio using Adobe's AI (experimental)"
-                        )
+                        with gr.Group():
+                            gr.Markdown("#### Adobe Enhance Assistant")
+                            gr.Markdown(
+                                "Use Adobe's Enhance Speech AI in two ways: **(1)** keep the checkbox enabled to run automatically before mixing the podcast, "
+                                "or **(2)** use the quick action below to enhance only your voice track and download it immediately."
+                            )
+
+                            enhance_audio_checkbox = gr.Checkbox(
+                                label="Run Adobe Enhance automatically during podcast creation",
+                                value=config_manager.get_enhance_audio(),
+                                info="Disable if you want to skip pre-processing"
+                            )
+
+                            with gr.Accordion("✨ Enhance voice only (no mixing)", open=False):
+                                gr.Markdown(
+                                    "Click the button to upload the voice recording above to Adobe Enhance, preview the cleaned audio, and reuse it anywhere."
+                                )
+
+                                enhance_only_delete_checkbox = gr.Checkbox(
+                                    label="Delete uploaded file after enhancement",
+                                    value=True,
+                                    info="Keeps the uploads folder tidy"
+                                )
+
+                                enhance_only_button = gr.Button(
+                                    "Run Adobe Enhance Now",
+                                    variant="secondary"
+                                )
+
+                                enhance_only_status = gr.Textbox(
+                                    label="Standalone Enhance Status",
+                                    interactive=False,
+                                    lines=2
+                                )
+
+                                enhance_only_output = gr.Audio(
+                                    label="Enhanced Voice Preview",
+                                    type="filepath"
+                                )
+
+                                enhance_only_log = gr.Textbox(
+                                    label="Latest Enhance Log",
+                                    value=get_console_log(),
+                                    interactive=False,
+                                    lines=10,
+                                    max_lines=20
+                                )
 
                         create_button = gr.Button(
                             "🎬 Create Podcast",
@@ -957,7 +1059,7 @@ def create_ui():
                             label="Your Podcast",
                             type="filepath"
                         )
-                        
+
                         gr.Markdown("**Download Options**")
                         with gr.Row():
                             export_settings_button = gr.Button(
@@ -969,7 +1071,7 @@ def create_ui():
                                 label="Settings File",
                                 visible=True
                             )
-                        
+
                         gr.Markdown("**Import Settings**")
                         with gr.Row():
                             import_settings_input = gr.File(
@@ -980,7 +1082,6 @@ def create_ui():
                                 label="Import Status",
                                 interactive=False
                             )
-
 
                 gr.Markdown("""
                 ---
@@ -1131,7 +1232,7 @@ def create_ui():
                         gr.Markdown("---")
 
                         gr.Markdown("#### Volume Settings")
-                        
+
                         gr.Markdown("**Global Volume Control**")
                         volume_slider = gr.Slider(
                             minimum=0,
@@ -1141,23 +1242,24 @@ def create_ui():
                             label="Default Background Music Volume (%)",
                             info="Recommended: 10-12%"
                         )
-                        
+
                         apply_to_all_button = gr.Button(
                             "📢 Apply Volume to All Tracks",
                             variant="primary",
                             size="sm"
                         )
-                        
+
                         volume_status = gr.Textbox(
                             label="Volume Status",
                             interactive=False
                         )
-                        
+
                         gr.Markdown("---")
-                        
+
                         gr.Markdown("**Individual Track Volume**")
-                        gr.Markdown("*Select a track above to adjust its volume individually*")
-                        
+                        gr.Markdown(
+                            "*Select a track above to adjust its volume individually*")
+
                         track_volume_slider = gr.Slider(
                             minimum=0,
                             maximum=50,
@@ -1166,12 +1268,12 @@ def create_ui():
                             label="Selected Track Volume (%)",
                             info="Volume for the track selected above"
                         )
-                        
+
                         track_volume_status = gr.Textbox(
                             label="Track Volume Status",
                             interactive=False
                         )
-                        
+
                         # Audio player with volume applied
                         bg_track_player_with_volume = gr.Audio(
                             label="Preview Track with Applied Volume",
@@ -1311,32 +1413,32 @@ def create_ui():
             inputs=[volume_slider],
             outputs=[volume_status]
         )
-        
+
         # Apply volume to all tracks
         apply_to_all_button.click(
             fn=apply_volume_to_all,
             inputs=[],
             outputs=[volume_status]
         )
-        
+
         # When track is selected, update the track volume slider
         def update_track_volume_slider(track_choice):
             volume = get_track_volume(track_choice)
             return volume
-        
+
         bg_track_selector.change(
             fn=update_track_volume_slider,
             inputs=[bg_track_selector],
             outputs=[track_volume_slider]
         )
-        
+
         # When track volume slider changes, update the track volume and generate preview
         track_volume_slider.change(
             fn=update_track_volume,
             inputs=[bg_track_selector, track_volume_slider],
-            outputs=[track_volume_status, bg_track_player_with_volume, bg_track_player]
+            outputs=[track_volume_status,
+                     bg_track_player_with_volume, bg_track_player]
         )
-
 
         # Update timeline when voice file is uploaded
         voice_input.change(
@@ -1345,11 +1447,30 @@ def create_ui():
             outputs=[timeline_html]
         )
 
-        create_button.click(
+        create_button_event = create_button.click(
             fn=create_podcast_handler,
             inputs=[voice_input, output_name_input,
                     delete_voice_checkbox, trim_silence_checkbox, enhance_audio_checkbox],
             outputs=[status_output, audio_output, console_output]
+        )
+
+        create_button_event.then(
+            fn=get_console_log,
+            inputs=[],
+            outputs=[enhance_only_log]
+        )
+
+        enhance_only_button_event = enhance_only_button.click(
+            fn=enhance_audio_only_handler,
+            inputs=[voice_input, enhance_only_delete_checkbox],
+            outputs=[enhance_only_status,
+                     enhance_only_output, enhance_only_log]
+        )
+
+        enhance_only_button_event.then(
+            fn=get_console_log,
+            inputs=[],
+            outputs=[console_output]
         )
 
         refresh_settings_button.click(
@@ -1358,32 +1479,44 @@ def create_ui():
             outputs=[settings_display]
         )
 
-        refresh_log_button.click(
+        refresh_log_event = refresh_log_button.click(
             fn=get_console_log,
             inputs=[],
             outputs=[console_output]
         )
 
-        clear_log_button.click(
+        refresh_log_event.then(
+            fn=get_console_log,
+            inputs=[],
+            outputs=[enhance_only_log]
+        )
+
+        clear_log_event = clear_log_button.click(
             fn=clear_console_log,
             inputs=[],
             outputs=[console_output]
         )
-        
+
+        clear_log_event.then(
+            fn=get_console_log,
+            inputs=[],
+            outputs=[enhance_only_log]
+        )
+
         # Save enhance audio setting when changed
         enhance_audio_checkbox.change(
             fn=lambda enabled: config_manager.set_enhance_audio(enabled),
             inputs=[enhance_audio_checkbox],
             outputs=[]
         )
-        
+
         # Export settings
         export_settings_button.click(
             fn=export_settings,
             inputs=[],
             outputs=[settings_file_output]
         )
-        
+
         # Import settings
         import_settings_input.change(
             fn=import_settings,
