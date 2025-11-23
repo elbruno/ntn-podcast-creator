@@ -6,7 +6,7 @@ from typing import Optional, Callable
 
 class AudioDenoiserProcessor:
     """Handles audio denoising using the audio-denoiser library.
-    
+
     This class provides integration with the audio-denoiser library to clean
     audio recordings by removing background noise before podcast creation.
     """
@@ -22,9 +22,10 @@ class AudioDenoiserProcessor:
         try:
             import torch
             from audio_denoiser.AudioDenoiser import AudioDenoiser
-            
+
             # Check if CUDA is available, otherwise use CPU
-            device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
+            device = torch.device(
+                'cuda:0') if torch.cuda.is_available() else torch.device('cpu')
             self.denoiser = AudioDenoiser(device=device)
             self.available = True
         except ImportError as e:
@@ -36,7 +37,7 @@ class AudioDenoiserProcessor:
 
     def is_available(self) -> bool:
         """Check if the audio denoiser is available.
-        
+
         Returns:
             True if audio-denoiser is available, False otherwise
         """
@@ -50,16 +51,16 @@ class AudioDenoiserProcessor:
         log_callback: Optional[Callable[[str], None]] = None
     ) -> Optional[str]:
         """Denoise an audio file using audio-denoiser.
-        
+
         Args:
             input_file: Path to input audio file
             output_file: Path for denoised output (auto-generated if None)
             auto_scale: Whether to auto-scale the audio (recommended for low volume)
             log_callback: Optional callback function for logging
-            
+
         Returns:
             Path to denoised audio file, or None if denoising fails
-            
+
         Raises:
             FileNotFoundError: If input file doesn't exist
             Exception: If denoising fails
@@ -95,7 +96,8 @@ class AudioDenoiserProcessor:
             log("Skipping denoising for this large file...")
             return input_file
 
-        log(f"Starting audio denoising for: {os.path.basename(input_file)} ({file_size_mb:.1f}MB)")
+        log(
+            f"Starting audio denoising for: {os.path.basename(input_file)} ({file_size_mb:.1f}MB)")
 
         try:
             # Process the audio file
@@ -104,10 +106,11 @@ class AudioDenoiserProcessor:
                 output_file,
                 auto_scale=auto_scale
             )
-            
+
             if os.path.exists(output_file):
                 output_size_mb = os.path.getsize(output_file) / (1024 * 1024)
-                log(f"✓ Audio denoising complete: {os.path.basename(output_file)} ({output_size_mb:.1f}MB)")
+                log(
+                    f"✓ Audio denoising complete: {os.path.basename(output_file)} ({output_size_mb:.1f}MB)")
                 return output_file
             else:
                 log("Denoising failed, using original audio")
@@ -127,14 +130,14 @@ def denoise_audio_file(
     log_callback: Optional[Callable[[str], None]] = None
 ) -> Optional[str]:
     """Convenience function to denoise an audio file.
-    
+
     Args:
         input_file: Path to input audio file
         output_file: Path for denoised output (auto-generated if None)
         enabled: Whether denoising is enabled (if False, returns original)
         auto_scale: Whether to auto-scale the audio
         log_callback: Optional callback function for logging
-        
+
     Returns:
         Path to denoised audio file (or original if denoising disabled/failed)
     """
