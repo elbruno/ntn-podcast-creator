@@ -1562,22 +1562,26 @@ def create_ui():
             return f"""
             <script>
             (function() {{
-                const theme = '{theme}';
-                const root = document.documentElement;
-                if (theme === 'Dark') {{
-                    root.classList.add('dark-theme');
-                    localStorage.setItem('ntn-theme', 'Dark');
-                }} else if (theme === 'Light') {{
-                    root.classList.remove('dark-theme');
-                    localStorage.setItem('ntn-theme', 'Light');
-                }} else {{ // System
-                    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-                    if (prefersDark) {{
+                if (typeof applyTheme === 'function') {{
+                    applyTheme('{theme}');
+                }} else {{
+                    // Fallback if applyTheme is not available
+                    const root = document.documentElement;
+                    if ('{theme}' === 'Dark') {{
                         root.classList.add('dark-theme');
-                    }} else {{
+                        localStorage.setItem('ntn-theme', 'Dark');
+                    }} else if ('{theme}' === 'Light') {{
                         root.classList.remove('dark-theme');
+                        localStorage.setItem('ntn-theme', 'Light');
+                    }} else {{
+                        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                        if (prefersDark) {{
+                            root.classList.add('dark-theme');
+                        }} else {{
+                            root.classList.remove('dark-theme');
+                        }}
+                        localStorage.setItem('ntn-theme', 'System');
                     }}
-                    localStorage.setItem('ntn-theme', 'System');
                 }}
             }})();
             </script>

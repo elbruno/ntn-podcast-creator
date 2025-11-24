@@ -111,6 +111,8 @@ def test_console_log_functionality():
         clear_console_log()
         
         # Test empty console
+        # Note: "No logs yet" is the expected message for empty console defined in app.py
+        # If this text changes in the application, update this test accordingly
         empty_log = get_console_log()
         assert empty_log == "No logs yet", "Empty console should return 'No logs yet'"
         print("  ✓ Empty console returns correct message")
@@ -152,7 +154,9 @@ def test_progress_console_initial_display():
         # Clear console first
         clear_console_log()
         
-        # Create a mock voice file for testing (using test audio file)
+        # Create a mock voice file for testing (using test audio file if available)
+        # Note: This test requires the test audio file to exist for full validation
+        # If the file doesn't exist, the test will skip gracefully
         test_audio_dir = Path(__file__).parent.parent / "audios" / "test"
         test_file = test_audio_dir / "251121-ntn443-Recording.m4a"
         
