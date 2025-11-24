@@ -15,6 +15,9 @@ Instructions for running with Docker, including setup and troubleshooting.
 ### [Technical Implementation](TECHNICAL_IMPLEMENTATION.md)
 Detailed architecture, API reference, and technical specifications.
 
+### [Structure Improvements](STRUCTURE_IMPROVEMENTS.md)
+Project organization, architecture, and code structure best practices.
+
 ### [Audio Denoising Implementation](AUDIO_DENOISING_IMPLEMENTATION.md)
 Complete documentation of the AI audio denoising feature with large file support.
 

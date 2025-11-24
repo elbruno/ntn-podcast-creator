@@ -268,38 +268,44 @@ def get_console_log() -> str:
     return "\n".join(console_log) if console_log else "No logs yet"
 
 
-def get_bottom_console_html(console_text: str, visible: bool = True) -> str:
+def get_bottom_console_html(console_text: str, visible: bool = True, show_close: bool = False) -> str:
     """Generate bottom console HTML.
-    
+
     Args:
         console_text: The console log text to display
         visible: Whether the console should be visible
-        
+        show_close: Whether to show the close button
+
     Returns:
         HTML string for bottom console
     """
     if not visible or not console_text.strip():
         return ""
-    
+
     # Get last 10 lines for the bottom console to avoid overload
     lines = console_text.strip().split('\n')
     last_lines = lines[-10:] if len(lines) > 10 else lines
     display_text = '\n'.join(last_lines)
-    
+
     # Escape HTML characters
     display_text = (display_text
-                   .replace('&', '&amp;')
-                   .replace('<', '&lt;')
-                   .replace('>', '&gt;')
-                   .replace('"', '&quot;')
-                   .replace("'", '&#x27;'))
-    
+                    .replace('&', '&amp;')
+                    .replace('<', '&lt;')
+                    .replace('>', '&gt;')
+                    .replace('"', '&quot;')
+                    .replace("'", '&#x27;'))
+
+    close_button_html = ""
+    if show_close:
+        close_button_html = '<button class="close-btn" onclick="this.parentElement.parentElement.style.display=\'none\'">✖ Close</button>'
+
     return f"""
-    <div>
-        <div class="bottom-console-header">
-            📋 Processing Log (Live Updates)
+    <div style="position: fixed; bottom: 0; left: 0; right: 0; z-index: 9998; background: #1e1e1e; border-top: 2px solid #333; box-shadow: 0 -2px 4px rgba(0,0,0,0.3); max-height: 200px; overflow-y: auto; display: block;">
+        <div style="background: #333; color: white; padding: 8px 20px; font-weight: bold; border-bottom: 1px solid #555; font-size: 14px; display: flex; justify-content: space-between; align-items: center;">
+            <span>📋 Processing Log (Live Updates)</span>
+            {close_button_html}
         </div>
-        <div class="bottom-console-content">
+        <div style="font-family: 'Courier New', monospace; background: #1e1e1e; color: #ffffff; padding: 10px 20px; font-size: 12px; line-height: 1.4; white-space: pre-wrap; max-height: 150px; overflow-y: auto;">
 {display_text}
         </div>
     </div>
@@ -731,6 +737,25 @@ def get_current_settings():
     return "\\n".join(settings)
 
 
+def get_progress_html(pct, msg):
+    """Generate progress bar HTML with inline display control."""
+    return f"""
+    <div style="position: fixed; top: 0; left: 0; right: 0; z-index: 9999; background: #2196F3; color: white; padding: 10px 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.2); display: flex; align-items: center; justify-content: space-between; width: calc(100% - 40px);">
+        <div style="font-weight: bold; display: flex; align-items: center; gap: 10px;">
+            <div style="border: 3px solid rgba(255,255,255,0.3); border-radius: 50%; border-top: 3px solid white; width: 20px; height: 20px; animation: spin 1s linear infinite;"></div>
+            {msg}
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <div style="font-size: 12px; min-width: 40px;">{int(pct*100)}%</div>
+            <div style="background: rgba(255,255,255,0.3); height: 8px; width: 200px; border-radius: 4px; overflow: hidden;">
+                <div style="background: white; height: 100%; width: {pct*100}%; transition: width 0.3s;"></div>
+            </div>
+        </div>
+        <style>@keyframes spin {{0% {{transform: rotate(0deg);}} 100% {{transform: rotate(360deg);}}}}</style>
+    </div>
+    """
+
+
 def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, trim_silence, denoise_audio, denoise_method, enhance_audio, normalize_lufs, target_lufs, generate_transcript, whisper_model, progress=gr.Progress()):
     """Handle podcast creation request with progress tracking."""
     import threading
@@ -741,31 +766,13 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
     global console_log
     console_log.clear()
 
-    # Helper for custom progress bar
-    def get_progress_html(pct, msg):
-        return f"""
-        <div style="display: flex; align-items: center; justify-content: space-between; width: 100%; background: #2196F3; color: white; padding: 10px 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">
-            <div style="font-weight: bold; display: flex; align-items: center; gap: 10px;">
-                <div class="spinner" style="border: 3px solid rgba(255,255,255,0.3); border-radius: 50%; border-top: 3px solid white; width: 20px; height: 20px; animation: spin 1s linear infinite;"></div>
-                {msg}
-            </div>
-            <div style="display: flex; align-items: center; gap: 10px;">
-                <div style="font-size: 12px;">{int(pct*100)}%</div>
-                <div style="background: rgba(255,255,255,0.3); height: 8px; width: 200px; border-radius: 4px; overflow: hidden;">
-                    <div style="background: white; height: 100%; width: {pct*100}%; transition: width 0.3s;"></div>
-                </div>
-            </div>
-            <style>@keyframes spin {{0% {{transform: rotate(0deg);}} 100% {{transform: rotate(360deg);}}}}</style>
-        </div>
-        """
-
     progress(0.0, "🚀 Starting podcast creation...")
     log_message("=" * 50)
     log_message("🎬 Starting new podcast creation")
 
     if voice_file is None:
         log_message("❌ Error: No voice file provided")
-        yield "❌ Error: Please upload a voice recording file", None, None, None, get_console_log(), gr.update(visible=False), gr.update(visible=False)
+        yield "❌ Error: Please upload a voice recording file", None, None, None, get_console_log(), "", ""
         return
 
     if not output_name or output_name.strip() == "":
@@ -777,18 +784,18 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
 
     progress(0.1, "📁 Preparing files...")
     current_console = get_console_log()
-    yield "Preparing files...", None, None, None, current_console, gr.update(visible=True, value=get_progress_html(0.1, "Preparing files...")), gr.update(visible=True, value=get_bottom_console_html(current_console))
+    yield "Preparing files...", None, None, None, current_console, get_progress_html(0.1, "Preparing files..."), get_bottom_console_html(current_console)
 
     # Save voice file
     voice_path = save_uploaded_file(voice_file, "voice")
     if not voice_path:
         log_message("❌ Error: Could not save voice file")
-        yield "❌ Error: Could not save voice file", None, None, None, get_console_log(), gr.update(visible=False), gr.update(visible=False)
+        yield "❌ Error: Could not save voice file", None, None, None, get_console_log(), "", ""
         return
 
     progress(0.2, "⚙️ Loading configuration...")
     current_console = get_console_log()
-    yield "Loading configuration...", None, None, None, current_console, gr.update(value=get_progress_html(0.2, "Loading configuration...")), gr.update(value=get_bottom_console_html(current_console))
+    yield "Loading configuration...", None, None, None, current_console, get_progress_html(0.2, "Loading configuration..."), get_bottom_console_html(current_console)
 
     # Get configuration
     intro_path = config_manager.get_intro()
@@ -818,7 +825,7 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
 
     progress(0.3, "🎬 Starting audio processing...")
     current_console = get_console_log()
-    yield "Starting audio processing...", None, None, None, current_console, gr.update(value=get_progress_html(0.3, "Starting audio processing...")), gr.update(value=get_bottom_console_html(current_console))
+    yield "Starting audio processing...", None, None, None, current_console, get_progress_html(0.3, "Starting audio processing..."), get_bottom_console_html(current_console)
 
     # Queue for logs to enable real-time updates
     log_queue = queue.Queue()
@@ -910,7 +917,7 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
 
         if logs_updated:
             current_logs = get_console_log()
-            yield "Processing...", None, None, None, current_logs, gr.update(value=get_progress_html(current_pct, current_msg)), gr.update(value=get_bottom_console_html(current_logs))
+            yield "Processing...", None, None, None, current_logs, get_progress_html(current_pct, current_msg), get_bottom_console_html(current_logs)
 
         time.sleep(0.1)
 
@@ -925,7 +932,8 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
         error_msg = f"Error creating podcast: {result_container['error']}"
         log_message(error_msg)
         log_message("=" * 50)
-        yield error_msg, None, None, None, get_console_log(), gr.update(visible=False), gr.update(visible=False)
+        error_console_log = get_console_log()
+        yield error_msg, None, None, None, error_console_log, "", get_bottom_console_html(error_console_log, visible=True, show_close=True)
     else:
         result_path, denoised_path, transcript_path = result_container['result']
 
@@ -944,7 +952,9 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
         final_transcript = transcript_path if transcript_path and os.path.exists(
             transcript_path) else None
 
-        yield f"✓ Podcast created successfully: {output_name}.mp3", result_path, denoised_path, final_transcript, get_console_log(), gr.update(visible=False), gr.update(visible=False)
+        # Show the bottom console with close button when complete
+        final_console_log = get_console_log()
+        yield f"✓ Podcast created successfully: {output_name}.mp3", result_path, denoised_path, final_transcript, final_console_log, "", get_bottom_console_html(final_console_log, visible=True, show_close=True)
 
 
 def create_podcast_handler(voice_file, output_name, delete_voice, trim_silence, denoise_audio, denoise_method, enhance_audio, normalize_lufs, target_lufs, generate_transcript, whisper_model):
@@ -1360,6 +1370,10 @@ def create_ui():
             border-bottom: 2px solid #e0e0e0 !important;
             padding: 5px 20px !important;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
+            display: none !important;
+        }
+        .progress-container.visible {
+            display: block !important;
         }
         .bottom-console-container {
             position: fixed !important;
@@ -1372,6 +1386,10 @@ def create_ui():
             box-shadow: 0 -2px 4px rgba(0,0,0,0.3) !important;
             max-height: 200px !important;
             overflow-y: auto !important;
+            display: none !important;
+        }
+        .bottom-console-container.visible {
+            display: block !important;
         }
         .bottom-console-header {
             background: #333 !important;
@@ -1380,6 +1398,9 @@ def create_ui():
             font-weight: bold !important;
             border-bottom: 1px solid #555 !important;
             font-size: 14px !important;
+            display: flex !important;
+            justify-content: space-between !important;
+            align-items: center !important;
         }
         .bottom-console-content {
             font-family: 'Courier New', monospace !important;
@@ -1393,7 +1414,7 @@ def create_ui():
             overflow-y: auto !important;
         }
         .main-container {
-            margin-top: 60px !important;
+            margin-top: 10px !important;
             margin-bottom: 210px !important;
         }
         .compact-row {
@@ -1406,28 +1427,73 @@ def create_ui():
             margin: 10px 0 !important;
             background: #f9f9f9 !important;
         }
+        .footer {
+            text-align: center;
+            padding: 20px;
+            background: #f5f5f5;
+            border-top: 1px solid #ddd;
+            margin-top: 30px;
+        }
+        .close-btn {
+            cursor: pointer;
+            padding: 4px 12px;
+            background: #dc3545;
+            color: white;
+            border-radius: 4px;
+            font-size: 12px;
+            border: none;
+        }
+        .close-btn:hover {
+            background: #c82333;
+        }
+        /* Dark theme support */
+        @media (prefers-color-scheme: dark) {
+            .dark .footer {
+                background: #1e1e1e;
+                border-top: 1px solid #333;
+            }
+            .dark .clean-card {
+                background: #2a2a2a !important;
+                border-color: #444 !important;
+            }
+        }
+        .dark .footer {
+            background: #1e1e1e;
+            border-top: 1px solid #333;
+            color: #fff;
+        }
+        .dark .clean-card {
+            background: #2a2a2a !important;
+            border-color: #444 !important;
+        }
         </style>
         """)
         # Progress bar container (initially hidden)
         progress_bar = gr.HTML(
-            value="",
-            visible=False,
+            value='<div style="display: none;"></div>',
             elem_classes=["progress-container"]
         )
-        
+
         # Bottom console container (initially hidden)
         bottom_console = gr.HTML(
-            value="",
-            visible=False,
+            value='<div style="display: none;"></div>',
             elem_classes=["bottom-console-container"]
         )
 
-        with gr.Column(elem_classes=["main-container"]):
-            gr.Markdown("""
-            # 🎙️ NTN Podcast Creator
+        # Title and theme selector
+        with gr.Row():
+            with gr.Column(scale=3):
+                gr.Markdown("# 🎙️ NTN Podcast Creator")
+            with gr.Column(scale=1):
+                theme_selector = gr.Dropdown(
+                    choices=["Light", "Dark", "System"],
+                    value="System",
+                    label="Theme",
+                    info="UI appearance (refresh to apply)"
+                )
 
-            Create professional podcasts with intro, outro, and background music.
-            """)
+        # Note: Theme selector added - theme changes require page refresh in Gradio 6.0
+        # Theme logic can be extended via custom CSS or browser local storage
 
         with gr.Tabs():
             # Main Tab - Podcast Creation
@@ -1556,18 +1622,6 @@ def create_ui():
                                 lines=2
                             )
 
-                        with gr.Accordion("📋 Real-time Processing Log", open=True):
-                            realtime_console_output = gr.Textbox(
-                                label="Live Console Output",
-                                value="[Ready] Waiting for processing...",
-                                interactive=False,
-                                lines=12,
-                                max_lines=25,
-                                autoscroll=True,
-                                container=True,
-                                elem_classes=["console-output"]
-                            )
-
                         with gr.Group(elem_classes=["clean-card"]):
                             gr.Markdown("### 🎧 Results")
                             audio_output = gr.Audio(
@@ -1611,23 +1665,11 @@ def create_ui():
                                 interactive=False
                             )
 
-                gr.Markdown("""
-                ---
-                ### 💡 Quick Tips
-                - Upload your voice recording - the episode name is auto-suggested with today's date
-                - Default audio files are automatically loaded from `audios/` folder
-                - Background tracks are randomly mixed to match your recording length
-                - Generated podcasts are saved in the `outputs/` directory
-                - Configure intro, outro, and background music in the **⚙️ Settings** tab
-                - Use the **🤖 AI Denoiser** tab to clean audio files with machine learning
-                - Use the **✨ Adobe Enhance** tab to enhance audio files with Adobe AI
-
-                ### 🎛️ Advanced Features
-                - **Multiple Noise Reduction Methods**: Choose between AI Denoiser, Spectral Gating, or FFmpeg RNNoise
-                - **LUFS Normalization**: Automatically normalize audio to professional broadcast standards (-16 LUFS for podcasts)
-                - **Whisper Transcription**: Generate accurate transcripts with timestamps using OpenAI Whisper
-                - All advanced features are in the "Basic Options" section above
-                """)
+                # Hidden component for console log updates
+                realtime_console_output = gr.Textbox(
+                    value="",
+                    visible=False
+                )
 
             # AI Denoiser Tab - Standalone Audio Denoising
             with gr.Tab("🤖 AI Denoiser"):
@@ -1985,6 +2027,52 @@ def create_ui():
                     variant="secondary"
                 )
 
+            # Tips & Features Tab
+            with gr.Tab("💡 Tips & Features"):
+                gr.Markdown("""
+                ## 💡 Quick Tips
+
+                - Upload your voice recording - the episode name is auto-suggested with today's date
+                - Default audio files are automatically loaded from `audios/` folder
+                - Background tracks are randomly mixed to match your recording length
+                - Generated podcasts are saved in the `outputs/` directory
+                - Configure intro, outro, and background music in the **⚙️ Settings** tab
+                - Use the **🤖 AI Denoiser** tab to clean audio files with machine learning
+                - Use the **✨ Adobe Enhance** tab to enhance audio files with Adobe AI
+
+                ---
+
+                ## 🎛️ Advanced Features
+
+                ### Multiple Noise Reduction Methods
+                Choose between AI Denoiser, Spectral Gating, or FFmpeg RNNoise to remove background noise from your recordings.
+
+                ### LUFS Normalization
+                Automatically normalize audio to professional broadcast standards:
+                - **-16 LUFS** for podcasts (recommended)
+                - **-14 LUFS** for louder streaming content
+                - **-23 LUFS** for radio broadcasting
+
+                ### Whisper Transcription
+                Generate accurate transcripts with timestamps using OpenAI Whisper:
+                - Supports 99+ languages
+                - 5 model sizes from Tiny (fast) to Large (best quality)
+                - Completely offline after initial model download
+
+                ### Large File Support
+                Process audio files of any size with intelligent automatic chunking:
+                - No file size limits
+                - Large files (>10MB) automatically split into 8MB chunks
+                - Seamless reconstruction with perfect audio continuity
+
+                ### Individual Volume Controls
+                - Set different volume levels for each background music file
+                - Apply global volume to all tracks at once
+                - Preview tracks with applied volume before creating
+
+                All advanced features are available in the "Processing Options" section in the **🎙️ Create Podcast** tab.
+                """)
+
             # Console Log Tab
             with gr.Tab("📋 Console Log"):
                 gr.Markdown("""
@@ -2009,6 +2097,16 @@ def create_ui():
                         "🗑️ Clear Log",
                         variant="stop"
                     )
+
+        # Footer
+        gr.HTML("""
+        <div class="footer">
+            <p><strong>Created by: Bruno Capuano</strong></p>
+            <p>🔗 <a href="https://aka.ms/elbruno" target="_blank">https://aka.ms/elbruno</a></p>
+            <p>🎙️ Podcast: <strong>No Tiene Nombre</strong></p>
+            <p>🌐 <a href="https://notienenombre.com/" target="_blank">https://notienenombre.com/</a></p>
+        </div>
+        """)
 
         # Event handlers
         intro_input.change(
@@ -2146,7 +2244,13 @@ def create_ui():
             show_progress='full'
         )
 
-        # Update the realtime console whenever the regular console updates
+        # Update the console log tab and other logs whenever processing completes
+        create_button_event.then(
+            fn=get_console_log,
+            inputs=[],
+            outputs=[console_output]
+        )
+
         create_button_event.then(
             fn=get_console_log,
             inputs=[],
