@@ -6,6 +6,8 @@ These tests interact with the actual Gradio UI using Playwright browser automati
 import os
 import sys
 import time
+import subprocess
+import requests
 import pytest
 from pathlib import Path
 from playwright.sync_api import sync_playwright, Page
@@ -30,8 +32,6 @@ class GradioApp:
         
     def start(self):
         """Start the Gradio app in a subprocess."""
-        import subprocess
-        
         # Start the app
         env = os.environ.copy()
         env['PYTHONPATH'] = str(BASE_DIR)
@@ -44,18 +44,18 @@ class GradioApp:
             text=True
         )
         
-        # Wait for app to start (check for "Running on" message or timeout after 30s)
+        # Wait for app to start (HTTP health check with 30s timeout)
         start_time = time.time()
         while time.time() - start_time < 30:
             time.sleep(1)
-            # Try to connect to the app
+            # Try to connect to the app via HTTP
             try:
-                import requests
                 response = requests.get(self.url, timeout=1)
                 if response.status_code == 200:
                     print(f"✓ Gradio app started at {self.url}")
                     return
-            except (requests.RequestException, Exception):
+            except requests.RequestException:
+                # App not ready yet, continue waiting
                 pass
         
         raise TimeoutError("Failed to start Gradio app within 30 seconds")
@@ -64,7 +64,12 @@ class GradioApp:
         """Stop the Gradio app."""
         if self.process:
             self.process.terminate()
-            self.process.wait(timeout=5)
+            try:
+                self.process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                # Force kill if terminate didn't work
+                self.process.kill()
+                self.process.wait()
             print("✓ Gradio app stopped")
 
 
@@ -196,20 +201,32 @@ def test_page_has_no_console_errors(browser_page: Page):
     """Test that the page loads without console errors."""
     print("\n✓ Testing for console errors...")
     
-    errors = []
+    # Known acceptable error patterns to filter out
+    ACCEPTABLE_ERROR_PATTERNS = [
+        "favicon",  # Common favicon 404 errors
+    ]
     
-    def handle_console_message(msg):
-        if msg.type == "error":
-            errors.append(msg.text)
+    # Helper class to collect console errors
+    class ConsoleErrorCollector:
+        def __init__(self):
+            self.errors = []
+        
+        def handle_message(self, msg):
+            if msg.type == "error":
+                self.errors.append(msg.text)
     
-    browser_page.on("console", handle_console_message)
+    collector = ConsoleErrorCollector()
+    browser_page.on("console", collector.handle_message)
     
     # Reload page to catch any console errors
     browser_page.reload(wait_until="networkidle")
     browser_page.wait_for_timeout(2000)
     
     # Filter out known/acceptable errors
-    critical_errors = [e for e in errors if "favicon" not in e.lower()]
+    critical_errors = [
+        e for e in collector.errors 
+        if not any(pattern in e.lower() for pattern in ACCEPTABLE_ERROR_PATTERNS)
+    ]
     
     assert len(critical_errors) == 0, f"Found console errors: {critical_errors}"
     print("  ✓ No critical console errors found")
