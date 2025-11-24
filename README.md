@@ -23,9 +23,28 @@ While designed with this podcast in mind, the tool is flexible and can be used b
 
 ## 📸 Screenshots
 
+### Main Interface
+
 ![NTN Podcast Creator Main Interface](https://github.com/user-attachments/assets/d4d6010f-fec0-4a44-b15c-a2fe40809dc6)
 
 *Main podcast creation interface with audio upload, timeline preview, and processing options*
+
+### Theme Selector
+
+The application now supports three theme modes:
+- **Light**: Bright interface for daytime use
+- **Dark**: Easy on the eyes for low-light environments
+- **System**: Automatically matches your system theme
+
+![Theme Selector Demo](docs/images/theme-selector-demo.gif)
+
+### Progress Bar and Console
+
+During podcast creation, a top progress bar and bottom console provide real-time feedback:
+
+![Progress and Console Demo](docs/images/progress-console-demo.gif)
+
+*Live progress updates and console logs during podcast creation*
 
 ## ✨ Key Features
 
