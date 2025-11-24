@@ -268,6 +268,44 @@ def get_console_log() -> str:
     return "\n".join(console_log) if console_log else "No logs yet"
 
 
+def get_bottom_console_html(console_text: str, visible: bool = True) -> str:
+    """Generate bottom console HTML.
+    
+    Args:
+        console_text: The console log text to display
+        visible: Whether the console should be visible
+        
+    Returns:
+        HTML string for bottom console
+    """
+    if not visible or not console_text.strip():
+        return ""
+    
+    # Get last 10 lines for the bottom console to avoid overload
+    lines = console_text.strip().split('\n')
+    last_lines = lines[-10:] if len(lines) > 10 else lines
+    display_text = '\n'.join(last_lines)
+    
+    # Escape HTML characters
+    display_text = (display_text
+                   .replace('&', '&amp;')
+                   .replace('<', '&lt;')
+                   .replace('>', '&gt;')
+                   .replace('"', '&quot;')
+                   .replace("'", '&#x27;'))
+    
+    return f"""
+    <div>
+        <div class="bottom-console-header">
+            📋 Processing Log (Live Updates)
+        </div>
+        <div class="bottom-console-content">
+{display_text}
+        </div>
+    </div>
+    """
+
+
 def get_realtime_log() -> str:
     """Get real-time console log as string."""
     global realtime_log_queue
@@ -727,7 +765,7 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
 
     if voice_file is None:
         log_message("❌ Error: No voice file provided")
-        yield "❌ Error: Please upload a voice recording file", None, None, None, get_console_log(), gr.update(visible=False)
+        yield "❌ Error: Please upload a voice recording file", None, None, None, get_console_log(), gr.update(visible=False), gr.update(visible=False)
         return
 
     if not output_name or output_name.strip() == "":
@@ -738,17 +776,19 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
     log_message(f"📝 Output filename: {output_name}.mp3")
 
     progress(0.1, "📁 Preparing files...")
-    yield "Preparing files...", None, None, None, get_console_log(), gr.update(visible=True, value=get_progress_html(0.1, "Preparing files..."))
+    current_console = get_console_log()
+    yield "Preparing files...", None, None, None, current_console, gr.update(visible=True, value=get_progress_html(0.1, "Preparing files...")), gr.update(visible=True, value=get_bottom_console_html(current_console))
 
     # Save voice file
     voice_path = save_uploaded_file(voice_file, "voice")
     if not voice_path:
         log_message("❌ Error: Could not save voice file")
-        yield "❌ Error: Could not save voice file", None, None, None, get_console_log(), gr.update(visible=False)
+        yield "❌ Error: Could not save voice file", None, None, None, get_console_log(), gr.update(visible=False), gr.update(visible=False)
         return
 
     progress(0.2, "⚙️ Loading configuration...")
-    yield "Loading configuration...", None, None, None, get_console_log(), gr.update(value=get_progress_html(0.2, "Loading configuration..."))
+    current_console = get_console_log()
+    yield "Loading configuration...", None, None, None, current_console, gr.update(value=get_progress_html(0.2, "Loading configuration...")), gr.update(value=get_bottom_console_html(current_console))
 
     # Get configuration
     intro_path = config_manager.get_intro()
@@ -777,7 +817,8 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
     config_manager.update_last_output_name(output_name)
 
     progress(0.3, "🎬 Starting audio processing...")
-    yield "Starting audio processing...", None, None, None, get_console_log(), gr.update(value=get_progress_html(0.3, "Starting audio processing..."))
+    current_console = get_console_log()
+    yield "Starting audio processing...", None, None, None, current_console, gr.update(value=get_progress_html(0.3, "Starting audio processing...")), gr.update(value=get_bottom_console_html(current_console))
 
     # Queue for logs to enable real-time updates
     log_queue = queue.Queue()
@@ -869,7 +910,7 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
 
         if logs_updated:
             current_logs = get_console_log()
-            yield "Processing...", None, None, None, current_logs, gr.update(value=get_progress_html(current_pct, current_msg))
+            yield "Processing...", None, None, None, current_logs, gr.update(value=get_progress_html(current_pct, current_msg)), gr.update(value=get_bottom_console_html(current_logs))
 
         time.sleep(0.1)
 
@@ -884,7 +925,7 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
         error_msg = f"Error creating podcast: {result_container['error']}"
         log_message(error_msg)
         log_message("=" * 50)
-        yield error_msg, None, None, None, get_console_log(), gr.update(visible=False)
+        yield error_msg, None, None, None, get_console_log(), gr.update(visible=False), gr.update(visible=False)
     else:
         result_path, denoised_path, transcript_path = result_container['result']
 
@@ -903,7 +944,7 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
         final_transcript = transcript_path if transcript_path and os.path.exists(
             transcript_path) else None
 
-        yield f"✓ Podcast created successfully: {output_name}.mp3", result_path, denoised_path, final_transcript, get_console_log(), gr.update(visible=False)
+        yield f"✓ Podcast created successfully: {output_name}.mp3", result_path, denoised_path, final_transcript, get_console_log(), gr.update(visible=False), gr.update(visible=False)
 
 
 def create_podcast_handler(voice_file, output_name, delete_voice, trim_silence, denoise_audio, denoise_method, enhance_audio, normalize_lufs, target_lufs, generate_transcript, whisper_model):
@@ -1320,8 +1361,40 @@ def create_ui():
             padding: 5px 20px !important;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
         }
+        .bottom-console-container {
+            position: fixed !important;
+            bottom: 0 !important;
+            left: 0 !important;
+            right: 0 !important;
+            z-index: 9998 !important;
+            background: #1e1e1e !important;
+            border-top: 2px solid #333 !important;
+            box-shadow: 0 -2px 4px rgba(0,0,0,0.3) !important;
+            max-height: 200px !important;
+            overflow-y: auto !important;
+        }
+        .bottom-console-header {
+            background: #333 !important;
+            color: #ffffff !important;
+            padding: 8px 20px !important;
+            font-weight: bold !important;
+            border-bottom: 1px solid #555 !important;
+            font-size: 14px !important;
+        }
+        .bottom-console-content {
+            font-family: 'Courier New', monospace !important;
+            background: #1e1e1e !important;
+            color: #ffffff !important;
+            padding: 10px 20px !important;
+            font-size: 12px !important;
+            line-height: 1.4 !important;
+            white-space: pre-wrap !important;
+            max-height: 150px !important;
+            overflow-y: auto !important;
+        }
         .main-container {
             margin-top: 60px !important;
+            margin-bottom: 210px !important;
         }
         .compact-row {
             gap: 10px !important;
@@ -1340,6 +1413,13 @@ def create_ui():
             value="",
             visible=False,
             elem_classes=["progress-container"]
+        )
+        
+        # Bottom console container (initially hidden)
+        bottom_console = gr.HTML(
+            value="",
+            visible=False,
+            elem_classes=["bottom-console-container"]
         )
 
         with gr.Column(elem_classes=["main-container"]):
@@ -2062,7 +2142,7 @@ def create_ui():
                     normalize_lufs_checkbox, target_lufs_slider,
                     generate_transcript_checkbox, whisper_model_dropdown],
             outputs=[status_output, audio_output,
-                     denoised_audio_output, transcript_output, realtime_console_output, progress_bar],
+                     denoised_audio_output, transcript_output, realtime_console_output, progress_bar, bottom_console],
             show_progress='full'
         )
 
