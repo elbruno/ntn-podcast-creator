@@ -1348,12 +1348,8 @@ def create_ui():
     # Load saved settings
     saved_volume = config_manager.get_volume()
     saved_output_name = config_manager.get_last_output_name()
-    
-    # Create theme instances
-    light_theme = gr.themes.Default()
-    dark_theme = gr.themes.Base()
 
-    with gr.Blocks(title="NTN Podcast Creator", theme=light_theme) as app:
+    with gr.Blocks(title="NTN Podcast Creator", theme=gr.themes.Default()) as app:
         gr.HTML("""
         <style>
         .console-output {
@@ -1484,7 +1480,7 @@ def create_ui():
             with gr.Column(scale=1):
                 theme_selector = gr.Radio(
                     choices=["Light", "Dark", "System"],
-                    value="Light",
+                    value="System",
                     label="Theme",
                     info="UI appearance (refresh to apply)"
                 )
@@ -1508,7 +1504,7 @@ def create_ui():
             }
         }
         
-        // Apply system theme on load
+        // Apply default System theme on load
         applyTheme('System');
         </script>
         """)
