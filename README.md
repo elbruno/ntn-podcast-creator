@@ -23,28 +23,35 @@ While designed with this podcast in mind, the tool is flexible and can be used b
 
 ## 📸 Screenshots
 
-### Main Interface
+### Application Demo
 
-![NTN Podcast Creator Main Interface](https://github.com/user-attachments/assets/d4d6010f-fec0-4a44-b15c-a2fe40809dc6)
+![NTN Podcast Creator Demo](docs/images/app-demo.gif)
 
-*Main podcast creation interface with audio upload, timeline preview, and processing options*
+*Complete podcast creation workflow - from audio upload to final export with transcription*
 
-### Theme Selector
+> **Note:** To generate updated screenshots, run `python scripts/capture_screenshots.py` while the application is running. 
+> See [Screenshot Guidelines](docs/images/SCREENSHOT_GUIDELINES.md) for details.
 
-The application now supports three theme modes:
+### Main Features
+
+The application provides an intuitive interface for podcast creation with:
+- Voice recording upload and processing
+- Intro/outro audio integration
+- Background music with individual track controls
+- AI-powered audio denoising
+- Professional LUFS normalization
+- Automatic transcription with Whisper
+
+For detailed screenshots of each feature, see the [User Manual](docs/USER_MANUAL.md).
+
+### Theme Support
+
+The application supports three theme modes:
 - **Light**: Bright interface for daytime use
-- **Dark**: Easy on the eyes for low-light environments
+- **Dark**: Easy on the eyes for low-light environments  
 - **System**: Automatically matches your system theme
 
-![Theme Selector Demo](docs/images/theme-selector-demo.gif)
-
-### Progress Bar and Console
-
-During podcast creation, a top progress bar and bottom console provide real-time feedback:
-
-![Progress and Console Demo](docs/images/progress-console-demo.gif)
-
-*Live progress updates and console logs during podcast creation*
+<!-- Theme selector screenshots will be available in docs/images/screenshots/ -->
 
 ## ✨ Key Features
 

@@ -1,128 +1,176 @@
-# Screenshots and GIF Creation Guide
+# NTN Podcast Creator - Images Directory
 
-## Required Screenshots/GIFs
+This directory contains all screenshots, GIFs, and visual assets for the NTN Podcast Creator documentation.
 
-This file documents the screenshots and animated GIFs that need to be created for the documentation.
+## Directory Structure
 
-### 1. Theme Selector Demo GIF
-**File:** `theme-selector-demo.gif`
-**Description:** Animated GIF showing the theme selector in action
-**Steps to create:**
-1. Start the application: `python app.py`
-2. Open in browser at http://localhost:7860
-3. Use a screen recording tool (e.g., LICEcap, ScreenToGif, or ffmpeg)
-4. Record the following actions:
-   - Show the theme dropdown in the top right
-   - Select "Light" theme - show the interface updating
-   - Select "Dark" theme - show the interface updating
-   - Select "System" theme
-5. Save as `theme-selector-demo.gif`
-6. Optimize the GIF (keep it under 5MB if possible)
-
-**Recommended recording settings:**
-- Duration: 10-15 seconds
-- Frame rate: 10-15 fps
-- Resolution: 1200x800 or similar
-- Focus on the theme selector area and a section of the UI that shows the theme change
-
-### 2. Progress and Console Demo GIF
-**File:** `progress-console-demo.gif`
-**Description:** Animated GIF showing the progress bar and console during podcast creation
-**Steps to create:**
-1. Start the application: `python app.py`
-2. Open in browser at http://localhost:7860
-3. Use a screen recording tool
-4. Record the following actions:
-   - Upload a voice file
-   - Click "Create Podcast" button
-   - Show the **top progress bar appearing** with percentage and status
-   - Show the **bottom console appearing** with live log updates
-   - Let it run for a few seconds to show progress updates
-   - Show the completion state with 100% progress
-5. Save as `progress-console-demo.gif`
-
-**Recommended recording settings:**
-- Duration: 15-20 seconds
-- Frame rate: 10-15 fps
-- Resolution: 1600x900 or full screen
-- Focus on both the top progress bar and bottom console
-
-### 3. Main Interface Screenshot (Updated)
-**File:** `main-interface.png`
-**Description:** High-quality screenshot of the main podcast creation interface
-**Steps to create:**
-1. Start the application: `python app.py`
-2. Open in browser at http://localhost:7860
-3. Set the theme to "Light" for consistency
-4. Upload a sample voice file to show the timeline preview
-5. Take a full-page screenshot showing:
-   - Header with title and theme selector
-   - Upload section
-   - Timeline preview
-   - Processing options (denoise, enhance, etc.)
-   - Output section
-6. Save as `main-interface.png`
-
-**Recommended settings:**
-- Format: PNG
-- Resolution: High resolution (1920x1080 or higher)
-- Include the full interface from header to footer
-
-### 4. Dark Theme Screenshot
-**File:** `dark-theme.png`
-**Description:** Screenshot showing the dark theme
-**Steps to create:**
-1. Start the application: `python app.py`
-2. Open in browser at http://localhost:7860
-3. Select "Dark" theme from the dropdown
-4. Take a full-page screenshot
-5. Save as `dark-theme.png`
-
-### 5. Settings Tab Screenshot
-**File:** `settings-tab.png`
-**Description:** Screenshot of the settings configuration interface
-**Steps to create:**
-1. Navigate to the "Settings" tab
-2. Show intro/outro/background music configuration
-3. Show volume controls
-4. Take a full-page screenshot
-5. Save as `settings-tab.png`
-
-## Tools for Creating GIFs
-
-### LICEcap (Windows/macOS)
-- Free and simple
-- https://www.cockos.com/licecap/
-
-### ScreenToGif (Windows)
-- Free with built-in editor
-- https://www.screentogif.com/
-
-### Kap (macOS)
-- Open source and lightweight
-- https://getkap.co/
-
-### Using FFmpeg (All platforms)
-```bash
-# Record screen on Linux/macOS
-ffmpeg -f x11grab -s 1920x1080 -i :0.0 output.mp4
-# Or on macOS using AVFoundation
-ffmpeg -f avfoundation -i "1" -t 20 output.mp4
-
-# Convert to GIF
-ffmpeg -i output.mp4 -vf "fps=10,scale=1200:-1:flags=lanczos" -c:v gif output.gif
-
-# Optimize GIF
-ffmpeg -i output.gif -filter_complex "[0:v] fps=10,scale=1200:-1:flags=lanczos,split [a][b];[a] palettegen [p];[b][p] paletteuse" optimized.gif
+```
+docs/images/
+├── screenshots/          # Application screenshots (organized centrally)
+│   ├── 01-initial-view.png
+│   ├── 02-voice-upload.png
+│   ├── 03-intro-outro.png
+│   ├── 04-background-music.png
+│   ├── 05-audio-processing.png
+│   ├── 06-lufs-normalization.png
+│   ├── 07-transcription.png
+│   ├── 08-create-button.png
+│   ├── 09-full-overview.png
+│   ├── 10-standalone-denoiser.png
+│   └── 11-settings-tab.png
+├── app-demo.gif          # Main animated demonstration (workflow)
+├── SCREENSHOT_GUIDELINES.md  # Detailed guidelines
+└── README.md             # This file
 ```
 
-## Placement
+## Automated Screenshot Capture
 
-Once created, place the files in this `docs/images/` directory and update the references in:
-- `README.md` (root)
-- `docs/USER_MANUAL.md`
-- `docs/TECHNICAL_IMPLEMENTATION.md` (if applicable)
+To capture fresh screenshots automatically using Playwright:
 
-## Note
+### Prerequisites
+```bash
+pip install playwright Pillow requests
+playwright install chromium
+```
 
-These screenshots/GIFs need to be created by actually running the application. The AI agent cannot run a GUI application to capture screenshots, so this needs to be done manually by the repository owner or a contributor with access to a running instance.
+### Capture Process
+1. Start the application:
+   ```bash
+   python app.py
+   ```
+
+2. In another terminal, run the capture script:
+   ```bash
+   python scripts/capture_screenshots.py
+   ```
+
+The script will:
+- ✅ Connect to http://localhost:7860
+- ✅ Navigate through all sections
+- ✅ Capture 11+ high-quality screenshots
+- ✅ Generate animated GIF from screenshots
+- ✅ Save everything to `docs/images/screenshots/`
+
+## Screenshot List
+
+| # | Filename | Description |
+|---|----------|-------------|
+| 1 | `01-initial-view.png` | Initial application view with empty form |
+| 2 | `02-voice-upload.png` | Voice file upload section focused |
+| 3 | `03-intro-outro.png` | Intro and outro file selectors |
+| 4 | `04-background-music.png` | Background music selection and controls |
+| 5 | `05-audio-processing.png` | Denoising and enhancement options |
+| 6 | `06-lufs-normalization.png` | LUFS normalization settings |
+| 7 | `07-transcription.png` | Transcription options with Whisper |
+| 8 | `08-create-button.png` | Create button and output section |
+| 9 | `09-full-overview.png` | Full-page overview of entire interface |
+| 10 | `10-standalone-denoiser.png` | Standalone AI Denoiser tab |
+| 11 | `11-settings-tab.png` | Settings and configuration management |
+
+## Animated GIF Specifications
+
+**File:** `app-demo.gif`
+
+**Content:**
+- Shows complete podcast creation workflow
+- Displays all major features in sequence
+- Smooth transitions between steps
+- Slow enough to see all options clearly
+
+**Technical Specs:**
+- Resolution: 1200px width (scaled from 1920px)
+- Duration: ~30 seconds total
+- Frame rate: 3 seconds per frame, 5 seconds for last frame
+- Format: GIF with infinite loop
+- Size target: < 10MB (optimized)
+
+**Workflow Shown:**
+1. Initial view → 2. File upload → 3. Intro/outro → 4. Background music →
+5. Volume adjustment → 6. Audio processing → 7. Transcription → 
+8. Create podcast → 9. Results with downloads
+
+## Usage in Documentation
+
+### Root README.md
+```markdown
+![Application Demo](docs/images/app-demo.gif)
+*Complete podcast creation workflow demonstration*
+```
+
+### User Manual (docs/USER_MANUAL.md)
+```markdown
+![Voice Upload](images/screenshots/02-voice-upload.png)
+*Voice recording upload section*
+```
+
+### Technical Docs (from docs/ directory)
+```markdown
+![Feature Screenshot](images/screenshots/05-audio-processing.png)
+```
+
+## Centralized Image Organization
+
+**Why One Directory?**
+- ✅ No duplicate images across documentation
+- ✅ Single source of truth for all visuals
+- ✅ Easier maintenance and updates
+- ✅ Consistent file naming and organization
+- ✅ Simpler relative path references
+
+**Migration Note:**
+All documentation now references images from `docs/images/screenshots/` only. No images are duplicated in other directories.
+
+## Maintenance Checklist
+
+When updating screenshots:
+- [ ] Run the automated capture script
+- [ ] Review all generated screenshots for quality
+- [ ] Check that animated GIF shows complete workflow
+- [ ] Update documentation if UI changes significantly
+- [ ] Verify all image references in docs still work
+- [ ] Commit all new images to git
+- [ ] Optimize large files if needed (use imageOptim, tinypng, etc.)
+
+## Image Optimization
+
+For better performance:
+
+### PNG Optimization
+```bash
+# Using optipng
+optipng -o7 *.png
+
+# Using pngquant
+pngquant --quality=80-95 *.png
+```
+
+### GIF Optimization
+```bash
+# Using gifsicle
+gifsicle -O3 --colors 256 app-demo.gif -o app-demo-optimized.gif
+```
+
+## Manual Screenshot Capture (Alternative)
+
+If the automated script doesn't work:
+
+1. Start application: `python app.py`
+2. Open browser to http://localhost:7860
+3. Use browser dev tools (F12):
+   - Set viewport to 1920x1080
+   - Take screenshots with Cmd/Ctrl + Shift + P → "Capture screenshot"
+4. Use screen recording tool for GIF:
+   - LICEcap (Windows/Mac)
+   - ScreenToGif (Windows)
+   - Kap (macOS)
+   - Peek (Linux)
+5. Name files according to the list above
+6. Save to `docs/images/screenshots/`
+
+## Notes
+
+- Always use test/sample data in screenshots
+- Avoid showing sensitive or personal information
+- Keep screenshots current with latest UI
+- Prefer dark theme for animated GIFs (better contrast)
+- Test all image links after updating

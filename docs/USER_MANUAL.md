@@ -134,7 +134,13 @@ Access at `http://localhost:7860`
 
 ## Interface Overview
 
-![NTN Podcast Creator Interface](https://github.com/user-attachments/assets/d4d6010f-fec0-4a44-b15c-a2fe40809dc6)
+### Application Demo
+
+![NTN Podcast Creator Workflow](images/app-demo.gif)
+
+*Complete podcast creation workflow demonstration*
+
+> **📸 Viewing Detailed Screenshots:** For detailed screenshots of each section, refer to the [images/screenshots/](images/screenshots/) directory, or run `python scripts/capture_screenshots.py` to generate fresh screenshots from your running application.
 
 The interface features a modern tabbed layout for easy navigation and includes several key UI enhancements:
 
@@ -147,7 +153,7 @@ The interface features a modern tabbed layout for easy navigation and includes s
 - Theme preference is saved and persists across sessions
 - No page refresh needed - theme changes apply immediately
 
-![Theme Selector](../docs/images/theme-selector-demo.gif)
+<!-- Theme selector screenshot: images/screenshots/01-initial-view.png shows the header with theme selector -->
 
 ### Real-Time Progress Tracking
 
@@ -168,9 +174,7 @@ When creating a podcast, two dynamic UI elements provide live feedback:
 - Close button to dismiss when complete
 - Automatically appears with progress bar
 
-![Progress and Console Demo](../docs/images/progress-console-demo.gif)
-
-*The progress bar and console provide real-time feedback during podcast creation*
+<!-- Progress tracking is demonstrated in the animated GIF above -->
 
 ### Tabs Overview
 
@@ -247,6 +251,9 @@ View detailed processing logs and troubleshooting information.
 
 ### Basic Workflow: Creating Your First Podcast
 
+![Voice Upload Section](images/screenshots/02-voice-upload.png)
+*Voice recording upload interface*
+
 #### Step 1: Upload Your Main Voice Recording (🎙️ Create Podcast Tab)
 
 1. Navigate to the **🎙️ Create Podcast** tab (default tab)
@@ -261,6 +268,9 @@ View detailed processing logs and troubleshooting information.
 **💡 Tip:** Make sure your voice recording is already edited and ready. This tool combines audio but doesn't edit individual tracks.
 
 #### Step 2: (Optional) Configure Processing Options
+
+![Audio Processing Options](images/screenshots/05-audio-processing.png)
+*Audio processing options including denoising and enhancement*
 
 Expand the **⚙️ Options** accordion to adjust:
 
@@ -279,6 +289,9 @@ Expand the **⚙️ Options** accordion to adjust:
 **💡 Tip:** For best results, keep AI denoiser enabled. Only enable Adobe Enhance if you need additional processing.
 
 #### Step 3: (Optional) Configure Audio Settings (⚙️ Settings Tab)
+
+![Intro and Outro Selection](images/screenshots/03-intro-outro.png)
+*Intro and outro audio file selection interface*
 
 Switch to the **⚙️ Settings** tab to add intro, outro, or background music:
 
@@ -302,6 +315,9 @@ Switch to the **⚙️ Settings** tab to add intro, outro, or background music:
 **💡 Tip:** Use outros to encourage listeners to subscribe, rate, or visit your website.
 
 ##### Add Background Music
+
+![Background Music Controls](images/screenshots/04-background-music.png)
+*Background music selection and volume controls*
 
 1. In the **Background Music** section, click the **"Upload Background Track"** button
 2. Select a music file
