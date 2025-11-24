@@ -95,9 +95,9 @@ class TestPodcastCreationUI:
             assert "✓" in final_result[0] or "Error" not in final_result[
                 0], f"Unexpected status: {final_result[0]}"
 
-            # Check that we have 8 values (status, audio, denoised, transcript, console, console_display, progress_bar, bottom_console)
+            # Check that we have 7 values (status, audio, denoised, transcript, console, progress_bar, bottom_console)
             assert len(
-                final_result) == 8, f"Expected 8 return values, got {len(final_result)}"
+                final_result) == 7, f"Expected 7 return values, got {len(final_result)}"
 
             console_log = get_console_log()
             assert console_log != "", "Console log should not be empty"
@@ -137,7 +137,7 @@ class TestPodcastCreationUI:
             final_result = results[-1]
             assert final_result[0] is not None, "Status message is None"
             assert len(
-                final_result) == 8, f"Expected 8 return values, got {len(final_result)}"
+                final_result) == 7, f"Expected 7 return values, got {len(final_result)}"
 
             print(f"✓ Minimal settings test passed")
 
@@ -173,7 +173,7 @@ class TestPodcastCreationUI:
             final_result = results[-1]
             assert final_result[0] is not None, "Status message is None"
             assert len(
-                final_result) == 8, f"Expected 8 return values, got {len(final_result)}"
+                final_result) == 7, f"Expected 7 return values, got {len(final_result)}"
 
             print(f"✓ All features test passed")
 
@@ -208,7 +208,7 @@ class TestPodcastCreationUI:
             assert "Error" in final_result[0] or "❌" in final_result[
                 0], f"Expected error message, got: {final_result[0]}"
             assert len(
-                final_result) == 8, f"Expected 8 return values even for errors, got {len(final_result)}"
+                final_result) == 7, f"Expected 7 return values even for errors, got {len(final_result)}"
 
             print(f"✓ Error handling test passed")
 

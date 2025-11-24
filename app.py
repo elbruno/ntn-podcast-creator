@@ -279,9 +279,6 @@ def get_bottom_console_html(console_text: str, visible: bool = True, show_close:
     Returns:
         HTML string for bottom console
     """
-    if not visible:
-        return ""
-    
     # Show console even if empty, with a placeholder message
     if not console_text.strip():
         display_text = "Initializing..."
@@ -303,8 +300,10 @@ def get_bottom_console_html(console_text: str, visible: bool = True, show_close:
     if show_close:
         close_button_html = '<button class="close-btn" onclick="this.parentElement.parentElement.style.display=\'none\'">✖ Close</button>'
 
+    display_style = "block" if visible else "none"
+
     return f"""
-    <div style="position: fixed; bottom: 0; left: 0; right: 0; z-index: 9998; background: #1e1e1e; border-top: 2px solid #333; box-shadow: 0 -2px 4px rgba(0,0,0,0.3); max-height: 200px; overflow-y: auto; display: block;">
+    <div style="position: fixed; bottom: 0; left: 0; right: 0; z-index: 9998; background: #1e1e1e; border-top: 2px solid #333; box-shadow: 0 -2px 4px rgba(0,0,0,0.3); max-height: 200px; overflow-y: auto; display: {display_style} !important; width: 100%;">
         <div style="background: #333; color: white; padding: 8px 20px; font-weight: bold; border-bottom: 1px solid #555; font-size: 14px; display: flex; justify-content: space-between; align-items: center;">
             <span>📋 Processing Log (Live Updates)</span>
             {close_button_html}
@@ -744,15 +743,17 @@ def get_current_settings():
 def get_progress_html(pct, msg):
     """Generate progress bar HTML with inline display control."""
     return f"""
-    <div style="position: fixed; top: 0; left: 0; right: 0; z-index: 9999; background: #2196F3; color: white; padding: 10px 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.2); display: flex; align-items: center; justify-content: space-between; width: calc(100% - 40px);">
-        <div style="font-weight: bold; display: flex; align-items: center; gap: 10px;">
-            <div style="border: 3px solid rgba(255,255,255,0.3); border-radius: 50%; border-top: 3px solid white; width: 20px; height: 20px; animation: spin 1s linear infinite;"></div>
-            {msg}
-        </div>
-        <div style="display: flex; align-items: center; gap: 10px;">
-            <div style="font-size: 12px; min-width: 40px;">{int(pct*100)}%</div>
-            <div style="background: rgba(255,255,255,0.3); height: 8px; width: 200px; border-radius: 4px; overflow: hidden;">
-                <div style="background: white; height: 100%; width: {pct*100}%; transition: width 0.3s;"></div>
+    <div style="position: fixed; top: 0; left: 0; right: 0; z-index: 9999; background: #2196F3; color: white; padding: 10px 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.2); display: block !important; width: 100%;">
+        <div style="display: flex; align-items: center; justify-content: space-between;">
+            <div style="font-weight: bold; display: flex; align-items: center; gap: 10px;">
+                <div style="border: 3px solid rgba(255,255,255,0.3); border-radius: 50%; border-top: 3px solid white; width: 20px; height: 20px; animation: spin 1s linear infinite;"></div>
+                {msg}
+            </div>
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <div style="font-size: 12px; min-width: 40px;">{int(pct*100)}%</div>
+                <div style="background: rgba(255,255,255,0.3); height: 8px; width: 200px; border-radius: 4px; overflow: hidden;">
+                    <div style="background: white; height: 100%; width: {pct*100}%; transition: width 0.3s;"></div>
+                </div>
             </div>
         </div>
         <style>@keyframes spin {{0% {{transform: rotate(0deg);}} 100% {{transform: rotate(360deg);}}}}</style>
@@ -773,7 +774,7 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
     progress(0.0, "🚀 Starting podcast creation...")
     log_message("=" * 50)
     log_message("🎬 Starting new podcast creation")
-    
+
     # Yield immediately to show progress bar and console
     current_console = get_console_log()
     yield "Starting...", None, None, None, current_console, get_progress_html(0.0, "🚀 Starting podcast creation..."), get_bottom_console_html(current_console)
@@ -1373,7 +1374,7 @@ def create_ui():
             --card-bg: #f9f9f9;
             --card-border: #e0e0e0;
         }
-        
+
         .dark-theme {
             --bg-primary: #1e1e1e;
             --bg-secondary: #2a2a2a;
@@ -1384,7 +1385,17 @@ def create_ui():
             --card-bg: #2a2a2a;
             --card-border: #444;
         }
-        
+
+        .dark-theme .gradio-container {
+            background: var(--bg-primary) !important;
+            color: var(--text-primary) !important;
+        }
+
+        .dark-theme {
+            background: var(--bg-primary) !important;
+            color: var(--text-primary) !important;
+        }
+
         .console-output {
             font-family: 'Courier New', monospace !important;
             background: #1e1e1e !important;
@@ -1493,35 +1504,51 @@ def create_ui():
         // Theme management
         function applyTheme(theme) {
             const root = document.documentElement;
+            const body = document.body;
             if (theme === 'Dark') {
                 root.classList.add('dark-theme');
+                body.classList.add('dark-theme');
                 localStorage.setItem('ntn-theme', 'Dark');
             } else if (theme === 'Light') {
                 root.classList.remove('dark-theme');
+                body.classList.remove('dark-theme');
                 localStorage.setItem('ntn-theme', 'Light');
             } else { // System
                 const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
                 if (prefersDark) {
                     root.classList.add('dark-theme');
+                    body.classList.add('dark-theme');
                 } else {
                     root.classList.remove('dark-theme');
+                    body.classList.remove('dark-theme');
                 }
                 localStorage.setItem('ntn-theme', 'System');
             }
         }
-        
+
         // Apply saved theme on load
         window.addEventListener('DOMContentLoaded', function() {
-            const savedTheme = localStorage.getItem('ntn-theme') || 'System';
-            applyTheme(savedTheme);
-            
-            // Update dropdown if it exists
-            const themeDropdown = document.querySelector('select[data-testid="dropdown"]');
-            if (themeDropdown) {
-                themeDropdown.value = savedTheme;
-            }
+            setTimeout(function() {
+                const savedTheme = localStorage.getItem('ntn-theme') || 'System';
+                applyTheme(savedTheme);
+            }, 100);
         });
-        
+
+        // Also apply theme immediately if DOM is ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', function() {
+                setTimeout(function() {
+                    const savedTheme = localStorage.getItem('ntn-theme') || 'System';
+                    applyTheme(savedTheme);
+                }, 100);
+            });
+        } else {
+            setTimeout(function() {
+                const savedTheme = localStorage.getItem('ntn-theme') || 'System';
+                applyTheme(savedTheme);
+            }, 100);
+        }
+
         // Listen for system theme changes
         window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function() {
             const savedTheme = localStorage.getItem('ntn-theme') || 'System';
@@ -1533,14 +1560,14 @@ def create_ui():
         """)
         # Progress bar container (initially hidden)
         progress_bar = gr.HTML(
-            value='<div style="display: none;"></div>',
-            elem_classes=["progress-container"]
+            value='<div style="display: none; width: 100%; z-index: 9999;"></div>',
+            elem_id="progress-bar-container"
         )
 
         # Bottom console container (initially hidden)
         bottom_console = gr.HTML(
-            value='<div style="display: none;"></div>',
-            elem_classes=["bottom-console-container"]
+            value='<div style="display: none; width: 100%; z-index: 9998;"></div>',
+            elem_id="bottom-console-container"
         )
 
         # Title and theme selector
@@ -1562,27 +1589,34 @@ def create_ui():
             return f"""
             <script>
             (function() {{
-                if (typeof applyTheme === 'function') {{
-                    applyTheme('{theme}');
-                }} else {{
-                    // Fallback if applyTheme is not available
-                    const root = document.documentElement;
-                    if ('{theme}' === 'Dark') {{
-                        root.classList.add('dark-theme');
-                        localStorage.setItem('ntn-theme', 'Dark');
-                    }} else if ('{theme}' === 'Light') {{
-                        root.classList.remove('dark-theme');
-                        localStorage.setItem('ntn-theme', 'Light');
+                setTimeout(function() {{
+                    if (typeof applyTheme === 'function') {{
+                        applyTheme('{theme}');
                     }} else {{
-                        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-                        if (prefersDark) {{
+                        // Fallback if applyTheme is not available
+                        const root = document.documentElement;
+                        const body = document.body;
+                        if ('{theme}' === 'Dark') {{
                             root.classList.add('dark-theme');
-                        }} else {{
+                            body.classList.add('dark-theme');
+                            localStorage.setItem('ntn-theme', 'Dark');
+                        }} else if ('{theme}' === 'Light') {{
                             root.classList.remove('dark-theme');
+                            body.classList.remove('dark-theme');
+                            localStorage.setItem('ntn-theme', 'Light');
+                        }} else {{
+                            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                            if (prefersDark) {{
+                                root.classList.add('dark-theme');
+                                body.classList.add('dark-theme');
+                            }} else {{
+                                root.classList.remove('dark-theme');
+                                body.classList.remove('dark-theme');
+                            }}
+                            localStorage.setItem('ntn-theme', 'System');
                         }}
-                        localStorage.setItem('ntn-theme', 'System');
                     }}
-                }}
+                }}, 10);
             }})();
             </script>
             <div style="padding: 5px; font-size: 12px; color: #666;">Theme changed to {theme}</div>
@@ -2208,7 +2242,7 @@ def create_ui():
             inputs=[theme_selector],
             outputs=[theme_status]
         )
-        
+
         intro_input.change(
             fn=update_intro_file,
             inputs=[intro_input],
