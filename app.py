@@ -268,12 +268,13 @@ def get_console_log() -> str:
     return "\n".join(console_log) if console_log else "No logs yet"
 
 
-def get_bottom_console_html(console_text: str, visible: bool = True) -> str:
+def get_bottom_console_html(console_text: str, visible: bool = True, show_close: bool = False) -> str:
     """Generate bottom console HTML.
     
     Args:
         console_text: The console log text to display
         visible: Whether the console should be visible
+        show_close: Whether to show the close button
         
     Returns:
         HTML string for bottom console
@@ -294,10 +295,15 @@ def get_bottom_console_html(console_text: str, visible: bool = True) -> str:
                    .replace('"', '&quot;')
                    .replace("'", '&#x27;'))
     
+    close_button_html = ""
+    if show_close:
+        close_button_html = '<button class="close-btn" onclick="this.parentElement.parentElement.style.display=\'none\'">✖ Close</button>'
+    
     return f"""
     <div>
         <div class="bottom-console-header">
-            📋 Processing Log (Live Updates)
+            <span>📋 Processing Log (Live Updates)</span>
+            {close_button_html}
         </div>
         <div class="bottom-console-content">
 {display_text}
@@ -925,7 +931,8 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
         error_msg = f"Error creating podcast: {result_container['error']}"
         log_message(error_msg)
         log_message("=" * 50)
-        yield error_msg, None, None, None, get_console_log(), gr.update(visible=False), gr.update(visible=False)
+        error_console_log = get_console_log()
+        yield error_msg, None, None, None, error_console_log, gr.update(visible=False), gr.update(visible=True, value=get_bottom_console_html(error_console_log, visible=True, show_close=True))
     else:
         result_path, denoised_path, transcript_path = result_container['result']
 
@@ -944,7 +951,9 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
         final_transcript = transcript_path if transcript_path and os.path.exists(
             transcript_path) else None
 
-        yield f"✓ Podcast created successfully: {output_name}.mp3", result_path, denoised_path, final_transcript, get_console_log(), gr.update(visible=False), gr.update(visible=False)
+        # Show the bottom console with close button when complete
+        final_console_log = get_console_log()
+        yield f"✓ Podcast created successfully: {output_name}.mp3", result_path, denoised_path, final_transcript, final_console_log, gr.update(visible=False), gr.update(visible=True, value=get_bottom_console_html(final_console_log, visible=True, show_close=True))
 
 
 def create_podcast_handler(voice_file, output_name, delete_voice, trim_silence, denoise_audio, denoise_method, enhance_audio, normalize_lufs, target_lufs, generate_transcript, whisper_model):
@@ -1339,8 +1348,12 @@ def create_ui():
     # Load saved settings
     saved_volume = config_manager.get_volume()
     saved_output_name = config_manager.get_last_output_name()
+    
+    # Create theme instances
+    light_theme = gr.themes.Default()
+    dark_theme = gr.themes.Base()
 
-    with gr.Blocks(title="NTN Podcast Creator") as app:
+    with gr.Blocks(title="NTN Podcast Creator", theme=light_theme) as app:
         gr.HTML("""
         <style>
         .console-output {
@@ -1380,6 +1393,9 @@ def create_ui():
             font-weight: bold !important;
             border-bottom: 1px solid #555 !important;
             font-size: 14px !important;
+            display: flex !important;
+            justify-content: space-between !important;
+            align-items: center !important;
         }
         .bottom-console-content {
             font-family: 'Courier New', monospace !important;
@@ -1393,7 +1409,7 @@ def create_ui():
             overflow-y: auto !important;
         }
         .main-container {
-            margin-top: 60px !important;
+            margin-top: 10px !important;
             margin-bottom: 210px !important;
         }
         .compact-row {
@@ -1405,6 +1421,45 @@ def create_ui():
             padding: 15px !important;
             margin: 10px 0 !important;
             background: #f9f9f9 !important;
+        }
+        .footer {
+            text-align: center;
+            padding: 20px;
+            background: #f5f5f5;
+            border-top: 1px solid #ddd;
+            margin-top: 30px;
+        }
+        .close-btn {
+            cursor: pointer;
+            padding: 4px 12px;
+            background: #dc3545;
+            color: white;
+            border-radius: 4px;
+            font-size: 12px;
+            border: none;
+        }
+        .close-btn:hover {
+            background: #c82333;
+        }
+        /* Dark theme support */
+        @media (prefers-color-scheme: dark) {
+            .dark .footer {
+                background: #1e1e1e;
+                border-top: 1px solid #333;
+            }
+            .dark .clean-card {
+                background: #2a2a2a !important;
+                border-color: #444 !important;
+            }
+        }
+        .dark .footer {
+            background: #1e1e1e;
+            border-top: 1px solid #333;
+            color: #fff;
+        }
+        .dark .clean-card {
+            background: #2a2a2a !important;
+            border-color: #444 !important;
         }
         </style>
         """)
@@ -1422,12 +1477,41 @@ def create_ui():
             elem_classes=["bottom-console-container"]
         )
 
-        with gr.Column(elem_classes=["main-container"]):
-            gr.Markdown("""
-            # 🎙️ NTN Podcast Creator
-
-            Create professional podcasts with intro, outro, and background music.
-            """)
+        # Title and theme selector
+        with gr.Row():
+            with gr.Column(scale=3):
+                gr.Markdown("# 🎙️ NTN Podcast Creator")
+            with gr.Column(scale=1):
+                theme_selector = gr.Radio(
+                    choices=["Light", "Dark", "System"],
+                    value="Light",
+                    label="Theme",
+                    info="UI appearance (refresh to apply)"
+                )
+        
+        # Add JavaScript for theme handling
+        gr.HTML("""
+        <script>
+        function applyTheme(theme) {
+            const root = document.documentElement;
+            if (theme === 'Dark') {
+                root.classList.add('dark');
+            } else if (theme === 'Light') {
+                root.classList.remove('dark');
+            } else {
+                // System
+                if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                    root.classList.add('dark');
+                } else {
+                    root.classList.remove('dark');
+                }
+            }
+        }
+        
+        // Apply system theme on load
+        applyTheme('System');
+        </script>
+        """)
 
         with gr.Tabs():
             # Main Tab - Podcast Creation
@@ -1556,18 +1640,6 @@ def create_ui():
                                 lines=2
                             )
 
-                        with gr.Accordion("📋 Real-time Processing Log", open=True):
-                            realtime_console_output = gr.Textbox(
-                                label="Live Console Output",
-                                value="[Ready] Waiting for processing...",
-                                interactive=False,
-                                lines=12,
-                                max_lines=25,
-                                autoscroll=True,
-                                container=True,
-                                elem_classes=["console-output"]
-                            )
-
                         with gr.Group(elem_classes=["clean-card"]):
                             gr.Markdown("### 🎧 Results")
                             audio_output = gr.Audio(
@@ -1610,24 +1682,12 @@ def create_ui():
                                 label="Import Status",
                                 interactive=False
                             )
-
-                gr.Markdown("""
-                ---
-                ### 💡 Quick Tips
-                - Upload your voice recording - the episode name is auto-suggested with today's date
-                - Default audio files are automatically loaded from `audios/` folder
-                - Background tracks are randomly mixed to match your recording length
-                - Generated podcasts are saved in the `outputs/` directory
-                - Configure intro, outro, and background music in the **⚙️ Settings** tab
-                - Use the **🤖 AI Denoiser** tab to clean audio files with machine learning
-                - Use the **✨ Adobe Enhance** tab to enhance audio files with Adobe AI
-
-                ### 🎛️ Advanced Features
-                - **Multiple Noise Reduction Methods**: Choose between AI Denoiser, Spectral Gating, or FFmpeg RNNoise
-                - **LUFS Normalization**: Automatically normalize audio to professional broadcast standards (-16 LUFS for podcasts)
-                - **Whisper Transcription**: Generate accurate transcripts with timestamps using OpenAI Whisper
-                - All advanced features are in the "Basic Options" section above
-                """)
+                
+                # Hidden component for console log updates
+                realtime_console_output = gr.Textbox(
+                    value="",
+                    visible=False
+                )
 
             # AI Denoiser Tab - Standalone Audio Denoising
             with gr.Tab("🤖 AI Denoiser"):
@@ -1985,6 +2045,52 @@ def create_ui():
                     variant="secondary"
                 )
 
+            # Tips & Features Tab
+            with gr.Tab("💡 Tips & Features"):
+                gr.Markdown("""
+                ## 💡 Quick Tips
+                
+                - Upload your voice recording - the episode name is auto-suggested with today's date
+                - Default audio files are automatically loaded from `audios/` folder
+                - Background tracks are randomly mixed to match your recording length
+                - Generated podcasts are saved in the `outputs/` directory
+                - Configure intro, outro, and background music in the **⚙️ Settings** tab
+                - Use the **🤖 AI Denoiser** tab to clean audio files with machine learning
+                - Use the **✨ Adobe Enhance** tab to enhance audio files with Adobe AI
+                
+                ---
+                
+                ## 🎛️ Advanced Features
+                
+                ### Multiple Noise Reduction Methods
+                Choose between AI Denoiser, Spectral Gating, or FFmpeg RNNoise to remove background noise from your recordings.
+                
+                ### LUFS Normalization
+                Automatically normalize audio to professional broadcast standards:
+                - **-16 LUFS** for podcasts (recommended)
+                - **-14 LUFS** for louder streaming content
+                - **-23 LUFS** for radio broadcasting
+                
+                ### Whisper Transcription
+                Generate accurate transcripts with timestamps using OpenAI Whisper:
+                - Supports 99+ languages
+                - 5 model sizes from Tiny (fast) to Large (best quality)
+                - Completely offline after initial model download
+                
+                ### Large File Support
+                Process audio files of any size with intelligent automatic chunking:
+                - No file size limits
+                - Large files (>10MB) automatically split into 8MB chunks
+                - Seamless reconstruction with perfect audio continuity
+                
+                ### Individual Volume Controls
+                - Set different volume levels for each background music file
+                - Apply global volume to all tracks at once
+                - Preview tracks with applied volume before creating
+                
+                All advanced features are available in the "Processing Options" section in the **🎙️ Create Podcast** tab.
+                """)
+
             # Console Log Tab
             with gr.Tab("📋 Console Log"):
                 gr.Markdown("""
@@ -2009,6 +2115,16 @@ def create_ui():
                         "🗑️ Clear Log",
                         variant="stop"
                     )
+
+        # Footer
+        gr.HTML("""
+        <div class="footer">
+            <p><strong>Created by: Bruno Capuano</strong></p>
+            <p>🔗 <a href="https://aka.ms/elbruno" target="_blank">https://aka.ms/elbruno</a></p>
+            <p>🎙️ Podcast: <strong>No Tiene Nombre</strong></p>
+            <p>🌐 <a href="https://notienenombre.com/" target="_blank">https://notienenombre.com/</a></p>
+        </div>
+        """)
 
         # Event handlers
         intro_input.change(
@@ -2146,7 +2262,13 @@ def create_ui():
             show_progress='full'
         )
 
-        # Update the realtime console whenever the regular console updates
+        # Update the console log tab and other logs whenever processing completes
+        create_button_event.then(
+            fn=get_console_log,
+            inputs=[],
+            outputs=[console_output]
+        )
+
         create_button_event.then(
             fn=get_console_log,
             inputs=[],
