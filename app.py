@@ -703,13 +703,31 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
     global console_log
     console_log.clear()
 
+    # Helper for custom progress bar
+    def get_progress_html(pct, msg):
+        return f"""
+        <div style="display: flex; align-items: center; justify-content: space-between; width: 100%; background: #2196F3; color: white; padding: 10px 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">
+            <div style="font-weight: bold; display: flex; align-items: center; gap: 10px;">
+                <div class="spinner" style="border: 3px solid rgba(255,255,255,0.3); border-radius: 50%; border-top: 3px solid white; width: 20px; height: 20px; animation: spin 1s linear infinite;"></div>
+                {msg}
+            </div>
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <div style="font-size: 12px;">{int(pct*100)}%</div>
+                <div style="background: rgba(255,255,255,0.3); height: 8px; width: 200px; border-radius: 4px; overflow: hidden;">
+                    <div style="background: white; height: 100%; width: {pct*100}%; transition: width 0.3s;"></div>
+                </div>
+            </div>
+            <style>@keyframes spin {{0% {{transform: rotate(0deg);}} 100% {{transform: rotate(360deg);}}}}</style>
+        </div>
+        """
+
     progress(0.0, "🚀 Starting podcast creation...")
     log_message("=" * 50)
     log_message("🎬 Starting new podcast creation")
 
     if voice_file is None:
         log_message("❌ Error: No voice file provided")
-        yield "❌ Error: Please upload a voice recording file", None, None, None, get_console_log()
+        yield "❌ Error: Please upload a voice recording file", None, None, None, get_console_log(), gr.update(visible=False)
         return
 
     if not output_name or output_name.strip() == "":
@@ -720,15 +738,17 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
     log_message(f"📝 Output filename: {output_name}.mp3")
 
     progress(0.1, "📁 Preparing files...")
+    yield "Preparing files...", None, None, None, get_console_log(), gr.update(visible=True, value=get_progress_html(0.1, "Preparing files..."))
 
     # Save voice file
     voice_path = save_uploaded_file(voice_file, "voice")
     if not voice_path:
         log_message("❌ Error: Could not save voice file")
-        yield "❌ Error: Could not save voice file", None, None, None, get_console_log()
+        yield "❌ Error: Could not save voice file", None, None, None, get_console_log(), gr.update(visible=False)
         return
 
     progress(0.2, "⚙️ Loading configuration...")
+    yield "Loading configuration...", None, None, None, get_console_log(), gr.update(value=get_progress_html(0.2, "Loading configuration..."))
 
     # Get configuration
     intro_path = config_manager.get_intro()
@@ -757,27 +777,46 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
     config_manager.update_last_output_name(output_name)
 
     progress(0.3, "🎬 Starting audio processing...")
+    yield "Starting audio processing...", None, None, None, get_console_log(), gr.update(value=get_progress_html(0.3, "Starting audio processing..."))
 
     # Queue for logs to enable real-time updates
     log_queue = queue.Queue()
+    progress_queue = queue.Queue()
 
     def threaded_log_callback(message: str):
         log_message(message)
         log_queue.put(message)
 
         # Update progress based on message content
+        pct = 0.3
+        msg = "Processing..."
+
         if "Denoising" in message or "noise" in message.lower():
-            progress(0.4, "🔧 Removing noise from audio...")
+            pct = 0.4
+            msg = "🔧 Removing noise..."
+            progress(pct, msg)
         elif "Enhancing" in message or "enhance" in message.lower():
-            progress(0.5, "✨ Enhancing audio quality...")
+            pct = 0.5
+            msg = "✨ Enhancing audio..."
+            progress(pct, msg)
         elif "Mixing" in message or "mixing" in message.lower():
-            progress(0.7, "🎵 Mixing audio tracks...")
+            pct = 0.7
+            msg = "🎵 Mixing tracks..."
+            progress(pct, msg)
         elif "Normalizing" in message or "LUFS" in message:
-            progress(0.8, "📊 Normalizing volume levels...")
+            pct = 0.8
+            msg = "📊 Normalizing..."
+            progress(pct, msg)
         elif "Transcript" in message or "transcrib" in message.lower():
-            progress(0.9, "📝 Generating transcript...")
+            pct = 0.9
+            msg = "📝 Transcribing..."
+            progress(pct, msg)
         elif "saved" in message.lower() or "complete" in message.lower():
-            progress(1.0, "✅ Podcast creation complete!")
+            pct = 1.0
+            msg = "✅ Complete!"
+            progress(pct, msg)
+
+        progress_queue.put((pct, msg))
 
     # Container for result from thread
     result_container = {}
@@ -813,6 +852,8 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
 
     # Yield logs while running
     current_logs = get_console_log()
+    current_pct = 0.3
+    current_msg = "Processing..."
 
     while t.is_alive():
         # Process any new logs
@@ -821,9 +862,14 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
             msg = log_queue.get()
             logs_updated = True
 
+        # Process progress updates
+        while not progress_queue.empty():
+            current_pct, current_msg = progress_queue.get()
+            logs_updated = True
+
         if logs_updated:
             current_logs = get_console_log()
-            yield "Processing...", None, None, None, current_logs
+            yield "Processing...", None, None, None, current_logs, gr.update(value=get_progress_html(current_pct, current_msg))
 
         time.sleep(0.1)
 
@@ -838,7 +884,7 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
         error_msg = f"Error creating podcast: {result_container['error']}"
         log_message(error_msg)
         log_message("=" * 50)
-        yield error_msg, None, None, None, get_console_log()
+        yield error_msg, None, None, None, get_console_log(), gr.update(visible=False)
     else:
         result_path, denoised_path, transcript_path = result_container['result']
 
@@ -857,7 +903,7 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
         final_transcript = transcript_path if transcript_path and os.path.exists(
             transcript_path) else None
 
-        yield f"✓ Podcast created successfully: {output_name}.mp3", result_path, denoised_path, final_transcript, get_console_log()
+        yield f"✓ Podcast created successfully: {output_name}.mp3", result_path, denoised_path, final_transcript, get_console_log(), gr.update(visible=False)
 
 
 def create_podcast_handler(voice_file, output_name, delete_voice, trim_silence, denoise_audio, denoise_method, enhance_audio, normalize_lufs, target_lufs, generate_transcript, whisper_model):
@@ -1253,7 +1299,9 @@ def create_ui():
     saved_volume = config_manager.get_volume()
     saved_output_name = config_manager.get_last_output_name()
 
-    with gr.Blocks(title="NTN Podcast Creator", css="""
+    with gr.Blocks(title="NTN Podcast Creator") as app:
+        gr.HTML("""
+        <style>
         .console-output {
             font-family: 'Courier New', monospace !important;
             background: #1e1e1e !important;
@@ -1285,14 +1333,15 @@ def create_ui():
             margin: 10px 0 !important;
             background: #f9f9f9 !important;
         }
-    """) as app:
+        </style>
+        """)
         # Progress bar container (initially hidden)
         progress_bar = gr.HTML(
             value="",
             visible=False,
             elem_classes=["progress-container"]
         )
-        
+
         with gr.Column(elem_classes=["main-container"]):
             gr.Markdown("""
             # 🎙️ NTN Podcast Creator
@@ -1312,7 +1361,7 @@ def create_ui():
                     with gr.Column():
                         with gr.Group(elem_classes=["clean-card"]):
                             gr.Markdown("### 📤 Upload & Configure")
-                            
+
                             voice_input = gr.Audio(
                                 label="🎤 Voice Recording (Required)",
                                 type="filepath"
@@ -1424,8 +1473,7 @@ def create_ui():
                             status_output = gr.Textbox(
                                 label="📢 Status",
                                 interactive=False,
-                                lines=2,
-                                show_copy_button=True
+                                lines=2
                             )
 
                         with gr.Accordion("📋 Real-time Processing Log", open=True):
@@ -1436,11 +1484,10 @@ def create_ui():
                                 lines=12,
                                 max_lines=25,
                                 autoscroll=True,
-                                show_copy_button=True,
                                 container=True,
                                 elem_classes=["console-output"]
                             )
-                        
+
                         with gr.Group(elem_classes=["clean-card"]):
                             gr.Markdown("### 🎧 Results")
                             audio_output = gr.Audio(
@@ -2015,7 +2062,7 @@ def create_ui():
                     normalize_lufs_checkbox, target_lufs_slider,
                     generate_transcript_checkbox, whisper_model_dropdown],
             outputs=[status_output, audio_output,
-                     denoised_audio_output, transcript_output, realtime_console_output],
+                     denoised_audio_output, transcript_output, realtime_console_output, progress_bar],
             show_progress='full'
         )
 
