@@ -439,8 +439,9 @@ class AudioProcessor:
         # Phase 2: Generate transcript if requested
         if generate_transcript:
             log(f"Generating transcript using Whisper ({whisper_model} model)...")
+            # Transcribe the final podcast audio (with intro + content + outro)
             transcript_file = transcribe_audio(
-                voice_file_to_process,
+                output_file,
                 model_size=whisper_model,
                 with_timestamps=True,
                 log_callback=log
