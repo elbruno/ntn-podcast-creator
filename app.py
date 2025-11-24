@@ -300,12 +300,12 @@ def get_bottom_console_html(console_text: str, visible: bool = True, show_close:
         close_button_html = '<button class="close-btn" onclick="this.parentElement.parentElement.style.display=\'none\'">✖ Close</button>'
 
     return f"""
-    <div>
-        <div class="bottom-console-header">
+    <div style="position: fixed; bottom: 0; left: 0; right: 0; z-index: 9998; background: #1e1e1e; border-top: 2px solid #333; box-shadow: 0 -2px 4px rgba(0,0,0,0.3); max-height: 200px; overflow-y: auto; display: block;">
+        <div style="background: #333; color: white; padding: 8px 20px; font-weight: bold; border-bottom: 1px solid #555; font-size: 14px; display: flex; justify-content: space-between; align-items: center;">
             <span>📋 Processing Log (Live Updates)</span>
             {close_button_html}
         </div>
-        <div class="bottom-console-content">
+        <div style="font-family: 'Courier New', monospace; background: #1e1e1e; color: #ffffff; padding: 10px 20px; font-size: 12px; line-height: 1.4; white-space: pre-wrap; max-height: 150px; overflow-y: auto;">
 {display_text}
         </div>
     </div>
@@ -737,6 +737,25 @@ def get_current_settings():
     return "\\n".join(settings)
 
 
+def get_progress_html(pct, msg):
+    """Generate progress bar HTML with inline display control."""
+    return f"""
+    <div style="position: fixed; top: 0; left: 0; right: 0; z-index: 9999; background: #2196F3; color: white; padding: 10px 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.2); display: flex; align-items: center; justify-content: space-between; width: calc(100% - 40px);">
+        <div style="font-weight: bold; display: flex; align-items: center; gap: 10px;">
+            <div style="border: 3px solid rgba(255,255,255,0.3); border-radius: 50%; border-top: 3px solid white; width: 20px; height: 20px; animation: spin 1s linear infinite;"></div>
+            {msg}
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <div style="font-size: 12px; min-width: 40px;">{int(pct*100)}%</div>
+            <div style="background: rgba(255,255,255,0.3); height: 8px; width: 200px; border-radius: 4px; overflow: hidden;">
+                <div style="background: white; height: 100%; width: {pct*100}%; transition: width 0.3s;"></div>
+            </div>
+        </div>
+        <style>@keyframes spin {{0% {{transform: rotate(0deg);}} 100% {{transform: rotate(360deg);}}}}</style>
+    </div>
+    """
+
+
 def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, trim_silence, denoise_audio, denoise_method, enhance_audio, normalize_lufs, target_lufs, generate_transcript, whisper_model, progress=gr.Progress()):
     """Handle podcast creation request with progress tracking."""
     import threading
@@ -747,31 +766,13 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
     global console_log
     console_log.clear()
 
-    # Helper for custom progress bar
-    def get_progress_html(pct, msg):
-        return f"""
-        <div style="display: flex; align-items: center; justify-content: space-between; width: 100%; background: #2196F3; color: white; padding: 10px 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">
-            <div style="font-weight: bold; display: flex; align-items: center; gap: 10px;">
-                <div class="spinner" style="border: 3px solid rgba(255,255,255,0.3); border-radius: 50%; border-top: 3px solid white; width: 20px; height: 20px; animation: spin 1s linear infinite;"></div>
-                {msg}
-            </div>
-            <div style="display: flex; align-items: center; gap: 10px;">
-                <div style="font-size: 12px;">{int(pct*100)}%</div>
-                <div style="background: rgba(255,255,255,0.3); height: 8px; width: 200px; border-radius: 4px; overflow: hidden;">
-                    <div style="background: white; height: 100%; width: {pct*100}%; transition: width 0.3s;"></div>
-                </div>
-            </div>
-            <style>@keyframes spin {{0% {{transform: rotate(0deg);}} 100% {{transform: rotate(360deg);}}}}</style>
-        </div>
-        """
-
     progress(0.0, "🚀 Starting podcast creation...")
     log_message("=" * 50)
     log_message("🎬 Starting new podcast creation")
 
     if voice_file is None:
         log_message("❌ Error: No voice file provided")
-        yield "❌ Error: Please upload a voice recording file", None, None, None, get_console_log(), gr.update(visible=False), gr.update(visible=False)
+        yield "❌ Error: Please upload a voice recording file", None, None, None, get_console_log(), "", ""
         return
 
     if not output_name or output_name.strip() == "":
@@ -783,18 +784,18 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
 
     progress(0.1, "📁 Preparing files...")
     current_console = get_console_log()
-    yield "Preparing files...", None, None, None, current_console, gr.update(visible=True, value=get_progress_html(0.1, "Preparing files...")), gr.update(visible=True, value=get_bottom_console_html(current_console))
+    yield "Preparing files...", None, None, None, current_console, get_progress_html(0.1, "Preparing files..."), get_bottom_console_html(current_console)
 
     # Save voice file
     voice_path = save_uploaded_file(voice_file, "voice")
     if not voice_path:
         log_message("❌ Error: Could not save voice file")
-        yield "❌ Error: Could not save voice file", None, None, None, get_console_log(), gr.update(visible=False), gr.update(visible=False)
+        yield "❌ Error: Could not save voice file", None, None, None, get_console_log(), "", ""
         return
 
     progress(0.2, "⚙️ Loading configuration...")
     current_console = get_console_log()
-    yield "Loading configuration...", None, None, None, current_console, gr.update(value=get_progress_html(0.2, "Loading configuration...")), gr.update(value=get_bottom_console_html(current_console))
+    yield "Loading configuration...", None, None, None, current_console, get_progress_html(0.2, "Loading configuration..."), get_bottom_console_html(current_console)
 
     # Get configuration
     intro_path = config_manager.get_intro()
@@ -824,7 +825,7 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
 
     progress(0.3, "🎬 Starting audio processing...")
     current_console = get_console_log()
-    yield "Starting audio processing...", None, None, None, current_console, gr.update(value=get_progress_html(0.3, "Starting audio processing...")), gr.update(value=get_bottom_console_html(current_console))
+    yield "Starting audio processing...", None, None, None, current_console, get_progress_html(0.3, "Starting audio processing..."), get_bottom_console_html(current_console)
 
     # Queue for logs to enable real-time updates
     log_queue = queue.Queue()
@@ -916,7 +917,7 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
 
         if logs_updated:
             current_logs = get_console_log()
-            yield "Processing...", None, None, None, current_logs, gr.update(value=get_progress_html(current_pct, current_msg)), gr.update(value=get_bottom_console_html(current_logs))
+            yield "Processing...", None, None, None, current_logs, get_progress_html(current_pct, current_msg), get_bottom_console_html(current_logs)
 
         time.sleep(0.1)
 
@@ -932,7 +933,7 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
         log_message(error_msg)
         log_message("=" * 50)
         error_console_log = get_console_log()
-        yield error_msg, None, None, None, error_console_log, gr.update(visible=False), gr.update(visible=True, value=get_bottom_console_html(error_console_log, visible=True, show_close=True))
+        yield error_msg, None, None, None, error_console_log, "", get_bottom_console_html(error_console_log, visible=True, show_close=True)
     else:
         result_path, denoised_path, transcript_path = result_container['result']
 
@@ -953,7 +954,7 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
 
         # Show the bottom console with close button when complete
         final_console_log = get_console_log()
-        yield f"✓ Podcast created successfully: {output_name}.mp3", result_path, denoised_path, final_transcript, final_console_log, gr.update(visible=False), gr.update(visible=True, value=get_bottom_console_html(final_console_log, visible=True, show_close=True))
+        yield f"✓ Podcast created successfully: {output_name}.mp3", result_path, denoised_path, final_transcript, final_console_log, "", get_bottom_console_html(final_console_log, visible=True, show_close=True)
 
 
 def create_podcast_handler(voice_file, output_name, delete_voice, trim_silence, denoise_audio, denoise_method, enhance_audio, normalize_lufs, target_lufs, generate_transcript, whisper_model):
@@ -1469,15 +1470,13 @@ def create_ui():
         """)
         # Progress bar container (initially hidden)
         progress_bar = gr.HTML(
-            value="",
-            visible=False,
+            value='<div style="display: none;"></div>',
             elem_classes=["progress-container"]
         )
 
         # Bottom console container (initially hidden)
         bottom_console = gr.HTML(
-            value="",
-            visible=False,
+            value='<div style="display: none;"></div>',
             elem_classes=["bottom-console-container"]
         )
 
