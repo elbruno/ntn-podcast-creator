@@ -279,13 +279,17 @@ def get_bottom_console_html(console_text: str, visible: bool = True, show_close:
     Returns:
         HTML string for bottom console
     """
-    if not visible or not console_text.strip():
+    if not visible:
         return ""
-
-    # Get last 10 lines for the bottom console to avoid overload
-    lines = console_text.strip().split('\n')
-    last_lines = lines[-10:] if len(lines) > 10 else lines
-    display_text = '\n'.join(last_lines)
+    
+    # Show console even if empty, with a placeholder message
+    if not console_text.strip():
+        display_text = "Initializing..."
+    else:
+        # Get last 10 lines for the bottom console to avoid overload
+        lines = console_text.strip().split('\n')
+        last_lines = lines[-10:] if len(lines) > 10 else lines
+        display_text = '\n'.join(last_lines)
 
     # Escape HTML characters
     display_text = (display_text
@@ -769,10 +773,15 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
     progress(0.0, "🚀 Starting podcast creation...")
     log_message("=" * 50)
     log_message("🎬 Starting new podcast creation")
+    
+    # Yield immediately to show progress bar and console
+    current_console = get_console_log()
+    yield "Starting...", None, None, None, current_console, get_progress_html(0.0, "🚀 Starting podcast creation..."), get_bottom_console_html(current_console)
 
     if voice_file is None:
         log_message("❌ Error: No voice file provided")
-        yield "❌ Error: Please upload a voice recording file", None, None, None, get_console_log(), "", ""
+        current_console = get_console_log()
+        yield "❌ Error: Please upload a voice recording file", None, None, None, current_console, get_progress_html(0.0, "❌ Error"), get_bottom_console_html(current_console, show_close=True)
         return
 
     if not output_name or output_name.strip() == "":
@@ -790,7 +799,8 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
     voice_path = save_uploaded_file(voice_file, "voice")
     if not voice_path:
         log_message("❌ Error: Could not save voice file")
-        yield "❌ Error: Could not save voice file", None, None, None, get_console_log(), "", ""
+        current_console = get_console_log()
+        yield "❌ Error: Could not save voice file", None, None, None, current_console, get_progress_html(0.1, "❌ Error"), get_bottom_console_html(current_console, show_close=True)
         return
 
     progress(0.2, "⚙️ Loading configuration...")
@@ -933,7 +943,7 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
         log_message(error_msg)
         log_message("=" * 50)
         error_console_log = get_console_log()
-        yield error_msg, None, None, None, error_console_log, "", get_bottom_console_html(error_console_log, visible=True, show_close=True)
+        yield error_msg, None, None, None, error_console_log, get_progress_html(1.0, "❌ Error"), get_bottom_console_html(error_console_log, visible=True, show_close=True)
     else:
         result_path, denoised_path, transcript_path = result_container['result']
 
@@ -954,7 +964,7 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
 
         # Show the bottom console with close button when complete
         final_console_log = get_console_log()
-        yield f"✓ Podcast created successfully: {output_name}.mp3", result_path, denoised_path, final_transcript, final_console_log, "", get_bottom_console_html(final_console_log, visible=True, show_close=True)
+        yield f"✓ Podcast created successfully: {output_name}.mp3", result_path, denoised_path, final_transcript, final_console_log, get_progress_html(1.0, "✅ Complete!"), get_bottom_console_html(final_console_log, visible=True, show_close=True)
 
 
 def create_podcast_handler(voice_file, output_name, delete_voice, trim_silence, denoise_audio, denoise_method, enhance_audio, normalize_lufs, target_lufs, generate_transcript, whisper_model):
@@ -1353,6 +1363,28 @@ def create_ui():
     with gr.Blocks(title="NTN Podcast Creator") as app:
         gr.HTML("""
         <style>
+        :root {
+            --bg-primary: #ffffff;
+            --bg-secondary: #f9f9f9;
+            --bg-footer: #f5f5f5;
+            --border-color: #e0e0e0;
+            --text-primary: #000000;
+            --text-secondary: #666666;
+            --card-bg: #f9f9f9;
+            --card-border: #e0e0e0;
+        }
+        
+        .dark-theme {
+            --bg-primary: #1e1e1e;
+            --bg-secondary: #2a2a2a;
+            --bg-footer: #1e1e1e;
+            --border-color: #444;
+            --text-primary: #ffffff;
+            --text-secondary: #cccccc;
+            --card-bg: #2a2a2a;
+            --card-border: #444;
+        }
+        
         .console-output {
             font-family: 'Courier New', monospace !important;
             background: #1e1e1e !important;
@@ -1421,18 +1453,19 @@ def create_ui():
             gap: 10px !important;
         }
         .clean-card {
-            border: 1px solid #e0e0e0 !important;
+            border: 1px solid var(--card-border) !important;
             border-radius: 8px !important;
             padding: 15px !important;
             margin: 10px 0 !important;
-            background: #f9f9f9 !important;
+            background: var(--card-bg) !important;
         }
         .footer {
             text-align: center;
             padding: 20px;
-            background: #f5f5f5;
-            border-top: 1px solid #ddd;
+            background: var(--bg-footer);
+            border-top: 1px solid var(--border-color);
             margin-top: 30px;
+            color: var(--text-primary);
         }
         .close-btn {
             cursor: pointer;
@@ -1446,27 +1479,57 @@ def create_ui():
         .close-btn:hover {
             background: #c82333;
         }
-        /* Dark theme support */
-        @media (prefers-color-scheme: dark) {
-            .dark .footer {
-                background: #1e1e1e;
-                border-top: 1px solid #333;
-            }
-            .dark .clean-card {
-                background: #2a2a2a !important;
-                border-color: #444 !important;
-            }
+        .dark-theme .footer {
+            background: var(--bg-footer);
+            border-top-color: var(--border-color);
+            color: var(--text-primary);
         }
-        .dark .footer {
-            background: #1e1e1e;
-            border-top: 1px solid #333;
-            color: #fff;
-        }
-        .dark .clean-card {
-            background: #2a2a2a !important;
-            border-color: #444 !important;
+        .dark-theme .clean-card {
+            background: var(--card-bg) !important;
+            border-color: var(--card-border) !important;
         }
         </style>
+        <script>
+        // Theme management
+        function applyTheme(theme) {
+            const root = document.documentElement;
+            if (theme === 'Dark') {
+                root.classList.add('dark-theme');
+                localStorage.setItem('ntn-theme', 'Dark');
+            } else if (theme === 'Light') {
+                root.classList.remove('dark-theme');
+                localStorage.setItem('ntn-theme', 'Light');
+            } else { // System
+                const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                if (prefersDark) {
+                    root.classList.add('dark-theme');
+                } else {
+                    root.classList.remove('dark-theme');
+                }
+                localStorage.setItem('ntn-theme', 'System');
+            }
+        }
+        
+        // Apply saved theme on load
+        window.addEventListener('DOMContentLoaded', function() {
+            const savedTheme = localStorage.getItem('ntn-theme') || 'System';
+            applyTheme(savedTheme);
+            
+            // Update dropdown if it exists
+            const themeDropdown = document.querySelector('select[data-testid="dropdown"]');
+            if (themeDropdown) {
+                themeDropdown.value = savedTheme;
+            }
+        });
+        
+        // Listen for system theme changes
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function() {
+            const savedTheme = localStorage.getItem('ntn-theme') || 'System';
+            if (savedTheme === 'System') {
+                applyTheme('System');
+            }
+        });
+        </script>
         """)
         # Progress bar container (initially hidden)
         progress_bar = gr.HTML(
@@ -1489,11 +1552,37 @@ def create_ui():
                     choices=["Light", "Dark", "System"],
                     value="System",
                     label="Theme",
-                    info="UI appearance (refresh to apply)"
+                    info="Select your preferred theme"
                 )
+                theme_status = gr.HTML(value="")
 
-        # Note: Theme selector added - theme changes require page refresh in Gradio 6.0
-        # Theme logic can be extended via custom CSS or browser local storage
+        # Theme change handler using JavaScript
+        def apply_theme_change(theme):
+            """Apply theme change via JavaScript."""
+            return f"""
+            <script>
+            (function() {{
+                const theme = '{theme}';
+                const root = document.documentElement;
+                if (theme === 'Dark') {{
+                    root.classList.add('dark-theme');
+                    localStorage.setItem('ntn-theme', 'Dark');
+                }} else if (theme === 'Light') {{
+                    root.classList.remove('dark-theme');
+                    localStorage.setItem('ntn-theme', 'Light');
+                }} else {{ // System
+                    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                    if (prefersDark) {{
+                        root.classList.add('dark-theme');
+                    }} else {{
+                        root.classList.remove('dark-theme');
+                    }}
+                    localStorage.setItem('ntn-theme', 'System');
+                }}
+            }})();
+            </script>
+            <div style="padding: 5px; font-size: 12px; color: #666;">Theme changed to {theme}</div>
+            """
 
         with gr.Tabs():
             # Main Tab - Podcast Creation
@@ -2109,6 +2198,13 @@ def create_ui():
         """)
 
         # Event handlers
+        # Theme selector
+        theme_selector.change(
+            fn=apply_theme_change,
+            inputs=[theme_selector],
+            outputs=[theme_status]
+        )
+        
         intro_input.change(
             fn=update_intro_file,
             inputs=[intro_input],
