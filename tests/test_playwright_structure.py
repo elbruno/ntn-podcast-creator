@@ -120,19 +120,42 @@ if __name__ == "__main__":
     print("🧪 Playwright Test Structure Verification")
     print("=" * 70)
     
-    results = []
-    results.append(("Module imports", test_playwright_module_imports()))
-    results.append(("Test functions exist", test_playwright_test_functions_exist()))
-    results.append(("Fixtures exist", test_playwright_fixtures_exist()))
-    results.append(("GradioApp class", test_gradio_app_class_exists()))
+    # Run tests and collect results
+    all_passed = True
     
-    print("\n" + "=" * 70)
-    print("📊 Test Summary:")
-    passed = sum(1 for _, result in results if result)
-    total = len(results)
-    print(f"  ✓ Passed: {passed}/{total}")
-    if passed < total:
-        print(f"  ✗ Failed: {total - passed}/{total}")
+    try:
+        test_playwright_module_imports()
+        print("  ✓ Module imports: PASSED\n")
+    except AssertionError as e:
+        print(f"  ✗ Module imports: FAILED - {e}\n")
+        all_passed = False
+    
+    try:
+        test_playwright_test_functions_exist()
+        print("  ✓ Test functions: PASSED\n")
+    except AssertionError as e:
+        print(f"  ✗ Test functions: FAILED - {e}\n")
+        all_passed = False
+    
+    try:
+        test_playwright_fixtures_exist()
+        print("  ✓ Fixtures: PASSED\n")
+    except AssertionError as e:
+        print(f"  ✗ Fixtures: FAILED - {e}\n")
+        all_passed = False
+    
+    try:
+        test_gradio_app_class_exists()
+        print("  ✓ GradioApp class: PASSED\n")
+    except AssertionError as e:
+        print(f"  ✗ GradioApp class: FAILED - {e}\n")
+        all_passed = False
+    
+    print("=" * 70)
+    if all_passed:
+        print("📊 All verification tests passed!")
+    else:
+        print("📊 Some verification tests failed!")
     print("=" * 70)
     
-    sys.exit(0 if passed == total else 1)
+    sys.exit(0 if all_passed else 1)
