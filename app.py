@@ -252,11 +252,14 @@ def generate_timeline_chart(voice_file: Optional[str], intro_file: Optional[str]
 
 
 def log_message(message: str):
-    """Add message to console log."""
+    """Add message to console log with timestamp."""
+    import datetime
     global console_log, realtime_log_queue
-    console_log.append(message)
-    realtime_log_queue.append(message)
-    print(message)
+    timestamp = datetime.datetime.now().strftime("%H:%M:%S")
+    formatted_message = f"[{timestamp}] {message}"
+    console_log.append(formatted_message)
+    realtime_log_queue.append(formatted_message)
+    print(formatted_message)
 
 
 def get_console_log() -> str:
@@ -700,13 +703,13 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
     global console_log
     console_log.clear()
 
-    progress(0.0, "Starting podcast creation...")
+    progress(0.0, "🚀 Starting podcast creation...")
     log_message("=" * 50)
-    log_message("Starting new podcast creation")
+    log_message("🎬 Starting new podcast creation")
 
     if voice_file is None:
-        log_message("Error: No voice file provided")
-        yield "Error: Please upload a voice recording file", None, None, None, get_console_log()
+        log_message("❌ Error: No voice file provided")
+        yield "❌ Error: Please upload a voice recording file", None, None, None, get_console_log()
         return
 
     if not output_name or output_name.strip() == "":
@@ -714,18 +717,18 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
 
     # Remove extension if provided
     output_name = output_name.replace(".mp3", "")
-    log_message(f"Output filename: {output_name}.mp3")
+    log_message(f"📝 Output filename: {output_name}.mp3")
 
-    progress(0.1, "Preparing files...")
+    progress(0.1, "📁 Preparing files...")
 
     # Save voice file
     voice_path = save_uploaded_file(voice_file, "voice")
     if not voice_path:
-        log_message("Error: Could not save voice file")
-        yield "Error: Could not save voice file", None, None, None, get_console_log()
+        log_message("❌ Error: Could not save voice file")
+        yield "❌ Error: Could not save voice file", None, None, None, get_console_log()
         return
 
-    progress(0.2, "Loading configuration...")
+    progress(0.2, "⚙️ Loading configuration...")
 
     # Get configuration
     intro_path = config_manager.get_intro()
@@ -753,7 +756,7 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
     # Save output name for next time
     config_manager.update_last_output_name(output_name)
 
-    progress(0.3, "Starting audio processing...")
+    progress(0.3, "🎬 Starting audio processing...")
 
     # Queue for logs to enable real-time updates
     log_queue = queue.Queue()
@@ -763,18 +766,18 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
         log_queue.put(message)
 
         # Update progress based on message content
-        if "Denoising" in message:
-            progress(0.4, "Removing noise from audio...")
-        elif "Enhancing" in message:
-            progress(0.5, "Enhancing audio quality...")
-        elif "Mixing" in message:
-            progress(0.7, "Mixing audio tracks...")
-        elif "Normalizing" in message:
-            progress(0.8, "Normalizing volume levels...")
-        elif "Transcript" in message:
-            progress(0.9, "Generating transcript...")
+        if "Denoising" in message or "noise" in message.lower():
+            progress(0.4, "🔧 Removing noise from audio...")
+        elif "Enhancing" in message or "enhance" in message.lower():
+            progress(0.5, "✨ Enhancing audio quality...")
+        elif "Mixing" in message or "mixing" in message.lower():
+            progress(0.7, "🎵 Mixing audio tracks...")
+        elif "Normalizing" in message or "LUFS" in message:
+            progress(0.8, "📊 Normalizing volume levels...")
+        elif "Transcript" in message or "transcrib" in message.lower():
+            progress(0.9, "📝 Generating transcript...")
         elif "saved" in message.lower() or "complete" in message.lower():
-            progress(1.0, "Podcast creation complete!")
+            progress(1.0, "✅ Podcast creation complete!")
 
     # Container for result from thread
     result_container = {}
@@ -1250,12 +1253,52 @@ def create_ui():
     saved_volume = config_manager.get_volume()
     saved_output_name = config_manager.get_last_output_name()
 
-    with gr.Blocks(title="NTN Podcast Creator") as app:
-        gr.Markdown("""
-        # 🎙️ NTN Podcast Creator
+    with gr.Blocks(title="NTN Podcast Creator", css="""
+        .console-output {
+            font-family: 'Courier New', monospace !important;
+            background: #1e1e1e !important;
+            color: #ffffff !important;
+            border: 1px solid #333 !important;
+            padding: 10px !important;
+        }
+        .progress-container {
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            right: 0 !important;
+            z-index: 9999 !important;
+            background: #ffffff !important;
+            border-bottom: 2px solid #e0e0e0 !important;
+            padding: 5px 20px !important;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
+        }
+        .main-container {
+            margin-top: 60px !important;
+        }
+        .compact-row {
+            gap: 10px !important;
+        }
+        .clean-card {
+            border: 1px solid #e0e0e0 !important;
+            border-radius: 8px !important;
+            padding: 15px !important;
+            margin: 10px 0 !important;
+            background: #f9f9f9 !important;
+        }
+    """) as app:
+        # Progress bar container (initially hidden)
+        progress_bar = gr.HTML(
+            value="",
+            visible=False,
+            elem_classes=["progress-container"]
+        )
+        
+        with gr.Column(elem_classes=["main-container"]):
+            gr.Markdown("""
+            # 🎙️ NTN Podcast Creator
 
-        Create professional podcasts with intro, outro, and background music.
-        """)
+            Create professional podcasts with intro, outro, and background music.
+            """)
 
         with gr.Tabs():
             # Main Tab - Podcast Creation
@@ -1267,30 +1310,34 @@ def create_ui():
 
                 with gr.Row():
                     with gr.Column():
-                        voice_input = gr.Audio(
-                            label="🎤 Voice Recording (Required)",
-                            type="filepath"
-                        )
-
-                        output_name_input = gr.Textbox(
-                            label="📝 Podcast Episode Name",
-                            value=saved_output_name,
-                            placeholder="podcast_episode",
-                            info="Auto-suggested based on date (yymmdd) + your file name"
-                        )
-
-                        with gr.Accordion("⚙️ Basic Options", open=True):
-                            delete_voice_checkbox = gr.Checkbox(
-                                label="Delete voice recording after creation",
-                                value=True,
-                                info="Saves storage space"
+                        with gr.Group(elem_classes=["clean-card"]):
+                            gr.Markdown("### 📤 Upload & Configure")
+                            
+                            voice_input = gr.Audio(
+                                label="🎤 Voice Recording (Required)",
+                                type="filepath"
                             )
 
-                            trim_silence_checkbox = gr.Checkbox(
-                                label="Trim silence from voice recording",
-                                value=True,
-                                info="Removes silence from start and end"
+                            output_name_input = gr.Textbox(
+                                label="📝 Podcast Episode Name",
+                                value=saved_output_name,
+                                placeholder="podcast_episode",
+                                info="Auto-suggested based on date (yymmdd) + your file name"
                             )
+
+                        with gr.Accordion("⚙️ Processing Options", open=False):
+                            with gr.Row(elem_classes=["compact-row"]):
+                                delete_voice_checkbox = gr.Checkbox(
+                                    label="Delete voice recording after creation",
+                                    value=True,
+                                    info="Saves storage space"
+                                )
+
+                                trim_silence_checkbox = gr.Checkbox(
+                                    label="Trim silence from voice recording",
+                                    value=True,
+                                    info="Removes silence from start and end"
+                                )
 
                             gr.Markdown("### Noise Reduction")
 
@@ -1314,7 +1361,7 @@ def create_ui():
                             gr.Markdown("### Audio Enhancement")
 
                             enhance_audio_checkbox = gr.Checkbox(
-                                label="Apply Adobe Enhance (cloud-based)",
+                                label="✨ Apply Adobe Enhance (optional cloud-based)",
                                 value=config_manager.get_enhance_audio(),
                                 info="Uses Adobe's AI to improve audio quality (adds 2-5 minutes)"
                             )
@@ -1357,48 +1404,63 @@ def create_ui():
                                 info="Larger models are more accurate but slower"
                             )
 
-                        create_button = gr.Button(
-                            "🎬 Create Podcast",
-                            variant="primary",
-                            size="lg"
-                        )
+                        with gr.Group(elem_classes=["clean-card"]):
+                            create_button = gr.Button(
+                                "🎬 Create Podcast",
+                                variant="primary",
+                                size="lg",
+                                scale=2
+                            )
 
                     with gr.Column():
-                        timeline_html = gr.HTML(
-                            label="Timeline Preview",
-                            value=preview_timeline(None)
-                        )
+                        with gr.Group(elem_classes=["clean-card"]):
+                            gr.Markdown("### 📊 Preview")
+                            timeline_html = gr.HTML(
+                                label="Timeline Preview",
+                                value=preview_timeline(None)
+                            )
 
-                        status_output = gr.Textbox(
-                            label="Status",
-                            interactive=False,
-                            lines=3
-                        )
+                        with gr.Group(elem_classes=["clean-card"]):
+                            status_output = gr.Textbox(
+                                label="📢 Status",
+                                interactive=False,
+                                lines=2,
+                                show_copy_button=True
+                            )
 
                         with gr.Accordion("📋 Real-time Processing Log", open=True):
                             realtime_console_output = gr.Textbox(
                                 label="Live Console Output",
-                                value="Ready to process...",
+                                value="[Ready] Waiting for processing...",
                                 interactive=False,
-                                lines=8,
-                                max_lines=15,
-                                autoscroll=True
+                                lines=12,
+                                max_lines=25,
+                                autoscroll=True,
+                                show_copy_button=True,
+                                container=True,
+                                elem_classes=["console-output"]
                             )
-                        audio_output = gr.Audio(
-                            label="🎧 Your Podcast",
-                            type="filepath"
-                        )
+                        
+                        with gr.Group(elem_classes=["clean-card"]):
+                            gr.Markdown("### 🎧 Results")
+                            audio_output = gr.Audio(
+                                label="🎧 Your Podcast",
+                                type="filepath"
+                            )
 
-                        denoised_audio_output = gr.Audio(
-                            label="🎵 Cleaned Voice (Download)",
-                            type="filepath",
-                            visible=True
-                        )
+                            with gr.Row():
+                                denoised_audio_output = gr.Audio(
+                                    label="🎵 Cleaned Voice",
+                                    type="filepath",
+                                    visible=True,
+                                    scale=1
+                                )
 
-                        transcript_output = gr.File(
-                            label="📝 Transcript (Download)",
-                            visible=True
-                        )
+                                transcript_output = gr.File(
+                                    label="📝 Transcript",
+                                    visible=True,
+                                    scale=1
+                                )
 
                         with gr.Accordion("📥 Download & Import Settings", open=False):
                             gr.Markdown("**Export Settings**")
