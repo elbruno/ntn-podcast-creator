@@ -5,6 +5,7 @@ import os
 import sys
 import tempfile
 import json
+import datetime
 from unittest.mock import Mock, patch, MagicMock
 
 # Add parent directory to path
@@ -191,25 +192,23 @@ class TestAppFunctions(unittest.TestCase):
     def test_suggest_podcast_name_with_file(self):
         """Test podcast name suggestion with a file."""
         from app import suggest_podcast_name
-        from datetime import datetime
         
         # Mock a file path
         mock_file = '/path/to/my_recording.mp3'
         suggested_name = suggest_podcast_name(mock_file)
         
         # Should contain date prefix
-        date_str = datetime.now().strftime("%y%m%d")
+        date_str = datetime.datetime.now().strftime("%y%m%d")
         self.assertTrue(suggested_name.startswith(date_str))
         self.assertIn('my_recording', suggested_name)
 
     def test_suggest_podcast_name_no_file(self):
         """Test podcast name suggestion without a file."""
         from app import suggest_podcast_name
-        from datetime import datetime
         
         suggested_name = suggest_podcast_name(None)
         
-        date_str = datetime.now().strftime("%y%m%d")
+        date_str = datetime.datetime.now().strftime("%y%m%d")
         self.assertTrue(suggested_name.startswith(date_str))
         self.assertIn('podcast', suggested_name)
 
