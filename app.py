@@ -32,6 +32,8 @@ background_tracks_list = []
 
 # Global variable for console log
 console_log = []
+# Global variable for real-time log updates
+realtime_log_queue = []
 
 
 def get_audio_duration(file_path: str) -> str:
@@ -250,10 +252,14 @@ def generate_timeline_chart(voice_file: Optional[str], intro_file: Optional[str]
 
 
 def log_message(message: str):
-    """Add message to console log."""
-    global console_log
-    console_log.append(message)
-    print(message)
+    """Add message to console log with timestamp."""
+    import datetime
+    global console_log, realtime_log_queue
+    timestamp = datetime.datetime.now().strftime("%H:%M:%S")
+    formatted_message = f"[{timestamp}] {message}"
+    console_log.append(formatted_message)
+    realtime_log_queue.append(formatted_message)
+    print(formatted_message)
 
 
 def get_console_log() -> str:
@@ -262,10 +268,60 @@ def get_console_log() -> str:
     return "\n".join(console_log) if console_log else "No logs yet"
 
 
+def get_bottom_console_html(console_text: str, visible: bool = True) -> str:
+    """Generate bottom console HTML.
+    
+    Args:
+        console_text: The console log text to display
+        visible: Whether the console should be visible
+        
+    Returns:
+        HTML string for bottom console
+    """
+    if not visible or not console_text.strip():
+        return ""
+    
+    # Get last 10 lines for the bottom console to avoid overload
+    lines = console_text.strip().split('\n')
+    last_lines = lines[-10:] if len(lines) > 10 else lines
+    display_text = '\n'.join(last_lines)
+    
+    # Escape HTML characters
+    display_text = (display_text
+                   .replace('&', '&amp;')
+                   .replace('<', '&lt;')
+                   .replace('>', '&gt;')
+                   .replace('"', '&quot;')
+                   .replace("'", '&#x27;'))
+    
+    return f"""
+    <div>
+        <div class="bottom-console-header">
+            📋 Processing Log (Live Updates)
+        </div>
+        <div class="bottom-console-content">
+{display_text}
+        </div>
+    </div>
+    """
+
+
+def get_realtime_log() -> str:
+    """Get real-time console log as string."""
+    global realtime_log_queue
+    if realtime_log_queue:
+        # Return all queued messages and clear the queue
+        messages = "\n".join(realtime_log_queue)
+        realtime_log_queue.clear()
+        return messages
+    return ""
+
+
 def clear_console_log():
     """Clear console log."""
-    global console_log
+    global console_log, realtime_log_queue
     console_log = []
+    realtime_log_queue = []
     return "Console log cleared"
 
 
@@ -675,39 +731,64 @@ def get_current_settings():
     return "\\n".join(settings)
 
 
-def create_podcast_handler(voice_file, output_name, delete_voice, trim_silence, denoise_audio, enhance_audio):
-    """Handle podcast creation request.
+def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, trim_silence, denoise_audio, denoise_method, enhance_audio, normalize_lufs, target_lufs, generate_transcript, whisper_model, progress=gr.Progress()):
+    """Handle podcast creation request with progress tracking."""
+    import threading
+    import queue
+    import time
 
-    Args:
-        voice_file: Uploaded voice file
-        output_name: Desired output filename
-        delete_voice: Whether to delete voice file after creation
-        trim_silence: Whether to trim silence from start/end
-        denoise_audio: Whether to denoise audio using audio-denoiser
-        enhance_audio: Whether to enhance audio using Adobe Enhance
+    # Clear the console at start
+    global console_log
+    console_log.clear()
 
-    Returns:
-        Tuple of (status message, output file path or None, denoised file path or None, console log)
-    """
+    # Helper for custom progress bar
+    def get_progress_html(pct, msg):
+        return f"""
+        <div style="display: flex; align-items: center; justify-content: space-between; width: 100%; background: #2196F3; color: white; padding: 10px 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">
+            <div style="font-weight: bold; display: flex; align-items: center; gap: 10px;">
+                <div class="spinner" style="border: 3px solid rgba(255,255,255,0.3); border-radius: 50%; border-top: 3px solid white; width: 20px; height: 20px; animation: spin 1s linear infinite;"></div>
+                {msg}
+            </div>
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <div style="font-size: 12px;">{int(pct*100)}%</div>
+                <div style="background: rgba(255,255,255,0.3); height: 8px; width: 200px; border-radius: 4px; overflow: hidden;">
+                    <div style="background: white; height: 100%; width: {pct*100}%; transition: width 0.3s;"></div>
+                </div>
+            </div>
+            <style>@keyframes spin {{0% {{transform: rotate(0deg);}} 100% {{transform: rotate(360deg);}}}}</style>
+        </div>
+        """
+
+    progress(0.0, "🚀 Starting podcast creation...")
     log_message("=" * 50)
-    log_message("Starting new podcast creation")
+    log_message("🎬 Starting new podcast creation")
 
     if voice_file is None:
-        log_message("Error: No voice file provided")
-        return "Error: Please upload a voice recording file", None, None, get_console_log()
+        log_message("❌ Error: No voice file provided")
+        yield "❌ Error: Please upload a voice recording file", None, None, None, get_console_log(), gr.update(visible=False), gr.update(visible=False)
+        return
 
     if not output_name or output_name.strip() == "":
         output_name = "podcast_output"
 
     # Remove extension if provided
     output_name = output_name.replace(".mp3", "")
-    log_message(f"Output filename: {output_name}.mp3")
+    log_message(f"📝 Output filename: {output_name}.mp3")
+
+    progress(0.1, "📁 Preparing files...")
+    current_console = get_console_log()
+    yield "Preparing files...", None, None, None, current_console, gr.update(visible=True, value=get_progress_html(0.1, "Preparing files...")), gr.update(visible=True, value=get_bottom_console_html(current_console))
 
     # Save voice file
     voice_path = save_uploaded_file(voice_file, "voice")
     if not voice_path:
-        log_message("Error: Could not save voice file")
-        return "Error: Could not save voice file", None, None, get_console_log()
+        log_message("❌ Error: Could not save voice file")
+        yield "❌ Error: Could not save voice file", None, None, None, get_console_log(), gr.update(visible=False), gr.update(visible=False)
+        return
+
+    progress(0.2, "⚙️ Loading configuration...")
+    current_console = get_console_log()
+    yield "Loading configuration...", None, None, None, current_console, gr.update(value=get_progress_html(0.2, "Loading configuration...")), gr.update(value=get_bottom_console_html(current_console))
 
     # Get configuration
     intro_path = config_manager.get_intro()
@@ -723,8 +804,207 @@ def create_podcast_handler(voice_file, output_name, delete_voice, trim_silence, 
         f"  Background tracks: {len(background_tracks) if background_tracks else 0}")
     log_message(f"  Volume: {volume}%")
     log_message(f"  Trim silence: {trim_silence}")
-    log_message(f"  Denoise audio: {denoise_audio}")
+    log_message(f"  Denoise audio: {denoise_audio} (method: {denoise_method})")
     log_message(f"  Enhance audio: {enhance_audio}")
+    log_message(f"  Normalize LUFS: {normalize_lufs} (target: {target_lufs})")
+    log_message(
+        f"  Generate transcript: {generate_transcript} (model: {whisper_model})")
+
+    # Create output path
+    output_path = os.path.join("outputs", f"{output_name}.mp3")
+
+    # Save output name for next time
+    config_manager.update_last_output_name(output_name)
+
+    progress(0.3, "🎬 Starting audio processing...")
+    current_console = get_console_log()
+    yield "Starting audio processing...", None, None, None, current_console, gr.update(value=get_progress_html(0.3, "Starting audio processing...")), gr.update(value=get_bottom_console_html(current_console))
+
+    # Queue for logs to enable real-time updates
+    log_queue = queue.Queue()
+    progress_queue = queue.Queue()
+
+    def threaded_log_callback(message: str):
+        log_message(message)
+        log_queue.put(message)
+
+        # Update progress based on message content
+        pct = 0.3
+        msg = "Processing..."
+
+        if "Denoising" in message or "noise" in message.lower():
+            pct = 0.4
+            msg = "🔧 Removing noise..."
+            progress(pct, msg)
+        elif "Enhancing" in message or "enhance" in message.lower():
+            pct = 0.5
+            msg = "✨ Enhancing audio..."
+            progress(pct, msg)
+        elif "Mixing" in message or "mixing" in message.lower():
+            pct = 0.7
+            msg = "🎵 Mixing tracks..."
+            progress(pct, msg)
+        elif "Normalizing" in message or "LUFS" in message:
+            pct = 0.8
+            msg = "📊 Normalizing..."
+            progress(pct, msg)
+        elif "Transcript" in message or "transcrib" in message.lower():
+            pct = 0.9
+            msg = "📝 Transcribing..."
+            progress(pct, msg)
+        elif "saved" in message.lower() or "complete" in message.lower():
+            pct = 1.0
+            msg = "✅ Complete!"
+            progress(pct, msg)
+
+        progress_queue.put((pct, msg))
+
+    # Container for result from thread
+    result_container = {}
+
+    def run_process():
+        try:
+            result_path, denoised_path, transcript_path = audio_processor.create_podcast(
+                voice_file=voice_path,
+                intro_file=intro_path,
+                outro_file=outro_path,
+                background_files=background_tracks if background_tracks else None,
+                background_volume=volume,
+                track_volumes=track_volumes if track_volumes else None,
+                output_file=output_path,
+                trim_silence=trim_silence,
+                denoise_audio=denoise_audio,
+                denoise_method=denoise_method,
+                enhance_audio=enhance_audio,
+                normalize_lufs=normalize_lufs,
+                target_lufs=target_lufs,
+                generate_transcript=generate_transcript,
+                whisper_model=whisper_model,
+                log_callback=threaded_log_callback
+            )
+            result_container['result'] = (
+                result_path, denoised_path, transcript_path)
+        except Exception as e:
+            result_container['error'] = str(e)
+
+    # Start processing in a separate thread
+    t = threading.Thread(target=run_process)
+    t.start()
+
+    # Yield logs while running
+    current_logs = get_console_log()
+    current_pct = 0.3
+    current_msg = "Processing..."
+
+    while t.is_alive():
+        # Process any new logs
+        logs_updated = False
+        while not log_queue.empty():
+            msg = log_queue.get()
+            logs_updated = True
+
+        # Process progress updates
+        while not progress_queue.empty():
+            current_pct, current_msg = progress_queue.get()
+            logs_updated = True
+
+        if logs_updated:
+            current_logs = get_console_log()
+            yield "Processing...", None, None, None, current_logs, gr.update(value=get_progress_html(current_pct, current_msg)), gr.update(value=get_bottom_console_html(current_logs))
+
+        time.sleep(0.1)
+
+    # Process any remaining logs
+    while not log_queue.empty():
+        log_queue.get()
+
+    current_logs = get_console_log()
+
+    # Check result
+    if 'error' in result_container:
+        error_msg = f"Error creating podcast: {result_container['error']}"
+        log_message(error_msg)
+        log_message("=" * 50)
+        yield error_msg, None, None, None, get_console_log(), gr.update(visible=False), gr.update(visible=False)
+    else:
+        result_path, denoised_path, transcript_path = result_container['result']
+
+        # Delete voice recording if requested
+        if delete_voice and voice_path and os.path.exists(voice_path):
+            try:
+                os.remove(voice_path)
+                log_message(f"Deleted voice recording: {voice_path}")
+            except Exception as e:
+                log_message(f"Warning: Could not delete voice file: {e}")
+
+        log_message(f"✓ Podcast created successfully: {output_name}.mp3")
+        log_message("=" * 50)
+
+        # Ensure transcript path is valid for Gradio
+        final_transcript = transcript_path if transcript_path and os.path.exists(
+            transcript_path) else None
+
+        yield f"✓ Podcast created successfully: {output_name}.mp3", result_path, denoised_path, final_transcript, get_console_log(), gr.update(visible=False), gr.update(visible=False)
+
+
+def create_podcast_handler(voice_file, output_name, delete_voice, trim_silence, denoise_audio, denoise_method, enhance_audio, normalize_lufs, target_lufs, generate_transcript, whisper_model):
+    """Handle podcast creation request.
+
+    Args:
+        voice_file: Uploaded voice file
+        output_name: Desired output filename
+        delete_voice: Whether to delete voice file after creation
+        trim_silence: Whether to trim silence from start/end
+        denoise_audio: Whether to denoise audio
+        denoise_method: Noise reduction method to use
+        enhance_audio: Whether to enhance audio using Adobe Enhance
+        normalize_lufs: Whether to normalize to target LUFS
+        target_lufs: Target LUFS level
+        generate_transcript: Whether to generate transcript
+        whisper_model: Whisper model size to use
+
+    Returns:
+        Tuple of (status message, output file path or None, denoised file path or None, transcript file path or None, console log)
+    """
+    log_message("=" * 50)
+    log_message("Starting new podcast creation")
+
+    if voice_file is None:
+        log_message("Error: No voice file provided")
+        return "Error: Please upload a voice recording file", None, None, None, get_console_log()
+
+    if not output_name or output_name.strip() == "":
+        output_name = "podcast_output"
+
+    # Remove extension if provided
+    output_name = output_name.replace(".mp3", "")
+    log_message(f"Output filename: {output_name}.mp3")
+
+    # Save voice file
+    voice_path = save_uploaded_file(voice_file, "voice")
+    if not voice_path:
+        log_message("Error: Could not save voice file")
+        return "Error: Could not save voice file", None, None, None, get_console_log()
+
+    # Get configuration
+    intro_path = config_manager.get_intro()
+    outro_path = config_manager.get_outro()
+    background_tracks = config_manager.get_background_tracks()
+    volume = config_manager.get_volume()
+    track_volumes = config_manager.get_all_track_volumes()
+
+    log_message(f"Configuration loaded:")
+    log_message(f"  Intro: {intro_path if intro_path else 'None'}")
+    log_message(f"  Outro: {outro_path if outro_path else 'None'}")
+    log_message(
+        f"  Background tracks: {len(background_tracks) if background_tracks else 0}")
+    log_message(f"  Volume: {volume}%")
+    log_message(f"  Trim silence: {trim_silence}")
+    log_message(f"  Denoise audio: {denoise_audio} (method: {denoise_method})")
+    log_message(f"  Enhance audio: {enhance_audio}")
+    log_message(f"  Normalize LUFS: {normalize_lufs} (target: {target_lufs})")
+    log_message(
+        f"  Generate transcript: {generate_transcript} (model: {whisper_model})")
 
     # Create output path
     output_path = os.path.join("outputs", f"{output_name}.mp3")
@@ -733,8 +1013,8 @@ def create_podcast_handler(voice_file, output_name, delete_voice, trim_silence, 
     config_manager.update_last_output_name(output_name)
 
     try:
-        # Create podcast
-        result_path, denoised_path = audio_processor.create_podcast(
+        # Create podcast with Phase 2 features
+        result_path, denoised_path, transcript_path = audio_processor.create_podcast(
             voice_file=voice_path,
             intro_file=intro_path,
             outro_file=outro_path,
@@ -744,7 +1024,12 @@ def create_podcast_handler(voice_file, output_name, delete_voice, trim_silence, 
             output_file=output_path,
             trim_silence=trim_silence,
             denoise_audio=denoise_audio,
+            denoise_method=denoise_method,
             enhance_audio=enhance_audio,
+            normalize_lufs=normalize_lufs,
+            target_lufs=target_lufs,
+            generate_transcript=generate_transcript,
+            whisper_model=whisper_model,
             log_callback=log_message
         )
 
@@ -758,13 +1043,13 @@ def create_podcast_handler(voice_file, output_name, delete_voice, trim_silence, 
 
         log_message(f"✓ Podcast created successfully: {output_name}.mp3")
         log_message("=" * 50)
-        return f"✓ Podcast created successfully: {output_name}.mp3", result_path, denoised_path, get_console_log()
+        return f"✓ Podcast created successfully: {output_name}.mp3", result_path, denoised_path, transcript_path, get_console_log()
 
     except Exception as e:
         error_msg = f"Error creating podcast: {str(e)}"
         log_message(error_msg)
         log_message("=" * 50)
-        return error_msg, None, None, get_console_log()
+        return error_msg, None, None, None, get_console_log()
 
 
 def denoise_audio_only_handler(voice_file, delete_after):
@@ -1056,11 +1341,93 @@ def create_ui():
     saved_output_name = config_manager.get_last_output_name()
 
     with gr.Blocks(title="NTN Podcast Creator") as app:
-        gr.Markdown("""
-        # 🎙️ NTN Podcast Creator
-
-        Create professional podcasts with intro, outro, and background music.
+        gr.HTML("""
+        <style>
+        .console-output {
+            font-family: 'Courier New', monospace !important;
+            background: #1e1e1e !important;
+            color: #ffffff !important;
+            border: 1px solid #333 !important;
+            padding: 10px !important;
+        }
+        .progress-container {
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            right: 0 !important;
+            z-index: 9999 !important;
+            background: #ffffff !important;
+            border-bottom: 2px solid #e0e0e0 !important;
+            padding: 5px 20px !important;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
+        }
+        .bottom-console-container {
+            position: fixed !important;
+            bottom: 0 !important;
+            left: 0 !important;
+            right: 0 !important;
+            z-index: 9998 !important;
+            background: #1e1e1e !important;
+            border-top: 2px solid #333 !important;
+            box-shadow: 0 -2px 4px rgba(0,0,0,0.3) !important;
+            max-height: 200px !important;
+            overflow-y: auto !important;
+        }
+        .bottom-console-header {
+            background: #333 !important;
+            color: #ffffff !important;
+            padding: 8px 20px !important;
+            font-weight: bold !important;
+            border-bottom: 1px solid #555 !important;
+            font-size: 14px !important;
+        }
+        .bottom-console-content {
+            font-family: 'Courier New', monospace !important;
+            background: #1e1e1e !important;
+            color: #ffffff !important;
+            padding: 10px 20px !important;
+            font-size: 12px !important;
+            line-height: 1.4 !important;
+            white-space: pre-wrap !important;
+            max-height: 150px !important;
+            overflow-y: auto !important;
+        }
+        .main-container {
+            margin-top: 60px !important;
+            margin-bottom: 210px !important;
+        }
+        .compact-row {
+            gap: 10px !important;
+        }
+        .clean-card {
+            border: 1px solid #e0e0e0 !important;
+            border-radius: 8px !important;
+            padding: 15px !important;
+            margin: 10px 0 !important;
+            background: #f9f9f9 !important;
+        }
+        </style>
         """)
+        # Progress bar container (initially hidden)
+        progress_bar = gr.HTML(
+            value="",
+            visible=False,
+            elem_classes=["progress-container"]
+        )
+        
+        # Bottom console container (initially hidden)
+        bottom_console = gr.HTML(
+            value="",
+            visible=False,
+            elem_classes=["bottom-console-container"]
+        )
+
+        with gr.Column(elem_classes=["main-container"]):
+            gr.Markdown("""
+            # 🎙️ NTN Podcast Creator
+
+            Create professional podcasts with intro, outro, and background music.
+            """)
 
         with gr.Tabs():
             # Main Tab - Podcast Creation
@@ -1072,70 +1439,155 @@ def create_ui():
 
                 with gr.Row():
                     with gr.Column():
-                        voice_input = gr.Audio(
-                            label="🎤 Voice Recording (Required)",
-                            type="filepath"
-                        )
+                        with gr.Group(elem_classes=["clean-card"]):
+                            gr.Markdown("### 📤 Upload & Configure")
 
-                        output_name_input = gr.Textbox(
-                            label="📝 Podcast Episode Name",
-                            value=saved_output_name,
-                            placeholder="podcast_episode",
-                            info="Auto-suggested based on date (yymmdd) + your file name"
-                        )
-
-                        with gr.Accordion("⚙️ Options", open=True):
-                            delete_voice_checkbox = gr.Checkbox(
-                                label="Delete voice recording after creation",
-                                value=True,
-                                info="Saves storage space"
+                            voice_input = gr.Audio(
+                                label="🎤 Voice Recording (Required)",
+                                type="filepath"
                             )
 
-                            trim_silence_checkbox = gr.Checkbox(
-                                label="Trim silence from voice recording",
-                                value=True,
-                                info="Removes silence from start and end"
+                            output_name_input = gr.Textbox(
+                                label="📝 Podcast Episode Name",
+                                value=saved_output_name,
+                                placeholder="podcast_episode",
+                                info="Auto-suggested based on date (yymmdd) + your file name"
                             )
+
+                        with gr.Accordion("⚙️ Processing Options", open=False):
+                            with gr.Row(elem_classes=["compact-row"]):
+                                delete_voice_checkbox = gr.Checkbox(
+                                    label="Delete voice recording after creation",
+                                    value=True,
+                                    info="Saves storage space"
+                                )
+
+                                trim_silence_checkbox = gr.Checkbox(
+                                    label="Trim silence from voice recording",
+                                    value=True,
+                                    info="Removes silence from start and end"
+                                )
+
+                            gr.Markdown("### Noise Reduction")
 
                             denoise_audio_checkbox = gr.Checkbox(
-                                label="Clean audio using AI denoiser (recommended)",
+                                label="Enable noise reduction",
                                 value=config_manager.get_denoise_audio(),
-                                info="Removes background noise using machine learning"
+                                info="Remove background noise from your recording"
                             )
 
+                            denoise_method_dropdown = gr.Dropdown(
+                                label="Noise Reduction Method",
+                                choices=[
+                                    ("AI Denoiser (Recommended)", "audio_denoiser"),
+                                    ("Spectral Gating (noisereduce)", "spectral"),
+                                    ("FFmpeg RNNoise", "rnnoise")
+                                ],
+                                value=config_manager.get_denoise_method(),
+                                info="Choose your preferred noise reduction algorithm"
+                            )
+
+                            gr.Markdown("### Audio Enhancement")
+
                             enhance_audio_checkbox = gr.Checkbox(
-                                label="Apply Adobe Enhance (optional)",
+                                label="✨ Apply Adobe Enhance (optional cloud-based)",
                                 value=config_manager.get_enhance_audio(),
                                 info="Uses Adobe's AI to improve audio quality (adds 2-5 minutes)"
                             )
 
-                        create_button = gr.Button(
-                            "🎬 Create Podcast",
-                            variant="primary",
-                            size="lg"
-                        )
+                            gr.Markdown("### Volume Normalization")
+
+                            normalize_lufs_checkbox = gr.Checkbox(
+                                label="Normalize audio to professional LUFS level",
+                                value=config_manager.get_normalize_lufs(),
+                                info="Ensures consistent loudness across episodes"
+                            )
+
+                            target_lufs_slider = gr.Slider(
+                                minimum=-20,
+                                maximum=-10,
+                                value=config_manager.get_target_lufs(),
+                                step=1,
+                                label="Target LUFS Level",
+                                info="-16 for podcasts (recommended), -14 for louder content"
+                            )
+
+                            gr.Markdown("### Automatic Transcription")
+
+                            generate_transcript_checkbox = gr.Checkbox(
+                                label="Generate transcript with Whisper",
+                                value=config_manager.get_generate_transcript(),
+                                info="Creates text transcript of your voice recording"
+                            )
+
+                            whisper_model_dropdown = gr.Dropdown(
+                                label="Whisper Model Size",
+                                choices=[
+                                    ("Tiny (Fastest)", "tiny"),
+                                    ("Base (Recommended)", "base"),
+                                    ("Small (Better Quality)", "small"),
+                                    ("Medium (High Quality)", "medium"),
+                                    ("Large (Best Quality)", "large")
+                                ],
+                                value=config_manager.get_whisper_model(),
+                                info="Larger models are more accurate but slower"
+                            )
+
+                        with gr.Group(elem_classes=["clean-card"]):
+                            create_button = gr.Button(
+                                "🎬 Create Podcast",
+                                variant="primary",
+                                size="lg",
+                                scale=2
+                            )
 
                     with gr.Column():
-                        timeline_html = gr.HTML(
-                            label="Timeline Preview",
-                            value=preview_timeline(None)
-                        )
+                        with gr.Group(elem_classes=["clean-card"]):
+                            gr.Markdown("### 📊 Preview")
+                            timeline_html = gr.HTML(
+                                label="Timeline Preview",
+                                value=preview_timeline(None)
+                            )
 
-                        status_output = gr.Textbox(
-                            label="Status",
-                            interactive=False,
-                            lines=3
-                        )
-                        audio_output = gr.Audio(
-                            label="🎧 Your Podcast",
-                            type="filepath"
-                        )
+                        with gr.Group(elem_classes=["clean-card"]):
+                            status_output = gr.Textbox(
+                                label="📢 Status",
+                                interactive=False,
+                                lines=2
+                            )
 
-                        denoised_audio_output = gr.Audio(
-                            label="🎵 Cleaned Voice (Download)",
-                            type="filepath",
-                            visible=True
-                        )
+                        with gr.Accordion("📋 Real-time Processing Log", open=True):
+                            realtime_console_output = gr.Textbox(
+                                label="Live Console Output",
+                                value="[Ready] Waiting for processing...",
+                                interactive=False,
+                                lines=12,
+                                max_lines=25,
+                                autoscroll=True,
+                                container=True,
+                                elem_classes=["console-output"]
+                            )
+
+                        with gr.Group(elem_classes=["clean-card"]):
+                            gr.Markdown("### 🎧 Results")
+                            audio_output = gr.Audio(
+                                label="🎧 Your Podcast",
+                                type="filepath"
+                            )
+
+                            with gr.Row():
+                                denoised_audio_output = gr.Audio(
+                                    label="🎵 Cleaned Voice",
+                                    type="filepath",
+                                    visible=True,
+                                    scale=1
+                                )
+
+                                transcript_output = gr.File(
+                                    label="📝 Transcript",
+                                    visible=True,
+                                    scale=1
+                                )
 
                         with gr.Accordion("📥 Download & Import Settings", open=False):
                             gr.Markdown("**Export Settings**")
@@ -1169,6 +1621,12 @@ def create_ui():
                 - Configure intro, outro, and background music in the **⚙️ Settings** tab
                 - Use the **🤖 AI Denoiser** tab to clean audio files with machine learning
                 - Use the **✨ Adobe Enhance** tab to enhance audio files with Adobe AI
+
+                ### 🎛️ Advanced Features
+                - **Multiple Noise Reduction Methods**: Choose between AI Denoiser, Spectral Gating, or FFmpeg RNNoise
+                - **LUFS Normalization**: Automatically normalize audio to professional broadcast standards (-16 LUFS for podcasts)
+                - **Whisper Transcription**: Generate accurate transcripts with timestamps using OpenAI Whisper
+                - All advanced features are in the "Basic Options" section above
                 """)
 
             # AI Denoiser Tab - Standalone Audio Denoising
@@ -1676,11 +2134,23 @@ def create_ui():
         )
 
         create_button_event = create_button.click(
-            fn=create_podcast_handler,
+            fn=create_podcast_handler_with_progress,
             inputs=[voice_input, output_name_input,
-                    delete_voice_checkbox, trim_silence_checkbox, denoise_audio_checkbox, enhance_audio_checkbox],
+                    delete_voice_checkbox, trim_silence_checkbox,
+                    denoise_audio_checkbox, denoise_method_dropdown,
+                    enhance_audio_checkbox,
+                    normalize_lufs_checkbox, target_lufs_slider,
+                    generate_transcript_checkbox, whisper_model_dropdown],
             outputs=[status_output, audio_output,
-                     denoised_audio_output, console_output]
+                     denoised_audio_output, transcript_output, realtime_console_output, progress_bar, bottom_console],
+            show_progress='full'
+        )
+
+        # Update the realtime console whenever the regular console updates
+        create_button_event.then(
+            fn=get_console_log,
+            inputs=[],
+            outputs=[realtime_console_output]
         )
 
         create_button_event.then(
@@ -1766,10 +2236,43 @@ def create_ui():
             outputs=[]
         )
 
+        # Save denoise method when changed
+        denoise_method_dropdown.change(
+            fn=lambda method: config_manager.set_denoise_method(method),
+            inputs=[denoise_method_dropdown],
+            outputs=[]
+        )
+
         # Save enhance audio setting when changed
         enhance_audio_checkbox.change(
             fn=lambda enabled: config_manager.set_enhance_audio(enabled),
             inputs=[enhance_audio_checkbox],
+            outputs=[]
+        )
+
+        # Save LUFS normalization settings
+        normalize_lufs_checkbox.change(
+            fn=lambda enabled: config_manager.set_normalize_lufs(enabled),
+            inputs=[normalize_lufs_checkbox],
+            outputs=[]
+        )
+
+        target_lufs_slider.change(
+            fn=lambda target: config_manager.set_target_lufs(target),
+            inputs=[target_lufs_slider],
+            outputs=[]
+        )
+
+        # Save transcript generation settings
+        generate_transcript_checkbox.change(
+            fn=lambda enabled: config_manager.set_generate_transcript(enabled),
+            inputs=[generate_transcript_checkbox],
+            outputs=[]
+        )
+
+        whisper_model_dropdown.change(
+            fn=lambda model: config_manager.set_whisper_model(model),
+            inputs=[whisper_model_dropdown],
             outputs=[]
         )
 

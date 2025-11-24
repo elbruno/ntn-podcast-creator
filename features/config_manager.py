@@ -48,7 +48,13 @@ class ConfigManager:
             "last_output_name": "podcast_output",
             # Audio denoising feature (enabled by default)
             "denoise_audio": True,
-            "enhance_audio": False  # Adobe audio enhancement feature
+            "denoise_method": "audio_denoiser",  # audio_denoiser, spectral, rnnoise
+            "enhance_audio": False,  # Adobe audio enhancement feature
+            # Phase 2 features
+            "normalize_lufs": False,  # LUFS normalization
+            "target_lufs": -16.0,  # Target LUFS level
+            "generate_transcript": False,  # Whisper transcription
+            "whisper_model": "base"  # Whisper model size
         }
 
     def save_config(self) -> None:
@@ -262,6 +268,86 @@ class ConfigManager:
             enabled: True to enable audio enhancement, False to disable
         """
         self.set("enhance_audio", enabled)
+
+    def get_denoise_method(self) -> str:
+        """Get noise reduction method.
+
+        Returns:
+            Denoise method: 'audio_denoiser', 'spectral', or 'rnnoise'
+        """
+        return self.get("denoise_method", "audio_denoiser")
+
+    def set_denoise_method(self, method: str) -> None:
+        """Set noise reduction method.
+
+        Args:
+            method: Denoise method ('audio_denoiser', 'spectral', 'rnnoise')
+        """
+        self.set("denoise_method", method)
+
+    def get_normalize_lufs(self) -> bool:
+        """Get LUFS normalization setting.
+
+        Returns:
+            True if LUFS normalization is enabled, False otherwise
+        """
+        return self.get("normalize_lufs", False)
+
+    def set_normalize_lufs(self, enabled: bool) -> None:
+        """Set LUFS normalization setting.
+
+        Args:
+            enabled: True to enable LUFS normalization, False to disable
+        """
+        self.set("normalize_lufs", enabled)
+
+    def get_target_lufs(self) -> float:
+        """Get target LUFS level.
+
+        Returns:
+            Target LUFS level
+        """
+        return self.get("target_lufs", -16.0)
+
+    def set_target_lufs(self, target: float) -> None:
+        """Set target LUFS level.
+
+        Args:
+            target: Target LUFS level (-14 or -16 recommended)
+        """
+        self.set("target_lufs", target)
+
+    def get_generate_transcript(self) -> bool:
+        """Get transcript generation setting.
+
+        Returns:
+            True if transcript generation is enabled, False otherwise
+        """
+        return self.get("generate_transcript", False)
+
+    def set_generate_transcript(self, enabled: bool) -> None:
+        """Set transcript generation setting.
+
+        Args:
+            enabled: True to enable transcript generation, False to disable
+        """
+        self.set("generate_transcript", enabled)
+
+    def get_whisper_model(self) -> str:
+        """Get Whisper model size.
+
+        Returns:
+            Whisper model size
+        """
+        return self.get("whisper_model", "base")
+
+    def set_whisper_model(self, model: str) -> None:
+        """Set Whisper model size.
+
+        Args:
+            model: Model size (tiny, base, small, medium, large)
+        """
+        self.set("whisper_model", model)
 
     def load_default_audio_files(self) -> None:
         """Load default audio files from dedicated directories.

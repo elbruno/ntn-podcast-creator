@@ -351,6 +351,91 @@ Use this tab when you want to:
 
 ## Features in Detail
 
+### AI Audio Denoising
+
+**What is it?**
+AI Audio Denoising is a machine learning-powered feature that automatically removes background noise from your voice recordings.
+
+**New in Latest Version: Multiple Denoising Methods**
+You can now choose from three different noise reduction algorithms to best suit your recording environment:
+
+1. **AI Denoiser (Recommended)**:
+   - Uses a 38-million parameter deep learning model
+   - Best for general speech enhancement
+   - Supports large files with automatic chunking
+
+2. **Spectral Gating**:
+   - Uses spectral subtraction
+   - Best for stationary noise like fans or hums
+   - Very fast processing
+
+3. **FFmpeg RNNoise**:
+   - Uses Recurrent Neural Network noise suppression
+   - Good for real-time style noise reduction
+
+**Key Features:**
+
+1. **Automatic Noise Removal:**
+   - Removes background hum, air conditioning, fan noise
+   - Eliminates microphone handling noise
+   - Reduces electrical interference and buzzing
+   - Preserves speech quality while cleaning audio
+
+2. **Large File Support:**
+   - **Supports files of any size** through intelligent chunking
+   - Files >10MB are automatically split into manageable 8MB chunks
+   - Each chunk is processed individually, then seamlessly merged
+   - No file size limitations - process hours-long recordings
+   - Automatic cleanup of temporary files
+
+**When to Use AI Denoising:**
+
+- ✅ **Always recommended** - enabled by default
+- ✅ Home recording setups with background noise
+- ✅ Interview recordings in non-studio environments
+- ✅ Large files (>10MB) that need noise reduction
+- ✅ Long-form content (hours of audio)
+- ✅ Quick noise reduction without cloud services
+
+### Volume Normalization (LUFS)
+
+**What is it?**
+Professional audio loudness normalization to broadcast standards. This ensures your podcast has a consistent volume level that matches industry standards.
+
+**Settings:**
+- **Enable**: Turn on/off (recommended: On)
+- **Target Level**:
+  - **-16 LUFS**: Standard for podcasts (Recommended)
+  - **-14 LUFS**: Standard for streaming platforms (Spotify, etc.)
+  - **-23 LUFS**: Standard for broadcast radio
+
+**Benefits:**
+- Consistent volume across all episodes
+- No need to manually adjust volume for each recording
+- Prevents audio from being too quiet or too loud
+- Meets submission requirements for podcast platforms
+
+### Automatic Transcription (Whisper)
+
+**What is it?**
+Generate accurate text transcripts of your podcast using OpenAI's Whisper model.
+
+**Features:**
+- **High Accuracy**: State-of-the-art speech recognition
+- **Timestamped**: Includes timing for each segment
+- **Multiple Models**: Choose the balance between speed and accuracy
+  - **Tiny**: Fastest, good for drafts
+  - **Base**: Recommended balance
+  - **Small/Medium/Large**: Higher accuracy, slower processing
+
+**How to use:**
+1. Check "Generate transcript with Whisper" in Basic Options
+2. Select your preferred model size
+3. Create your podcast
+4. Download the generated transcript file
+
+**Note:** The first time you use a model, it will be downloaded automatically (requires internet). Subsequent runs work offline.
+
 ### Adobe Enhance Audio (Optional)
 
 **What is it?**
@@ -465,85 +550,6 @@ See the dedicated Troubleshooting section below for common issues like:
 - Login failures
 - Timeout errors
 - Network connection issues
-
-### AI Audio Denoising
-
-**What is it?**
-AI Audio Denoising is a machine learning-powered feature that automatically removes background noise from your voice recordings using a 38-million parameter deep neural network. It's enabled by default for the best audio quality.
-
-**Key Features:**
-
-1. **Automatic Noise Removal:**
-   - Removes background hum, air conditioning, fan noise
-   - Eliminates microphone handling noise
-   - Reduces electrical interference and buzzing
-   - Preserves speech quality while cleaning audio
-
-2. **Large File Support (NEW):**
-   - **Supports files of any size** through intelligent chunking
-   - Files >10MB are automatically split into manageable 8MB chunks
-   - Each chunk is processed individually, then seamlessly merged
-   - No file size limitations - process hours-long recordings
-   - Automatic cleanup of temporary files
-
-3. **Smart Processing:**
-   - **10-second minimum chunks** to preserve audio quality
-   - **Proportional splitting** maintains consistent chunk sizes
-   - **Memory efficient** - processes one chunk at a time
-   - **Graceful fallback** - uses original audio if processing fails
-
-**When to Use AI Denoising:**
-
-- ✅ **Always recommended** - enabled by default
-- ✅ Home recording setups with background noise
-- ✅ Interview recordings in non-studio environments
-- ✅ Large files (>10MB) that need noise reduction
-- ✅ Long-form content (hours of audio)
-- ✅ Quick noise reduction without cloud services
-
-**Two Ways to Use AI Denoising:**
-
-#### Method 1: Automatic During Podcast Creation (Recommended)
-1. Navigate to **🎙️ Create Podcast** tab
-2. Upload your voice recording (any size)
-3. Ensure **"Clean audio using AI denoiser"** is checked (default)
-4. Click **"🎬 Create Podcast"**
-5. AI denoising runs automatically before mixing
-6. Download both the final podcast and cleaned voice file
-
-#### Method 2: Standalone Processing
-1. Navigate to **🤖 AI Denoiser** tab
-2. Upload your voice recording (any size)
-3. Choose whether to delete the original after processing
-4. Click **"🤖 Clean Audio"**
-5. Monitor progress - large files show chunk processing details
-6. Download the cleaned audio for any use
-
-**Processing Times:**
-- Small files (<10MB): 10-30 seconds
-- Large files (>10MB): Varies by file size, with progress updates
-  - 50MB file: ~2-3 minutes
-  - 100MB file: ~5-7 minutes
-  - Progress shown for each chunk processed
-
-**Technical Details:**
-- Uses the `audio-denoiser` Python library
-- Runs locally - no internet required
-- GPU acceleration when available (CUDA)
-- Falls back to CPU processing if needed
-- Graceful handling when library unavailable
-
-**Large File Processing Workflow:**
-```
-Large File (>10MB) → Auto-detected → Split into 8MB chunks →
-Process each chunk → Merge chunks → Cleanup → Final output
-```
-
-**Troubleshooting AI Denoising:**
-- If processing fails, the original audio is used automatically
-- Check the Console Log tab for detailed progress and error messages
-- Ensure sufficient disk space for temporary files during chunking
-- For very large files, processing may take several minutes
 
 ### Settings Persistence
 
