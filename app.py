@@ -32,6 +32,8 @@ background_tracks_list = []
 
 # Global variable for console log
 console_log = []
+# Global variable for real-time log updates
+realtime_log_queue = []
 
 
 def get_audio_duration(file_path: str) -> str:
@@ -251,8 +253,9 @@ def generate_timeline_chart(voice_file: Optional[str], intro_file: Optional[str]
 
 def log_message(message: str):
     """Add message to console log."""
-    global console_log
+    global console_log, realtime_log_queue
     console_log.append(message)
+    realtime_log_queue.append(message)
     print(message)
 
 
@@ -262,10 +265,22 @@ def get_console_log() -> str:
     return "\n".join(console_log) if console_log else "No logs yet"
 
 
+def get_realtime_log() -> str:
+    """Get real-time console log as string."""
+    global realtime_log_queue
+    if realtime_log_queue:
+        # Return all queued messages and clear the queue
+        messages = "\n".join(realtime_log_queue)
+        realtime_log_queue.clear()
+        return messages
+    return ""
+
+
 def clear_console_log():
     """Clear console log."""
-    global console_log
+    global console_log, realtime_log_queue
     console_log = []
+    realtime_log_queue = []
     return "Console log cleared"
 
 
@@ -675,6 +690,173 @@ def get_current_settings():
     return "\\n".join(settings)
 
 
+def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, trim_silence, denoise_audio, denoise_method, enhance_audio, normalize_lufs, target_lufs, generate_transcript, whisper_model, progress=gr.Progress()):
+    """Handle podcast creation request with progress tracking."""
+    import threading
+    import queue
+    import time
+
+    # Clear the console at start
+    global console_log
+    console_log.clear()
+
+    progress(0.0, "Starting podcast creation...")
+    log_message("=" * 50)
+    log_message("Starting new podcast creation")
+
+    if voice_file is None:
+        log_message("Error: No voice file provided")
+        yield "Error: Please upload a voice recording file", None, None, None, get_console_log()
+        return
+
+    if not output_name or output_name.strip() == "":
+        output_name = "podcast_output"
+
+    # Remove extension if provided
+    output_name = output_name.replace(".mp3", "")
+    log_message(f"Output filename: {output_name}.mp3")
+
+    progress(0.1, "Preparing files...")
+
+    # Save voice file
+    voice_path = save_uploaded_file(voice_file, "voice")
+    if not voice_path:
+        log_message("Error: Could not save voice file")
+        yield "Error: Could not save voice file", None, None, None, get_console_log()
+        return
+
+    progress(0.2, "Loading configuration...")
+
+    # Get configuration
+    intro_path = config_manager.get_intro()
+    outro_path = config_manager.get_outro()
+    background_tracks = config_manager.get_background_tracks()
+    volume = config_manager.get_volume()
+    track_volumes = config_manager.get_all_track_volumes()
+
+    log_message(f"Configuration loaded:")
+    log_message(f"  Intro: {intro_path if intro_path else 'None'}")
+    log_message(f"  Outro: {outro_path if outro_path else 'None'}")
+    log_message(
+        f"  Background tracks: {len(background_tracks) if background_tracks else 0}")
+    log_message(f"  Volume: {volume}%")
+    log_message(f"  Trim silence: {trim_silence}")
+    log_message(f"  Denoise audio: {denoise_audio} (method: {denoise_method})")
+    log_message(f"  Enhance audio: {enhance_audio}")
+    log_message(f"  Normalize LUFS: {normalize_lufs} (target: {target_lufs})")
+    log_message(
+        f"  Generate transcript: {generate_transcript} (model: {whisper_model})")
+
+    # Create output path
+    output_path = os.path.join("outputs", f"{output_name}.mp3")
+
+    # Save output name for next time
+    config_manager.update_last_output_name(output_name)
+
+    progress(0.3, "Starting audio processing...")
+
+    # Queue for logs to enable real-time updates
+    log_queue = queue.Queue()
+
+    def threaded_log_callback(message: str):
+        log_message(message)
+        log_queue.put(message)
+
+        # Update progress based on message content
+        if "Denoising" in message:
+            progress(0.4, "Removing noise from audio...")
+        elif "Enhancing" in message:
+            progress(0.5, "Enhancing audio quality...")
+        elif "Mixing" in message:
+            progress(0.7, "Mixing audio tracks...")
+        elif "Normalizing" in message:
+            progress(0.8, "Normalizing volume levels...")
+        elif "Transcript" in message:
+            progress(0.9, "Generating transcript...")
+        elif "saved" in message.lower() or "complete" in message.lower():
+            progress(1.0, "Podcast creation complete!")
+
+    # Container for result from thread
+    result_container = {}
+
+    def run_process():
+        try:
+            result_path, denoised_path, transcript_path = audio_processor.create_podcast(
+                voice_file=voice_path,
+                intro_file=intro_path,
+                outro_file=outro_path,
+                background_files=background_tracks if background_tracks else None,
+                background_volume=volume,
+                track_volumes=track_volumes if track_volumes else None,
+                output_file=output_path,
+                trim_silence=trim_silence,
+                denoise_audio=denoise_audio,
+                denoise_method=denoise_method,
+                enhance_audio=enhance_audio,
+                normalize_lufs=normalize_lufs,
+                target_lufs=target_lufs,
+                generate_transcript=generate_transcript,
+                whisper_model=whisper_model,
+                log_callback=threaded_log_callback
+            )
+            result_container['result'] = (
+                result_path, denoised_path, transcript_path)
+        except Exception as e:
+            result_container['error'] = str(e)
+
+    # Start processing in a separate thread
+    t = threading.Thread(target=run_process)
+    t.start()
+
+    # Yield logs while running
+    current_logs = get_console_log()
+
+    while t.is_alive():
+        # Process any new logs
+        logs_updated = False
+        while not log_queue.empty():
+            msg = log_queue.get()
+            logs_updated = True
+
+        if logs_updated:
+            current_logs = get_console_log()
+            yield "Processing...", None, None, None, current_logs
+
+        time.sleep(0.1)
+
+    # Process any remaining logs
+    while not log_queue.empty():
+        log_queue.get()
+
+    current_logs = get_console_log()
+
+    # Check result
+    if 'error' in result_container:
+        error_msg = f"Error creating podcast: {result_container['error']}"
+        log_message(error_msg)
+        log_message("=" * 50)
+        yield error_msg, None, None, None, get_console_log()
+    else:
+        result_path, denoised_path, transcript_path = result_container['result']
+
+        # Delete voice recording if requested
+        if delete_voice and voice_path and os.path.exists(voice_path):
+            try:
+                os.remove(voice_path)
+                log_message(f"Deleted voice recording: {voice_path}")
+            except Exception as e:
+                log_message(f"Warning: Could not delete voice file: {e}")
+
+        log_message(f"✓ Podcast created successfully: {output_name}.mp3")
+        log_message("=" * 50)
+
+        # Ensure transcript path is valid for Gradio
+        final_transcript = transcript_path if transcript_path and os.path.exists(
+            transcript_path) else None
+
+        yield f"✓ Podcast created successfully: {output_name}.mp3", result_path, denoised_path, final_transcript, get_console_log()
+
+
 def create_podcast_handler(voice_file, output_name, delete_voice, trim_silence, denoise_audio, denoise_method, enhance_audio, normalize_lufs, target_lufs, generate_transcript, whisper_model):
     """Handle podcast creation request.
 
@@ -731,7 +913,8 @@ def create_podcast_handler(voice_file, output_name, delete_voice, trim_silence, 
     log_message(f"  Denoise audio: {denoise_audio} (method: {denoise_method})")
     log_message(f"  Enhance audio: {enhance_audio}")
     log_message(f"  Normalize LUFS: {normalize_lufs} (target: {target_lufs})")
-    log_message(f"  Generate transcript: {generate_transcript} (model: {whisper_model})")
+    log_message(
+        f"  Generate transcript: {generate_transcript} (model: {whisper_model})")
 
     # Create output path
     output_path = os.path.join("outputs", f"{output_name}.mp3")
@@ -1109,9 +1292,8 @@ def create_ui():
                                 info="Removes silence from start and end"
                             )
 
-                        with gr.Accordion("🎛️ Phase 2: Advanced Audio Processing", open=False):
                             gr.Markdown("### Noise Reduction")
-                            
+
                             denoise_audio_checkbox = gr.Checkbox(
                                 label="Enable noise reduction",
                                 value=config_manager.get_denoise_audio(),
@@ -1192,6 +1374,16 @@ def create_ui():
                             interactive=False,
                             lines=3
                         )
+
+                        with gr.Accordion("📋 Real-time Processing Log", open=True):
+                            realtime_console_output = gr.Textbox(
+                                label="Live Console Output",
+                                value="Ready to process...",
+                                interactive=False,
+                                lines=8,
+                                max_lines=15,
+                                autoscroll=True
+                            )
                         audio_output = gr.Audio(
                             label="🎧 Your Podcast",
                             type="filepath"
@@ -1240,12 +1432,12 @@ def create_ui():
                 - Configure intro, outro, and background music in the **⚙️ Settings** tab
                 - Use the **🤖 AI Denoiser** tab to clean audio files with machine learning
                 - Use the **✨ Adobe Enhance** tab to enhance audio files with Adobe AI
-                
-                ### 🎛️ Phase 2 Features
+
+                ### 🎛️ Advanced Features
                 - **Multiple Noise Reduction Methods**: Choose between AI Denoiser, Spectral Gating, or FFmpeg RNNoise
                 - **LUFS Normalization**: Automatically normalize audio to professional broadcast standards (-16 LUFS for podcasts)
                 - **Whisper Transcription**: Generate accurate transcripts with timestamps using OpenAI Whisper
-                - All Phase 2 features are in the "Advanced Audio Processing" accordion above
+                - All advanced features are in the "Basic Options" section above
                 """)
 
             # AI Denoiser Tab - Standalone Audio Denoising
@@ -1753,15 +1945,23 @@ def create_ui():
         )
 
         create_button_event = create_button.click(
-            fn=create_podcast_handler,
+            fn=create_podcast_handler_with_progress,
             inputs=[voice_input, output_name_input,
-                    delete_voice_checkbox, trim_silence_checkbox, 
+                    delete_voice_checkbox, trim_silence_checkbox,
                     denoise_audio_checkbox, denoise_method_dropdown,
                     enhance_audio_checkbox,
                     normalize_lufs_checkbox, target_lufs_slider,
                     generate_transcript_checkbox, whisper_model_dropdown],
             outputs=[status_output, audio_output,
-                     denoised_audio_output, transcript_output, console_output]
+                     denoised_audio_output, transcript_output, realtime_console_output],
+            show_progress='full'
+        )
+
+        # Update the realtime console whenever the regular console updates
+        create_button_event.then(
+            fn=get_console_log,
+            inputs=[],
+            outputs=[realtime_console_output]
         )
 
         create_button_event.then(

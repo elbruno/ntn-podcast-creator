@@ -319,6 +319,51 @@ class AudioDenoiserProcessor:
     def _cleanup_chunks(chunk_files) -> None
 ```
 
+### Phase 2: Advanced Audio Processing
+
+Phase 2 introduces professional-grade audio processing capabilities:
+
+#### 1. Multiple Noise Reduction Methods
+Implemented in `features/noise_reducer.py`:
+- **AI Denoiser**: Deep learning model (via `audio_denoiser_processor.py`)
+- **Spectral Gating**: Spectral subtraction using `noisereduce` library
+- **RNNoise**: Recurrent Neural Network noise suppression via FFmpeg
+
+#### 2. LUFS Normalization
+Implemented in `features/lufs_normalizer.py`:
+- Two-pass normalization using FFmpeg `loudnorm` filter
+- Ensures consistent loudness (default -16 LUFS)
+- True peak limiting to prevent clipping
+
+#### 3. Whisper Transcription
+Implemented in `features/whisper_transcriber.py`:
+- Uses OpenAI's Whisper model
+- Supports multiple model sizes (tiny, base, small, medium, large)
+- Generates timestamped transcripts
+- Offline processing after initial model download
+
+#### Updated Processing Pipeline
+
+```
+1. User uploads voice file
+2. File size check → Route to appropriate processing
+3. Noise Reduction (Selectable Method)
+   - AI Denoiser (with chunking)
+   - Spectral Gating
+   - RNNoise
+4. Optional: Adobe Enhance processing
+5. Optional: Trim silence from voice
+6. Load intro/outro (if provided)
+7. Create looped background music (if provided)
+8. Apply individual track volumes
+9. Mix background with voice
+10. Concatenate: intro → voice+background → outro
+11. Apply 1-second crossfade overlaps
+12. LUFS Normalization (Final Output)
+13. Export to MP3
+14. Generate Transcript (Parallel/Post-process)
+```
+
 #### Large File Processing Architecture
 
 ```
