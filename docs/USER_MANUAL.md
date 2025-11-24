@@ -136,7 +136,41 @@ Access at `http://localhost:7860`
 
 ![NTN Podcast Creator Interface](https://github.com/user-attachments/assets/d4d6010f-fec0-4a44-b15c-a2fe40809dc6)
 
-The interface features a modern tabbed layout for easy navigation:
+The interface features a modern tabbed layout for easy navigation and includes several key UI enhancements:
+
+### Header Features
+
+**🎨 Theme Selector** (Top Right)
+- Choose between **Light**, **Dark**, or **System** themes
+- Instantly changes the UI appearance
+- **System** mode automatically matches your operating system theme
+- Theme preference is saved and persists across sessions
+- No page refresh needed - theme changes apply immediately
+
+![Theme Selector](../docs/images/theme-selector-demo.gif)
+
+### Real-Time Progress Tracking
+
+When creating a podcast, two dynamic UI elements provide live feedback:
+
+**Top Progress Bar**
+- Fixed position at the top of the page
+- Shows current processing step (e.g., "🔧 Removing noise...", "🎵 Mixing audio...")
+- Displays progress percentage (0-100%)
+- Visual progress bar with smooth animations
+- Automatically appears when podcast creation starts
+
+**Bottom Console Log**
+- Fixed position at the bottom of the page
+- Shows last 10 log entries in real-time
+- Provides detailed status updates during processing
+- Includes timestamps for each message
+- Close button to dismiss when complete
+- Automatically appears with progress bar
+
+![Progress and Console Demo](../docs/images/progress-console-demo.gif)
+
+*The progress bar and console provide real-time feedback during podcast creation*
 
 ### Tabs Overview
 
