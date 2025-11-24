@@ -19,6 +19,36 @@ This runs 7 core tests covering:
 
 All tests use actual audio files from `audios/test/` directory.
 
+### Playwright UI Tests (Browser-based - requires running app)
+```bash
+pip install pytest playwright
+playwright install chromium
+python -m pytest tests/test_ui_playwright.py -v -s
+```
+
+This runs 13 comprehensive browser-based UI tests:
+- UI loading and page structure
+- File upload inputs and buttons
+- Volume sliders and checkboxes
+- Intro/outro and background music sections
+- Audio processing options
+- Responsive layout (desktop/tablet/mobile)
+- Console error detection
+- Basic accessibility checks
+
+**Note**: These tests start the Gradio app automatically and use Playwright to interact with the actual UI in a browser.
+
+### Playwright Test Structure Verification (Quick)
+```bash
+python -m pytest tests/test_playwright_structure.py -v
+```
+
+This verifies the Playwright test module structure without starting the app:
+- Module imports correctly
+- All expected test functions exist
+- Fixtures are properly defined
+- GradioApp helper class exists
+
 ### Full Integration Tests (Optional - requires pytest)
 ```bash
 pip install pytest
@@ -31,6 +61,17 @@ This runs comprehensive tests including:
 - Input validation
 - Progress tracking
 - All feature combinations
+
+### All Unit Tests
+```bash
+pip install pytest
+python -m pytest tests/test_units.py -v
+```
+
+This runs 20 unit tests covering:
+- ConfigManager functionality
+- AudioProcessor core functions
+- App helper functions
 
 ## Test Results
 
