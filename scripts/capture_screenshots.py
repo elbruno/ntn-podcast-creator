@@ -52,21 +52,36 @@ except ImportError:
     print("   pip install requests")
     sys.exit(1)
 
+
 async def capture_app_screenshots():
     """Capture screenshots of the application in various states."""
-    
+
     async with async_playwright() as p:
         print("🚀 Starting browser...")
-        browser = await p.chromium.launch(headless=True)
+        browser = await p.chromium.launch(headless=True, args=["--disable-dev-shm-usage"])
         context = await browser.new_context(viewport={'width': 1920, 'height': 1080})
         page = await context.new_page()
-        
+
         print(f"📱 Navigating to {APP_URL}...")
-        await page.goto(APP_URL, wait_until="networkidle", timeout=30000)
-        await page.wait_for_timeout(3000)  # Wait for page to fully load
-        
+        try:
+            await page.goto(APP_URL, wait_until="domcontentloaded", timeout=60000)
+        except Exception:
+            # If domcontentloaded fails, try without wait_until
+            print("   Retrying without strict wait condition...")
+            await page.goto(APP_URL, timeout=60000)
+
+        # Wait for Gradio interface to load
+        print("   Waiting for Gradio interface to fully load...")
+        await page.wait_for_timeout(5000)
+
+        # Try to wait for main container if available
+        try:
+            await page.wait_for_selector('div[class*="container"]', timeout=10000)
+        except Exception:
+            pass  # Container might already be loaded or selector might be different
+
         screenshots = []
-        
+
         # Screenshot 1: Initial view
         print("📸 Screenshot 1: Initial application view...")
         screenshot_path = SCREENSHOTS_DIR / "01-initial-view.png"
@@ -74,7 +89,7 @@ async def capture_app_screenshots():
         screenshots.append(screenshot_path)
         print(f"   Saved: {screenshot_path}")
         await page.wait_for_timeout(SCREENSHOT_DELAY * 1000)
-        
+
         # Screenshot 2: Show voice file upload area
         print("📸 Screenshot 2: Voice file upload area...")
         # Scroll to voice upload if needed
@@ -84,7 +99,7 @@ async def capture_app_screenshots():
         await page.screenshot(path=str(screenshot_path), full_page=False)
         screenshots.append(screenshot_path)
         await page.wait_for_timeout(SCREENSHOT_DELAY * 1000)
-        
+
         # Screenshot 3: Intro/Outro section
         print("📸 Screenshot 3: Intro/Outro selection...")
         await page.evaluate("window.scrollTo(0, 600)")
@@ -93,7 +108,7 @@ async def capture_app_screenshots():
         await page.screenshot(path=str(screenshot_path), full_page=False)
         screenshots.append(screenshot_path)
         await page.wait_for_timeout(SCREENSHOT_DELAY * 1000)
-        
+
         # Screenshot 4: Background music section
         print("📸 Screenshot 4: Background music section...")
         await page.evaluate("window.scrollTo(0, 1000)")
@@ -102,7 +117,7 @@ async def capture_app_screenshots():
         await page.screenshot(path=str(screenshot_path), full_page=False)
         screenshots.append(screenshot_path)
         await page.wait_for_timeout(SCREENSHOT_DELAY * 1000)
-        
+
         # Screenshot 5: Audio processing options
         print("📸 Screenshot 5: Audio processing options...")
         await page.evaluate("window.scrollTo(0, 1400)")
@@ -111,7 +126,7 @@ async def capture_app_screenshots():
         await page.screenshot(path=str(screenshot_path), full_page=False)
         screenshots.append(screenshot_path)
         await page.wait_for_timeout(SCREENSHOT_DELAY * 1000)
-        
+
         # Screenshot 6: LUFS normalization
         print("📸 Screenshot 6: LUFS normalization...")
         await page.evaluate("window.scrollTo(0, 1800)")
@@ -120,7 +135,7 @@ async def capture_app_screenshots():
         await page.screenshot(path=str(screenshot_path), full_page=False)
         screenshots.append(screenshot_path)
         await page.wait_for_timeout(SCREENSHOT_DELAY * 1000)
-        
+
         # Screenshot 7: Transcription options
         print("📸 Screenshot 7: Transcription options...")
         await page.evaluate("window.scrollTo(0, 2200)")
@@ -129,7 +144,7 @@ async def capture_app_screenshots():
         await page.screenshot(path=str(screenshot_path), full_page=False)
         screenshots.append(screenshot_path)
         await page.wait_for_timeout(SCREENSHOT_DELAY * 1000)
-        
+
         # Screenshot 8: Create button and output
         print("📸 Screenshot 8: Create button and output...")
         await page.evaluate("window.scrollTo(0, 2600)")
@@ -138,7 +153,7 @@ async def capture_app_screenshots():
         await page.screenshot(path=str(screenshot_path), full_page=False)
         screenshots.append(screenshot_path)
         await page.wait_for_timeout(SCREENSHOT_DELAY * 1000)
-        
+
         # Screenshot 9: Full page overview
         print("📸 Screenshot 9: Full page overview...")
         await page.evaluate("window.scrollTo(0, 0)")
@@ -146,7 +161,7 @@ async def capture_app_screenshots():
         screenshot_path = SCREENSHOTS_DIR / "09-full-overview.png"
         await page.screenshot(path=str(screenshot_path), full_page=True)
         screenshots.append(screenshot_path)
-        
+
         # Screenshot 10: Standalone Denoiser tab (if exists)
         print("📸 Screenshot 10: Checking for standalone denoiser tab...")
         # Try to find and click standalone denoiser tab
@@ -161,7 +176,7 @@ async def capture_app_screenshots():
                 print(f"   Saved: {screenshot_path}")
         except Exception as e:
             print(f"   Could not capture standalone denoiser tab: {e}")
-        
+
         # Screenshot 11: Settings tab (if exists)
         print("📸 Screenshot 11: Checking for settings tab...")
         try:
@@ -170,34 +185,34 @@ async def capture_app_screenshots():
             if podcast_tab:
                 await podcast_tab.click()
                 await page.wait_for_timeout(1000)
-        except:
+        except Exception:
             pass
-        
+
         print(f"\n✅ Captured {len(screenshots)} screenshots successfully!")
         print(f"📁 Screenshots saved to: {SCREENSHOTS_DIR}")
-        
+
         await browser.close()
-        
+
         return screenshots
 
 
 async def create_animated_gif():
     """Create an animated GIF showing the application workflow."""
     print("\n🎬 Creating animated GIF...")
-    
+
     try:
         from PIL import Image
         import glob
-        
+
         # Get all screenshots in order
         screenshot_files = sorted(glob.glob(str(SCREENSHOTS_DIR / "*.png")))
-        
+
         if not screenshot_files:
             print("❌ No screenshots found to create GIF")
             return None
-        
+
         print(f"📸 Found {len(screenshot_files)} screenshots")
-        
+
         # Load images
         images = []
         for img_path in screenshot_files:
@@ -208,13 +223,13 @@ async def create_animated_gif():
                 new_size = (1200, int(img.height * ratio))
                 img = img.resize(new_size, Image.Resampling.LANCZOS)
             images.append(img)
-        
+
         # Save as animated GIF
         gif_path = BASE_DIR / "docs" / "images" / "app-demo.gif"
-        
+
         # Durations: show each frame for 3 seconds (3000ms), last frame for 5 seconds
         durations = [3000] * (len(images) - 1) + [5000]
-        
+
         images[0].save(
             gif_path,
             save_all=True,
@@ -223,17 +238,18 @@ async def create_animated_gif():
             loop=0,  # Loop forever
             optimize=False  # Keep quality
         )
-        
+
         print(f"✅ Animated GIF created: {gif_path}")
         print(f"   Size: {gif_path.stat().st_size / (1024*1024):.2f} MB")
         print(f"   Frames: {len(images)}")
-        
+
         return gif_path
-        
+
     except ImportError:
         print("❌ PIL/Pillow not installed. Installing...")
         import subprocess
-        subprocess.run([sys.executable, "-m", "pip", "install", "Pillow"], check=True)
+        subprocess.run([sys.executable, "-m", "pip",
+                       "install", "Pillow"], check=True)
         print("✅ Pillow installed. Please run the script again.")
         return None
     except Exception as e:
@@ -249,7 +265,7 @@ async def main():
     print("📷 NTN Podcast Creator - Screenshot Capture Tool")
     print("=" * 70)
     print()
-    
+
     # Check if app is running
     import requests
     try:
@@ -263,15 +279,15 @@ async def main():
         print(f"   Error: {e}")
         print("   Please start the application first: python app.py")
         return
-    
+
     print(f"✅ App is running at {APP_URL}\n")
-    
+
     # Capture screenshots
-    screenshots = await capture_app_screenshots()
-    
+    await capture_app_screenshots()
+
     # Create animated GIF
     gif_path = await create_animated_gif()
-    
+
     print("\n" + "=" * 70)
     print("🎉 Screenshot capture complete!")
     print("=" * 70)
