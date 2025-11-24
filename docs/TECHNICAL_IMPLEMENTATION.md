@@ -36,12 +36,19 @@ NTN Podcast Creator follows a modular, three-tier architecture:
 │  │ UI Handlers  │  │              │  │              │ │
 │  │ Orchestration│  │ Settings     │  │ Audio Mixing │ │
 │  └──────────────┘  └──────────────┘  └──────────────┘  │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │
+│  │audio_denoiser│  │noise_reducer │  │lufs_normalizer│ │
+│  │_processor.py │  │    .py       │  │     .py       │ │
+│  │              │  │              │  │              │ │
+│  │ AI Denoising │  │ Spectral     │  │ Broadcast    │ │
+│  │ + Chunking   │  │ & RNNoise    │  │ Standards    │ │
+│  └──────────────┘  └──────────────┘  └──────────────┘  │
 │  ┌──────────────┐  ┌──────────────┐                     │
-│  │audio_denoiser│  │adobe_audio_  │                     │
-│  │_processor.py │  │enhancer.py   │                     │
+│  │whisper_      │  │adobe_audio_  │                     │
+│  │transcriber.py│  │enhancer.py   │                     │
 │  │              │  │              │                     │
-│  │ AI Denoising │  │ Adobe AI     │                     │
-│  │ + Chunking   │  │ Enhancement  │                     │
+│  │ Auto         │  │ Adobe AI     │                     │
+│  │ Transcription│  │ Enhancement  │                     │
 │  └──────────────┘  └──────────────┘                     │
 └─────────────────────┬───────────────────────────────────┘
                       │
@@ -74,37 +81,54 @@ NTN Podcast Creator follows a modular, three-tier architecture:
 | **Python** | 3.8+ | Core programming language |
 | **Gradio** | 6.0.0 | Web-based user interface framework |
 | **pydub** | 0.25.1 | Audio processing and manipulation |
-| **FFmpeg** | Latest | Audio codec handling and conversion |
+| **FFmpeg** | 4.0+ | Audio codec handling, conversion, and LUFS normalization |
 | **Playwright** | 1.45.0 | Browser automation for Adobe Enhance |
 | **python-dotenv** | 1.0.1 | Environment variable management |
 | **audio-denoiser** | 0.1.2 | AI-powered audio noise removal |
-| **PyTorch** | 2.6.0+ | Deep learning framework for audio-denoiser |
+| **noisereduce** | 3.0.2 | Spectral gating noise reduction |
+| **openai-whisper** | 20240930 | Automatic speech transcription |
+| **PyTorch** | 2.6.0+ | Deep learning framework |
 | **torchaudio** | 2.6.0+ | Audio processing for PyTorch |
 | **soundfile** | 0.12.1 | Audio file I/O |
+| **numpy** | <2.0.0 | Numerical computing |
 
 ### Audio Processing Stack
 
 ```
 User Audio Files
       ↓
-Optional: AI Audio Denoising (audio-denoiser + PyTorch)
-  - Large files: Automatic chunking (8MB chunks)
-  - Small files: Direct processing
-  - Memory-efficient with cleanup
+Optional: Noise Reduction (choose one or combine)
+  - AI Denoiser (audio-denoiser + PyTorch)
+    * Large files: Automatic chunking (8MB chunks)
+    * Small files: Direct processing
+  - Spectral Gating (noisereduce)
+    * Fast spectral subtraction
+    * Uses first 0.5s as noise profile
+  - FFmpeg RNNoise (when available)
+    * RNN-based noise suppression
       ↓
 Optional: Adobe Enhance (Browser automation via Playwright)
       ↓
+Optional: Trim Silence
+      ↓
    pydub (AudioSegment)
       ↓
-   FFmpeg (Codec Processing)
+   Audio Mixing
+    - Intro (no background)
+    - Voice + Background Music
+    - Outro (no background)
+    - 1-second overlaps between segments
       ↓
-   Volume Adjustment
-      ↓
-   Audio Concatenation
-      ↓
-   Overlay/Mixing
+Optional: LUFS Normalization (FFmpeg loudnorm)
+  - Two-pass processing
+  - Target: -16 LUFS (podcasts) or -14 LUFS (streaming)
       ↓
    MP3 Export
+      ↓
+Optional: Whisper Transcription (parallel)
+  - Automatic speech recognition
+  - Timestamped transcripts
+  - 99+ languages
 ```
 
 ---
@@ -152,7 +176,8 @@ class AudioProcessor:
 ```
 
 **Audio Processing Pipeline:**
-1. Optional: AI audio denoising (with chunking for large files)
+1. Optional: Noise reduction (choose method: AI Denoiser, Spectral Gating, or RNNoise)
+   - Large files: Automatic chunking for AI Denoiser
 2. Optional: Adobe Enhance processing
 3. Load voice recording
 4. Optional: Trim silence from voice
@@ -162,7 +187,9 @@ class AudioProcessor:
 8. Mix background with voice
 9. Concatenate: intro → voice+background → outro
 10. Apply 1-second crossfade overlaps
-11. Export to MP3
+11. Optional: LUFS normalization (two-pass)
+12. Export to MP3
+13. Optional: Generate transcript with Whisper (parallel)
 
 ### 3. config_manager.py - Configuration Management
 
@@ -201,9 +228,134 @@ class ConfigManager:
     "audios/background_music/track1.mp3": 10,
     "audios/background_music/track2.mp3": 15
   },
-  "last_output_name": "podcast_output"
+  "last_output_name": "podcast_output",
+  "denoise_audio": true,
+  "denoise_method": "audio_denoiser",
+  "enhance_audio": false,
+  "normalize_lufs": false,
+  "target_lufs": -16.0,
+  "generate_transcript": false,
+  "whisper_model": "base"
 }
 ```
+
+### 4. noise_reducer.py - Advanced Noise Reduction
+
+**Responsibilities:**
+- Spectral gating noise reduction using noisereduce
+- FFmpeg RNNoise filter support
+- Automatic noise profile generation
+
+**Key Classes:**
+```python
+class NoiseReducer:
+    def is_noisereduce_available() -> bool
+    def is_ffmpeg_rnnoise_available() -> bool
+    def reduce_noise_spectral(input_file, output_file, noise_duration=0.5) -> str
+    def reduce_noise_rnnoise(input_file, output_file) -> str
+```
+
+**Spectral Gating Algorithm:**
+1. Load audio and convert to mono
+2. Extract noise profile from first 0.5 seconds
+3. Apply spectral subtraction using noisereduce
+4. Export cleaned audio
+
+**FFmpeg RNNoise:**
+- Uses FFmpeg's arnndn filter
+- Requires FFmpeg built with RNNoise support
+- Fast RNN-based noise suppression
+
+### 5. lufs_normalizer.py - Professional Loudness Normalization
+
+**Responsibilities:**
+- Two-pass LUFS normalization for broadcast standards
+- FFmpeg loudnorm filter integration
+- Configurable target levels and true peak limiting
+
+**Key Classes:**
+```python
+class LUFSNormalizer:
+    def is_available() -> bool
+    def normalize_lufs(input_file, output_file, target_lufs=-16.0, two_pass=True) -> str
+    def _get_loudness_stats(input_file, target_lufs) -> Dict
+```
+
+**Two-Pass Process:**
+
+**Pass 1 - Measurement:**
+```bash
+ffmpeg -i input.wav -af loudnorm=I=-16:print_format=json -f null -
+```
+Measures current loudness levels and returns JSON statistics.
+
+**Pass 2 - Normalization:**
+```bash
+ffmpeg -i input.wav -af loudnorm=I=-16:TP=-1.5:LRA=7:measured_I=X:measured_TP=Y:measured_LRA=Z output.wav
+```
+Applies normalization using measured values for maximum accuracy.
+
+**LUFS Targets:**
+- **-16 LUFS**: Podcast industry standard (recommended)
+- **-14 LUFS**: Streaming platforms (Spotify, Apple Music)
+- **-18 LUFS**: Audiobooks
+- **-23 LUFS**: Broadcast radio (EBU R128)
+
+### 6. whisper_transcriber.py - Automatic Transcription
+
+**Responsibilities:**
+- OpenAI Whisper integration for speech recognition
+- Automatic language detection (99+ languages)
+- Timestamped transcript generation
+
+**Key Classes:**
+```python
+class WhisperTranscriber:
+    def __init__(model_size="base")
+    def is_available() -> bool
+    def transcribe(audio_file, output_file, language=None) -> Dict
+    def transcribe_with_timestamps(audio_file, output_file) -> str
+```
+
+**Model Sizes:**
+| Model | Size | Speed | Use Case |
+|-------|------|-------|----------|
+| Tiny | 39MB | Fastest | Quick drafts |
+| Base | 74MB | Fast | Recommended |
+| Small | 244MB | Moderate | High quality |
+| Medium | 769MB | Slow | Professional |
+| Large | 1.5GB | Very Slow | Maximum accuracy |
+
+**Features:**
+- Automatic language detection
+- Word-level timestamping
+- Offline processing after model download
+- Models cached in `~/.cache/whisper/`
+
+### 7. audio_denoiser_processor.py - AI Denoising with Chunking
+
+**Responsibilities:**
+- AI-powered noise removal using audio-denoiser library
+- Automatic file chunking for large files (>10MB)
+- Memory-efficient processing
+
+**Key Classes:**
+```python
+class AudioDenoiserProcessor:
+    def __init__()
+    def is_available() -> bool
+    def denoise_audio(input_file, output_file, auto_scale=True) -> str
+    def _denoise_large_file(input_file, output_file) -> str
+    def _chunk_audio(input_file, chunk_size_mb=8.0) -> List[str]
+    def _merge_audio_chunks(chunk_files, output_file) -> bool
+```
+
+**Large File Processing:**
+1. Detect file size >10MB
+2. Split into 8MB chunks
+3. Process each chunk independently
+4. Merge chunks seamlessly
+5. Clean up temporary files
 
 ---
 

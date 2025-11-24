@@ -5,113 +5,87 @@ A local Python application with a user-friendly web interface for editing podcas
 ## 📖 Documentation
 
 - **[User Manual](docs/USER_MANUAL.md)** - Complete guide with step-by-step instructions and screenshots
-- **[Phase 2 Features](docs/PHASE2_IMPLEMENTATION.md)** - **NEW!** Advanced audio processing with multiple noise reduction methods, LUFS normalization, and Whisper transcription
 - **[Docker Deployment Guide](docs/DOCKER.md)** - Run with Docker in minutes (no Python/FFmpeg install needed)
 - **[Technical Implementation](docs/TECHNICAL_IMPLEMENTATION.md)** - Architecture, technical details, and API reference
 - **[Dev Container Guide](.devcontainer/README.md)** - Setup instructions for containerized development
-- **[AI Denoising Implementation](docs/AUDIO_DENOISING_IMPLEMENTATION.md)** - Complete documentation of the AI denoising feature
 - **[Release Notes](docs/RELEASE_NOTES_CHUNKING.md)** - Latest feature updates and enhancements
 
 ## Features
 
-- **Intuitive Multi-Tab Interface**: Easy navigation with dedicated tabs for podcast creation, Adobe Enhance, settings, and logs
+- **Intuitive Multi-Tab Interface**: Easy navigation with dedicated tabs for podcast creation, audio processing, settings, and logs
 - **Smart Episode Naming**: Automatically suggests episode names with date (yymmdd) + your file name
-- **Upload podcast voice file**: Upload your pre-recorded podcast audio
-- **AI Audio Denoising (Latest)**:
-  - Automatically clean voice recordings using machine learning
-  - Removes background noise using the `audio-denoiser` library
-  - 38-million parameter deep learning model for speech enhancement
-  - **NEW**: Supports files of any size with automatic chunking for large files (>10MB)
-  - **NEW**: Intelligent chunk processing with seamless audio reconstruction
-  - Enabled by default for all podcast creations
-  - Download the cleaned audio separately for other uses
-  - Graceful fallback to original audio if library unavailable
-  - Dedicated **🤖 AI Denoiser** tab for standalone processing
-- **Adobe Enhance Audio**:
-  - Clean and enhance audio quality using Adobe's AI-powered Enhance Speech service
-  - Available in dedicated **✨ Adobe Enhance** tab for standalone processing
-  - Optional checkbox in main tab for automatic enhancement during podcast creation
-  - Removes background noise, reduces echo, and improves speech clarity
-  - Browser automation via Playwright (2-5 minute processing time)
-  - Optional feature with automatic fallback to original audio
-- **Intro & Outro**: Set custom intro and outro audio files
-- **Background Music**: Add background music tracks that automatically loop to match your podcast duration
-- **Individual Volume Control**: Set different volume levels for each background track
-- **Apply to All**: Quickly apply the same volume setting to all background tracks
-- **Preview with Volume**: Listen to tracks with applied volume settings before creating the podcast
-- **Volume Control**: Adjustable background music volume (default: 10-12% of original)
-- **Visual Timeline**: See exactly how your intro, voice, and outro segments are arranged with overlap indicators
-- **Background Track Display**: View all background tracks with their volume settings in the timeline
-- **Settings Persistence**: All settings are automatically saved for future sessions
-- **Export/Import Settings**: Save and load your configuration as JSON files
-- **Easy Export**: Generate final podcast as MP3 file
-- **Download Options**: Download both generated podcasts, cleaned audio, and configuration settings
+- **Professional Audio Processing**:
+  - **Multiple Noise Reduction Methods**: Choose between AI Denoiser, Spectral Gating, or FFmpeg RNNoise
+  - **LUFS Normalization**: Professional loudness normalization to broadcast standards (-16 LUFS)
+  - **Automatic Transcription**: Generate accurate transcripts with OpenAI Whisper (99+ languages)
+  - **Adobe Enhance Integration**: Optional cloud-based AI audio enhancement
+- **Advanced Audio Mixing**:
+  - Custom intro and outro audio files
+  - Background music that automatically loops to match podcast duration
+  - Individual volume control for each background track
+  - Visual timeline showing audio segment arrangement
+- **Large File Support**:
+  - Process files of any size with automatic chunking (>10MB)
+  - Intelligent chunk processing with seamless audio reconstruction
+  - Memory-efficient processing for long-form content
+- **Settings Persistence**: All settings automatically saved for future sessions
+- **Export/Import Settings**: Save and load configuration as JSON files
+- **Professional Output**: Generate broadcast-quality MP3 files
 
-## ✨ What's New in Latest Version
+## ✨ Key Features
 
-### 🎛️ Phase 2: Advanced Audio Processing
+### 🎚️ Professional Audio Processing
 
-Professional-grade audio processing features for broadcast-quality podcasts:
+**Multiple Noise Reduction Methods:**
+- **AI Denoiser** (Recommended): 38M-parameter deep learning model for general speech enhancement
+- **Spectral Gating**: Fast spectral subtraction ideal for stationary noise (fans, hums)
+- **FFmpeg RNNoise**: RNN-based noise suppression for real-time style processing
 
-- **🎚️ Multiple Noise Reduction Methods**:
-  - **AI Denoiser** (Recommended): 38M-parameter deep learning model
-  - **Spectral Gating**: Fast spectral subtraction for stationary noise
-  - **FFmpeg RNNoise**: RNN-based noise suppression
-  - Choose the best method for your recording environment
+**LUFS Normalization:**
+- Professional loudness normalization to broadcast standards
+- Two-pass processing for maximum accuracy
+- Configurable targets: -16 LUFS (podcasts), -14 LUFS (streaming), -23 LUFS (radio)
+- Ensures consistent volume across all episodes
 
-- **📊 LUFS Normalization**:
-  - Professional loudness normalization to broadcast standards
-  - Two-pass processing for maximum accuracy
-  - Configurable target: -16 LUFS (podcast standard) or -14 LUFS
-  - Ensures consistent volume across all episodes
+**Automatic Transcription:**
+- Generate accurate transcripts using OpenAI's Whisper
+- 5 model sizes: Tiny (fast) to Large (best quality)
+- Timestamped transcripts with word-level timing
+- 99+ languages with automatic detection
+- Completely offline after initial model download
 
-- **📝 Automatic Transcription with Whisper**:
-  - Generate accurate transcripts using OpenAI's Whisper
-  - 5 model sizes from Tiny (fast) to Large (best quality)
-  - Timestamped transcripts with word-level timing
-  - Supports 99+ languages with automatic detection
-  - Completely offline after initial model download
+### 🚀 Large File Support
 
-- **🎛️ Modular Architecture**:
-  - Mix and match processing methods
-  - Optimized processing order for best results
-  - All settings automatically saved
-  - Ready for future API integrations
+Process audio files of any size with intelligent automatic chunking:
 
-### 🚀 Large File Support for AI Denoising
-
-The AI denoiser now supports **files of any size** through intelligent automatic chunking:
-
-- **🎯 No File Size Limits**: Process recordings of any length (previously limited to 10MB)
-- **🧠 Intelligent Chunking**: Large files automatically split into 8MB chunks for optimal processing
-- **🔄 Seamless Reconstruction**: Processed chunks merged back with perfect audio continuity
-- **💾 Memory Efficient**: Process 100MB+ files without memory issues
-- **🧹 Auto Cleanup**: Temporary files automatically removed after processing
-- **📊 Progress Tracking**: Real-time updates during chunk processing
-- **🛡️ Robust Error Handling**: Graceful fallback if any chunk fails
-- **⚡ Performance Optimized**: Faster processing for large files vs. cloud alternatives
+- **No File Size Limits**: Handle recordings of any length
+- **Intelligent Chunking**: Large files (>10MB) automatically split into 8MB chunks
+- **Seamless Reconstruction**: Processed chunks merged with perfect audio continuity
+- **Memory Efficient**: Process 100MB+ files without memory issues
+- **Progress Tracking**: Real-time updates during processing
+- **Robust Error Handling**: Graceful fallback if any chunk fails
 
 **Perfect for:**
 - Long-form podcasts (1+ hours)
-- Interview recordings
-- Conference presentations
-- Educational content
-- Any high-quality audio file >10MB
+- Interview recordings and conference presentations
+- Educational content and audiobooks
 
-**Example Processing Times:**
+**Processing Times (approximate):**
 - 50MB file (30 minutes): ~2-3 minutes
 - 100MB file (60 minutes): ~5-7 minutes
 - 200MB file (2 hours): ~10-12 minutes
 
-The feature is completely transparent - upload any size file and the system automatically handles the complexity!
-
 ## Requirements
 
 - Python 3.8 or higher
-- FFmpeg (required for audio processing)
-- PyTorch and audio-denoiser (optional, for AI audio denoising feature)
-- Playwright and Chromium browser (optional, for Adobe Enhance audio feature)
-- (Optional) Docker and VS Code with Dev Containers extension for containerized development
+- FFmpeg 4.0+ (required for audio processing, LUFS normalization)
+- **Audio Processing Libraries** (included in requirements.txt):
+  - `audio-denoiser` - AI-powered noise removal
+  - `noisereduce` - Spectral gating noise reduction
+  - `openai-whisper` - Automatic transcription
+  - PyTorch and torchaudio - Deep learning framework
+- **Optional**: Playwright and Chromium browser (for Adobe Enhance feature)
+- **Optional**: Docker and VS Code with Dev Containers extension (for containerized development)
 
 ### Installing FFmpeg
 
