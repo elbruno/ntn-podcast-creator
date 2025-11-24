@@ -270,35 +270,35 @@ def get_console_log() -> str:
 
 def get_bottom_console_html(console_text: str, visible: bool = True, show_close: bool = False) -> str:
     """Generate bottom console HTML.
-    
+
     Args:
         console_text: The console log text to display
         visible: Whether the console should be visible
         show_close: Whether to show the close button
-        
+
     Returns:
         HTML string for bottom console
     """
     if not visible or not console_text.strip():
         return ""
-    
+
     # Get last 10 lines for the bottom console to avoid overload
     lines = console_text.strip().split('\n')
     last_lines = lines[-10:] if len(lines) > 10 else lines
     display_text = '\n'.join(last_lines)
-    
+
     # Escape HTML characters
     display_text = (display_text
-                   .replace('&', '&amp;')
-                   .replace('<', '&lt;')
-                   .replace('>', '&gt;')
-                   .replace('"', '&quot;')
-                   .replace("'", '&#x27;'))
-    
+                    .replace('&', '&amp;')
+                    .replace('<', '&lt;')
+                    .replace('>', '&gt;')
+                    .replace('"', '&quot;')
+                    .replace("'", '&#x27;'))
+
     close_button_html = ""
     if show_close:
         close_button_html = '<button class="close-btn" onclick="this.parentElement.parentElement.style.display=\'none\'">✖ Close</button>'
-    
+
     return f"""
     <div>
         <div class="bottom-console-header">
@@ -1349,7 +1349,7 @@ def create_ui():
     saved_volume = config_manager.get_volume()
     saved_output_name = config_manager.get_last_output_name()
 
-    with gr.Blocks(title="NTN Podcast Creator", theme=gr.themes.Default()) as app:
+    with gr.Blocks(title="NTN Podcast Creator") as app:
         gr.HTML("""
         <style>
         .console-output {
@@ -1369,6 +1369,10 @@ def create_ui():
             border-bottom: 2px solid #e0e0e0 !important;
             padding: 5px 20px !important;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
+            display: none !important;
+        }
+        .progress-container.visible {
+            display: block !important;
         }
         .bottom-console-container {
             position: fixed !important;
@@ -1381,6 +1385,10 @@ def create_ui():
             box-shadow: 0 -2px 4px rgba(0,0,0,0.3) !important;
             max-height: 200px !important;
             overflow-y: auto !important;
+            display: none !important;
+        }
+        .bottom-console-container.visible {
+            display: block !important;
         }
         .bottom-console-header {
             background: #333 !important;
@@ -1465,7 +1473,7 @@ def create_ui():
             visible=False,
             elem_classes=["progress-container"]
         )
-        
+
         # Bottom console container (initially hidden)
         bottom_console = gr.HTML(
             value="",
@@ -1478,36 +1486,15 @@ def create_ui():
             with gr.Column(scale=3):
                 gr.Markdown("# 🎙️ NTN Podcast Creator")
             with gr.Column(scale=1):
-                theme_selector = gr.Radio(
+                theme_selector = gr.Dropdown(
                     choices=["Light", "Dark", "System"],
                     value="System",
                     label="Theme",
                     info="UI appearance (refresh to apply)"
                 )
-        
-        # Add JavaScript for theme handling
-        gr.HTML("""
-        <script>
-        function applyTheme(theme) {
-            const root = document.documentElement;
-            if (theme === 'Dark') {
-                root.classList.add('dark');
-            } else if (theme === 'Light') {
-                root.classList.remove('dark');
-            } else {
-                // System
-                if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-                    root.classList.add('dark');
-                } else {
-                    root.classList.remove('dark');
-                }
-            }
-        }
-        
-        // Apply default System theme on load
-        applyTheme('System');
-        </script>
-        """)
+
+        # Note: Theme selector added - theme changes require page refresh in Gradio 6.0
+        # Theme logic can be extended via custom CSS or browser local storage
 
         with gr.Tabs():
             # Main Tab - Podcast Creation
@@ -1678,7 +1665,7 @@ def create_ui():
                                 label="Import Status",
                                 interactive=False
                             )
-                
+
                 # Hidden component for console log updates
                 realtime_console_output = gr.Textbox(
                     value="",
@@ -2045,7 +2032,7 @@ def create_ui():
             with gr.Tab("💡 Tips & Features"):
                 gr.Markdown("""
                 ## 💡 Quick Tips
-                
+
                 - Upload your voice recording - the episode name is auto-suggested with today's date
                 - Default audio files are automatically loaded from `audios/` folder
                 - Background tracks are randomly mixed to match your recording length
@@ -2053,37 +2040,37 @@ def create_ui():
                 - Configure intro, outro, and background music in the **⚙️ Settings** tab
                 - Use the **🤖 AI Denoiser** tab to clean audio files with machine learning
                 - Use the **✨ Adobe Enhance** tab to enhance audio files with Adobe AI
-                
+
                 ---
-                
+
                 ## 🎛️ Advanced Features
-                
+
                 ### Multiple Noise Reduction Methods
                 Choose between AI Denoiser, Spectral Gating, or FFmpeg RNNoise to remove background noise from your recordings.
-                
+
                 ### LUFS Normalization
                 Automatically normalize audio to professional broadcast standards:
                 - **-16 LUFS** for podcasts (recommended)
                 - **-14 LUFS** for louder streaming content
                 - **-23 LUFS** for radio broadcasting
-                
+
                 ### Whisper Transcription
                 Generate accurate transcripts with timestamps using OpenAI Whisper:
                 - Supports 99+ languages
                 - 5 model sizes from Tiny (fast) to Large (best quality)
                 - Completely offline after initial model download
-                
+
                 ### Large File Support
                 Process audio files of any size with intelligent automatic chunking:
                 - No file size limits
                 - Large files (>10MB) automatically split into 8MB chunks
                 - Seamless reconstruction with perfect audio continuity
-                
+
                 ### Individual Volume Controls
                 - Set different volume levels for each background music file
                 - Apply global volume to all tracks at once
                 - Preview tracks with applied volume before creating
-                
+
                 All advanced features are available in the "Processing Options" section in the **🎙️ Create Podcast** tab.
                 """)
 
