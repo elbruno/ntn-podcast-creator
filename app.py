@@ -1315,41 +1315,49 @@ def import_settings(settings_file) -> str:
         return error_msg
 
 
-def suggest_podcast_name(voice_file) -> str:
-    """Generate suggested podcast filename with date and original filename.
+def get_next_ntn_counter() -> int:
+    """Scan outputs folder to find the highest ntn### counter and return next value.
 
-    Args:
-        voice_file: Uploaded voice file
+    Looks for files matching pattern: *_ntn###.mp3 where ### is a number.
+    Returns the next sequential number.
 
     Returns:
-        Suggested filename in format: yymmdd_originalname
+        Next ntn counter value (starts at 1 if no existing files)
+    """
+    outputs_dir = "outputs"
+    max_counter = 0
+
+    if os.path.exists(outputs_dir):
+        # Pattern to match ntn followed by numbers
+        ntn_pattern = re.compile(r'_ntn(\d+)\.mp3$', re.IGNORECASE)
+
+        for filename in os.listdir(outputs_dir):
+            match = ntn_pattern.search(filename)
+            if match:
+                counter = int(match.group(1))
+                if counter > max_counter:
+                    max_counter = counter
+
+    return max_counter + 1
+
+
+def suggest_podcast_name(voice_file) -> str:
+    """Generate suggested podcast filename with date and incremental ntn counter.
+
+    Args:
+        voice_file: Uploaded voice file (not used in current implementation but kept for API compatibility)
+
+    Returns:
+        Suggested filename in format: yymmdd_ntn### where ### is incremental counter
     """
     # Get current date in yymmdd format
     date_str = datetime.datetime.now().strftime("%y%m%d")
 
-    if voice_file is None:
-        return f"{date_str}_podcast"
+    # Get next incremental counter
+    next_counter = get_next_ntn_counter()
 
-    # Extract original filename without extension
-    if isinstance(voice_file, str):
-        original_name = os.path.basename(voice_file)
-    elif hasattr(voice_file, 'name'):
-        original_name = os.path.basename(voice_file.name)
-    else:
-        original_name = "podcast"
-
-    # Remove extension
-    original_name = os.path.splitext(original_name)[0]
-
-    # Clean filename (remove special characters, replace spaces with underscores)
-    original_name = re.sub(r'[^\w_-]', '_', original_name)
-    # Remove multiple underscores
-    original_name = re.sub(r'_+', '_', original_name)
-    # Note: strip('_') normalizes filenames by removing leading/trailing underscores
-    original_name = original_name.strip('_')
-
-    # Combine date and filename
-    suggested_name = f"{date_str}_{original_name}"
+    # Combine date and ntn counter (format: yymmdd_ntn###)
+    suggested_name = f"{date_str}_ntn{next_counter}"
 
     return suggested_name
 
@@ -1753,7 +1761,8 @@ def create_ui():
                             gr.Markdown("### 🎧 Results")
                             audio_output = gr.Audio(
                                 label="🎧 Your Podcast",
-                                type="filepath"
+                                type="filepath",
+                                autoplay=True
                             )
 
                             with gr.Row():
