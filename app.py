@@ -97,13 +97,13 @@ def generate_timeline_chart(voice_file, intro_file: Optional[str],
 
     # Handle multiple voice files
     voice_files = voice_file if isinstance(voice_file, list) else [voice_file]
-    
+
     # Calculate total voice duration from all files
     voice_duration = 0.0
     for vf in voice_files:
         if vf:
             voice_duration += get_audio_duration_seconds(vf)
-    
+
     # Get durations
     intro_duration = get_audio_duration_seconds(
         intro_file) if intro_file else 0.0
@@ -428,6 +428,101 @@ def save_uploaded_files(uploaded_files, prefix: str = "voice") -> List[str]:
             saved_paths.append(saved_path)
 
     return saved_paths
+
+
+def build_voice_order_rows(voice_files) -> List[List]:
+    """Build default order table rows for uploaded voice files."""
+    if not voice_files:
+        return []
+
+    if not isinstance(voice_files, list):
+        voice_files = [voice_files]
+
+    rows = []
+    for idx, vf in enumerate(voice_files, start=1):
+        if vf:
+            rows.append([idx, os.path.basename(vf)])
+    return rows
+
+
+def order_voice_files(voice_files, order_table) -> List[str]:
+    """Apply a user-defined order to voice files using an order table.
+
+    Args:
+        voice_files: Single path or list of paths
+        order_table: Data from the order table component (list of rows or DataFrame)
+
+    Returns:
+        Ordered list of voice file paths
+    """
+    if not voice_files:
+        return []
+
+    voice_list = voice_files if isinstance(
+        voice_files, list) else [voice_files]
+
+    if not order_table:
+        return voice_list
+
+    try:
+        if hasattr(order_table, "values"):
+            order_rows = order_table.values.tolist()
+        elif hasattr(order_table, "tolist"):
+            order_rows = order_table.tolist()
+        else:
+            order_rows = order_table
+    except Exception:
+        order_rows = order_table
+
+    if not isinstance(order_rows, list):
+        return voice_list
+
+    basename_to_paths = {}
+    for path in voice_list:
+        base = os.path.basename(path)
+        basename_to_paths.setdefault(base, []).append(path)
+
+    ordered_entries = []
+    for row in order_rows:
+        if row is None:
+            continue
+
+        try:
+            if isinstance(row, dict):
+                order_val = row.get("Order", row.get("order", row.get(0)))
+                name_val = row.get("File Name", row.get(
+                    "file name", row.get("File", row.get(1))))
+            else:
+                if len(row) < 2:
+                    continue
+                order_val, name_val = row[0], row[1]
+        except Exception:
+            continue
+
+        try:
+            position = float(order_val)
+        except (TypeError, ValueError):
+            continue
+
+        file_name = str(name_val).strip()
+        if not file_name:
+            continue
+
+        if file_name in basename_to_paths and basename_to_paths[file_name]:
+            path = basename_to_paths[file_name].pop(0)
+            ordered_entries.append((position, path))
+
+    if not ordered_entries:
+        return voice_list
+
+    ordered_entries.sort(key=lambda x: (x[0], voice_list.index(x[1])))
+    ordered_paths = [path for _, path in ordered_entries]
+
+    for path in voice_list:
+        if path not in ordered_paths:
+            ordered_paths.append(path)
+
+    return ordered_paths
 
 
 def update_intro_file(file):
@@ -795,9 +890,9 @@ def get_progress_html(pct, msg):
     """
 
 
-def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, trim_silence, denoise_audio, denoise_method, enhance_audio, normalize_lufs, target_lufs, generate_transcript, whisper_model, progress=gr.Progress()):
+def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, trim_silence, denoise_audio, denoise_method, enhance_audio, normalize_lufs, target_lufs, generate_transcript, whisper_model, voice_order_table=None, progress=gr.Progress()):
     """Handle podcast creation request with progress tracking.
-    
+
     Args:
         voice_file: Single file path or list of file paths for voice recording(s)
         output_name: Name for output podcast file
@@ -853,24 +948,34 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
         yield "❌ Error: Could not save voice file(s)", None, None, None, current_console, get_progress_html(0.1, "❌ Error"), get_bottom_console_html(current_console, show_close=True)
         return
 
+    # Apply custom ordering if provided
+    ordered_voice_paths = order_voice_files(voice_paths, voice_order_table)
+    if ordered_voice_paths:
+        if ordered_voice_paths != voice_paths:
+            log_message("🗂️ Applied custom voice order: " +
+                        " → ".join([os.path.basename(p) for p in ordered_voice_paths]))
+        voice_paths = ordered_voice_paths
+
     # Concatenate files if multiple files provided
     voice_path = voice_paths[0]  # Default to first file
     concatenated_file = None
-    
+
     if len(voice_paths) > 1:
         progress(0.15, "🔗 Concatenating audio files...")
         current_console = get_console_log()
         yield "Concatenating audio files...", None, None, None, current_console, get_progress_html(0.15, "Concatenating audio files..."), get_bottom_console_html(current_console)
-        
+
         try:
             log_message(f"📎 Concatenating {len(voice_paths)} audio files...")
             concatenated_file = audio_processor.concatenate_audio_files(
                 voice_paths,
-                output_path=os.path.join("uploads", f"concatenated_{output_name}.mp3"),
+                output_path=os.path.join(
+                    "uploads", f"concatenated_{output_name}.mp3"),
                 log_callback=log_message
             )
             voice_path = concatenated_file
-            log_message(f"✅ Concatenation complete: {os.path.basename(voice_path)}")
+            log_message(
+                f"✅ Concatenation complete: {os.path.basename(voice_path)}")
         except Exception as e:
             log_message(f"❌ Error concatenating files: {e}")
             current_console = get_console_log()
@@ -1028,17 +1133,21 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
                 if vpath and os.path.exists(vpath):
                     try:
                         os.remove(vpath)
-                        log_message(f"Deleted voice recording: {os.path.basename(vpath)}")
+                        log_message(
+                            f"Deleted voice recording: {os.path.basename(vpath)}")
                     except Exception as e:
-                        log_message(f"Warning: Could not delete voice file {vpath}: {e}")
-            
+                        log_message(
+                            f"Warning: Could not delete voice file {vpath}: {e}")
+
             # Delete concatenated file if it exists and is different from originals
             if concatenated_file and os.path.exists(concatenated_file):
                 try:
                     os.remove(concatenated_file)
-                    log_message(f"Deleted concatenated file: {os.path.basename(concatenated_file)}")
+                    log_message(
+                        f"Deleted concatenated file: {os.path.basename(concatenated_file)}")
                 except Exception as e:
-                    log_message(f"Warning: Could not delete concatenated file: {e}")
+                    log_message(
+                        f"Warning: Could not delete concatenated file: {e}")
 
         log_message(f"✓ Podcast created successfully: {output_name}.mp3")
         log_message("=" * 50)
@@ -1733,9 +1842,24 @@ def create_ui():
                                 file_types=["audio"],
                                 type="filepath"
                             )
-                            
+
                             gr.Markdown("""
-                            *Upload one or more audio files. Multiple files will be automatically concatenated in upload order.*
+                            *Upload one or more audio files. Multiple files will be concatenated in the order you define below.*
+                            """)
+
+                            voice_order_table = gr.Dataframe(
+                                label="Arrange Voice Recordings Order",
+                                headers=["Order", "File Name"],
+                                datatype=["number", "str"],
+                                row_count=(0, "dynamic"),
+                                col_count=2,
+                                type="array",
+                                value=[],
+                                interactive=True
+                            )
+
+                            gr.Markdown("""
+                            Edit the **Order** column to choose playback order (1 = first). Any files not listed keep their upload order.
                             """)
 
                             output_name_input = gr.Textbox(
@@ -2453,15 +2577,26 @@ def create_ui():
 
         # Update timeline when voice file is uploaded
         def update_on_voice_upload(voice_file):
-            """Update both timeline and suggested filename when voice is uploaded."""
+            """Update timeline, suggested filename, and order table when voice is uploaded."""
             timeline = preview_timeline(voice_file)
             suggested_name = suggest_podcast_name(voice_file)
-            return timeline, suggested_name
+            order_rows = build_voice_order_rows(voice_file)
+            return timeline, suggested_name, order_rows
 
         voice_input.change(
             fn=update_on_voice_upload,
             inputs=[voice_input],
-            outputs=[timeline_html, output_name_input]
+            outputs=[timeline_html, output_name_input, voice_order_table]
+        )
+
+        def update_timeline_with_order(voice_file, order_table):
+            ordered_files = order_voice_files(voice_file, order_table)
+            return preview_timeline(ordered_files)
+
+        voice_order_table.change(
+            fn=update_timeline_with_order,
+            inputs=[voice_input, voice_order_table],
+            outputs=[timeline_html]
         )
 
         create_button_event = create_button.click(
@@ -2471,7 +2606,8 @@ def create_ui():
                     denoise_audio_checkbox, denoise_method_dropdown,
                     enhance_audio_checkbox,
                     normalize_lufs_checkbox, target_lufs_slider,
-                    generate_transcript_checkbox, whisper_model_dropdown],
+                    generate_transcript_checkbox, whisper_model_dropdown,
+                    voice_order_table],
             outputs=[status_output, audio_output,
                      denoised_audio_output, transcript_output, realtime_console_output, progress_bar, bottom_console],
             show_progress='full'
