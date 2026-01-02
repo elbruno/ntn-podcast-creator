@@ -19,6 +19,7 @@ Welcome to the **NTN Podcast Creator**! This application helps you create profes
 ### What Can You Do?
 
 - ✅ **Smart Episode Naming**: Auto-suggested names with date (yymmdd) + your filename
+- ✅ **Multi-File Upload**: Upload and automatically concatenate multiple audio files into one podcast
 - ✅ **Multi-Tab Interface**: Easy navigation with dedicated tabs for different tasks
 - ✅ **AI Audio Denoising**: Clean voice recordings using machine learning (enabled by default)
   - **NEW**: Supports files of any size with automatic chunking for large recordings
@@ -257,15 +258,27 @@ View detailed processing logs and troubleshooting information.
 #### Step 1: Upload Your Main Voice Recording (🎙️ Create Podcast Tab)
 
 1. Navigate to the **🎙️ Create Podcast** tab (default tab)
-2. Click on the **"🎤 Voice Recording (Required)"** upload area
-3. Select your podcast audio file from your computer
+2. Click on the **"🎤 Voice Recording(s) (Required)"** upload area
+3. Select your podcast audio file(s) from your computer
+   - **NEW**: You can now upload **multiple audio files** at once!
+   - Multiple files will be automatically concatenated in the order they are uploaded
+   - This is useful for recording your podcast in segments or combining different recordings
 4. Wait for the upload to complete
 5. Notice the **Podcast Episode Name** field automatically fills with today's date + your filename
    - Example: "251123_my_recording" for a file uploaded on November 23, 2025
 6. Edit the episode name if desired
-7. The timeline preview will update showing your recording duration
+7. The timeline preview will update showing your total recording duration (sum of all files)
 
 **💡 Tip:** Make sure your voice recording is already edited and ready. This tool combines audio but doesn't edit individual tracks.
+
+**🆕 Multi-File Upload Feature:**
+- Upload multiple audio files that will be automatically joined together
+- Files are concatenated in the upload order, so order matters!
+- All common audio formats are supported (MP3, WAV, M4A, etc.)
+- Perfect for:
+  - Recording your podcast in multiple sessions
+  - Combining different segments or chapters
+  - Splitting long recordings into manageable parts
 
 #### Step 2: (Optional) Configure Processing Options
 

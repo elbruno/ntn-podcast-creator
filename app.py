@@ -75,14 +75,14 @@ def get_audio_duration_seconds(file_path: str) -> float:
         return 0.0
 
 
-def generate_timeline_chart(voice_file: Optional[str], intro_file: Optional[str],
+def generate_timeline_chart(voice_file, intro_file: Optional[str],
                             outro_file: Optional[str], has_background: bool,
                             background_tracks: Optional[List[str]] = None,
                             track_volumes: Optional[dict] = None) -> str:
     """Generate a visual timeline chart showing how audio segments are organized.
 
     Args:
-        voice_file: Path to voice recording
+        voice_file: Path to voice recording or list of paths
         intro_file: Path to intro audio
         outro_file: Path to outro audio
         has_background: Whether background music will be applied
@@ -95,11 +95,18 @@ def generate_timeline_chart(voice_file: Optional[str], intro_file: Optional[str]
     if not voice_file:
         return "<div style='padding: 20px; text-align: center; color: #666;'>Upload a voice recording to preview timeline</div>"
 
+    # Handle multiple voice files
+    voice_files = voice_file if isinstance(voice_file, list) else [voice_file]
+    
+    # Calculate total voice duration from all files
+    voice_duration = 0.0
+    for vf in voice_files:
+        if vf:
+            voice_duration += get_audio_duration_seconds(vf)
+    
     # Get durations
     intro_duration = get_audio_duration_seconds(
         intro_file) if intro_file else 0.0
-    voice_duration = get_audio_duration_seconds(
-        voice_file) if voice_file else 0.0
     outro_duration = get_audio_duration_seconds(
         outro_file) if outro_file else 0.0
 
@@ -334,11 +341,11 @@ def clear_console_log():
     return "Console log cleared"
 
 
-def preview_timeline(voice_file: Optional[str]) -> str:
+def preview_timeline(voice_file) -> str:
     """Generate timeline preview.
 
     Args:
-        voice_file: Path to voice recording
+        voice_file: Path to voice recording or list of paths
 
     Returns:
         HTML timeline chart
@@ -394,6 +401,33 @@ def save_uploaded_file(uploaded_file, prefix: str = "file") -> Optional[str]:
         return None
 
     return dest_path
+
+
+def save_uploaded_files(uploaded_files, prefix: str = "voice") -> List[str]:
+    """Save multiple uploaded files to uploads directory.
+
+    Args:
+        uploaded_files: List of Gradio uploaded file objects or single file
+        prefix: Prefix for filenames
+
+    Returns:
+        List of paths to saved files
+    """
+    if uploaded_files is None:
+        return []
+
+    # Handle single file (convert to list for uniform processing)
+    if not isinstance(uploaded_files, list):
+        uploaded_files = [uploaded_files]
+
+    saved_paths = []
+    for i, uploaded_file in enumerate(uploaded_files):
+        file_prefix = f"{prefix}_{i+1}" if len(uploaded_files) > 1 else prefix
+        saved_path = save_uploaded_file(uploaded_file, file_prefix)
+        if saved_path:
+            saved_paths.append(saved_path)
+
+    return saved_paths
 
 
 def update_intro_file(file):
@@ -762,7 +796,22 @@ def get_progress_html(pct, msg):
 
 
 def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, trim_silence, denoise_audio, denoise_method, enhance_audio, normalize_lufs, target_lufs, generate_transcript, whisper_model, progress=gr.Progress()):
-    """Handle podcast creation request with progress tracking."""
+    """Handle podcast creation request with progress tracking.
+    
+    Args:
+        voice_file: Single file path or list of file paths for voice recording(s)
+        output_name: Name for output podcast file
+        delete_voice: Whether to delete voice file(s) after processing
+        trim_silence: Whether to trim silence
+        denoise_audio: Whether to apply denoising
+        denoise_method: Denoising method to use
+        enhance_audio: Whether to apply Adobe enhancement
+        normalize_lufs: Whether to normalize audio levels
+        target_lufs: Target LUFS level for normalization
+        generate_transcript: Whether to generate transcript
+        whisper_model: Whisper model to use for transcription
+        progress: Gradio progress tracker
+    """
     import threading
     import queue
     import time
@@ -796,13 +845,37 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
     current_console = get_console_log()
     yield "Preparing files...", None, None, None, current_console, get_progress_html(0.1, "Preparing files..."), get_bottom_console_html(current_console)
 
-    # Save voice file
-    voice_path = save_uploaded_file(voice_file, "voice")
-    if not voice_path:
-        log_message("❌ Error: Could not save voice file")
+    # Save voice file(s)
+    voice_paths = save_uploaded_files(voice_file, "voice")
+    if not voice_paths:
+        log_message("❌ Error: Could not save voice file(s)")
         current_console = get_console_log()
-        yield "❌ Error: Could not save voice file", None, None, None, current_console, get_progress_html(0.1, "❌ Error"), get_bottom_console_html(current_console, show_close=True)
+        yield "❌ Error: Could not save voice file(s)", None, None, None, current_console, get_progress_html(0.1, "❌ Error"), get_bottom_console_html(current_console, show_close=True)
         return
+
+    # Concatenate files if multiple files provided
+    voice_path = voice_paths[0]  # Default to first file
+    concatenated_file = None
+    
+    if len(voice_paths) > 1:
+        progress(0.15, "🔗 Concatenating audio files...")
+        current_console = get_console_log()
+        yield "Concatenating audio files...", None, None, None, current_console, get_progress_html(0.15, "Concatenating audio files..."), get_bottom_console_html(current_console)
+        
+        try:
+            log_message(f"📎 Concatenating {len(voice_paths)} audio files...")
+            concatenated_file = audio_processor.concatenate_audio_files(
+                voice_paths,
+                output_path=os.path.join("uploads", f"concatenated_{output_name}.mp3"),
+                log_callback=log_message
+            )
+            voice_path = concatenated_file
+            log_message(f"✅ Concatenation complete: {os.path.basename(voice_path)}")
+        except Exception as e:
+            log_message(f"❌ Error concatenating files: {e}")
+            current_console = get_console_log()
+            yield f"❌ Error: {e}", None, None, None, current_console, get_progress_html(0.15, "❌ Error"), get_bottom_console_html(current_console, show_close=True)
+            return
 
     progress(0.2, "⚙️ Loading configuration...")
     current_console = get_console_log()
@@ -948,13 +1021,24 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
     else:
         result_path, denoised_path, transcript_path = result_container['result']
 
-        # Delete voice recording if requested
-        if delete_voice and voice_path and os.path.exists(voice_path):
-            try:
-                os.remove(voice_path)
-                log_message(f"Deleted voice recording: {voice_path}")
-            except Exception as e:
-                log_message(f"Warning: Could not delete voice file: {e}")
+        # Delete voice recordings if requested
+        if delete_voice:
+            # Delete all original voice files
+            for vpath in voice_paths:
+                if vpath and os.path.exists(vpath):
+                    try:
+                        os.remove(vpath)
+                        log_message(f"Deleted voice recording: {os.path.basename(vpath)}")
+                    except Exception as e:
+                        log_message(f"Warning: Could not delete voice file {vpath}: {e}")
+            
+            # Delete concatenated file if it exists and is different from originals
+            if concatenated_file and os.path.exists(concatenated_file):
+                try:
+                    os.remove(concatenated_file)
+                    log_message(f"Deleted concatenated file: {os.path.basename(concatenated_file)}")
+                except Exception as e:
+                    log_message(f"Warning: Could not delete concatenated file: {e}")
 
         log_message(f"✓ Podcast created successfully: {output_name}.mp3")
         log_message("=" * 50)
@@ -1643,10 +1727,16 @@ def create_ui():
                         with gr.Group(elem_classes=["clean-card"]):
                             gr.Markdown("### 📤 Upload & Configure")
 
-                            voice_input = gr.Audio(
-                                label="🎤 Voice Recording (Required)",
+                            voice_input = gr.File(
+                                label="🎤 Voice Recording(s) (Required)",
+                                file_count="multiple",
+                                file_types=["audio"],
                                 type="filepath"
                             )
+                            
+                            gr.Markdown("""
+                            *Upload one or more audio files. Multiple files will be automatically concatenated in upload order.*
+                            """)
 
                             output_name_input = gr.Textbox(
                                 label="📝 Podcast Episode Name",
