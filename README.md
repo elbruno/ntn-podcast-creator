@@ -5,6 +5,7 @@ A powerful local Python application for creating professional podcast episodes. 
 ## 🎯 Goal
 
 NTN Podcast Creator simplifies podcast production by providing an intuitive web interface for:
+- **Multi-file audio upload**: Automatically concatenate multiple recordings into one episode
 - Mixing voice recordings with intro, outro, and background music
 - AI-powered noise reduction and audio enhancement
 - Professional loudness normalization (LUFS)
@@ -55,6 +56,7 @@ The application supports three theme modes:
 
 ## ✨ Key Features
 
+- **📁 Multi-File Upload**: Upload and automatically concatenate multiple audio files into one podcast episode
 - **🎨 Intuitive Multi-Tab Interface**: Easy navigation for podcast creation, audio processing, and settings
 - **🎵 Smart Audio Mixing**: Automatically mix intro, outro, and background music with your voice
 - **🤖 AI Audio Processing**: Multiple noise reduction methods and Adobe Enhance integration

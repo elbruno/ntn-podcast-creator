@@ -44,6 +44,80 @@ class AudioProcessor:
         except Exception as e:
             raise Exception(f"Error loading audio file {file_path}: {e}")
 
+    def concatenate_audio_files(
+        self,
+        audio_files: List[str],
+        output_path: Optional[str] = None,
+        log_callback: Optional[Callable[[str], None]] = None
+    ) -> str:
+        """Concatenate multiple audio files into a single file.
+
+        Args:
+            audio_files: List of paths to audio files to concatenate
+            output_path: Optional path for output file. If None, creates temp file.
+            log_callback: Optional callback function for logging
+
+        Returns:
+            Path to concatenated audio file
+
+        Raises:
+            ValueError: If audio_files is empty or contains invalid files
+            Exception: If concatenation fails
+        """
+        def log(message: str):
+            if log_callback:
+                log_callback(message)
+            else:
+                print(message)
+
+        if not audio_files:
+            raise ValueError("No audio files provided for concatenation")
+
+        # If only one file, return it directly
+        if len(audio_files) == 1:
+            log(f"Single file provided: {os.path.basename(audio_files[0])}")
+            return audio_files[0]
+
+        log(f"Concatenating {len(audio_files)} audio files...")
+
+        # Load all audio files
+        audio_segments = []
+        for i, file_path in enumerate(audio_files, 1):
+            if not os.path.exists(file_path):
+                raise ValueError(f"Audio file not found: {file_path}")
+            
+            try:
+                log(f"Loading file {i}/{len(audio_files)}: {os.path.basename(file_path)}")
+                audio = self.load_audio(file_path)
+                audio_segments.append(audio)
+                duration_seconds = len(audio) / 1000.0
+                log(f"  Duration: {duration_seconds:.2f}s")
+            except Exception as e:
+                raise Exception(f"Error loading audio file {file_path}: {e}")
+
+        # Concatenate all segments
+        log("Concatenating audio segments...")
+        concatenated = audio_segments[0]
+        for i, segment in enumerate(audio_segments[1:], 2):
+            concatenated = concatenated + segment
+            log(f"  Merged {i}/{len(audio_segments)} segments")
+
+        # Calculate total duration
+        total_duration_seconds = len(concatenated) / 1000.0
+        log(f"Total concatenated duration: {total_duration_seconds:.2f}s")
+
+        # Export to file
+        if output_path is None:
+            # Create temporary file
+            temp_dir = tempfile.gettempdir()
+            output_path = os.path.join(temp_dir, f"concatenated_{os.getpid()}.mp3")
+        
+        log(f"Exporting concatenated audio to: {os.path.basename(output_path)}")
+        concatenated.export(output_path, format="mp3")
+        log("Concatenation complete!")
+
+        return output_path
+
     def trim_silence(self, audio: AudioSegment, silence_threshold: int = -40) -> AudioSegment:
         """Trim silence from the beginning and end of audio.
 
