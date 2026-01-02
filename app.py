@@ -164,20 +164,49 @@ def generate_timeline_chart(voice_file, intro_file: Optional[str],
                     </div>
         """
 
-    # Add voice segment with background indicator
+    # Add voice segments - show individual files when multiple are present
     if voice_duration > 0:
-        html += f"""
-                    <div style="width: {voice_percent}%; background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        # Calculate individual file durations and percentages
+        voice_file_durations = []
+        for vf in voice_files:
+            if vf:
+                duration = get_audio_duration_seconds(vf)
+                percent = (duration / total_duration) * 100
+                voice_file_durations.append((vf, duration, percent))
+
+        # Color palette for voice recordings (varying shades of pink/red)
+        voice_colors = [
+            "linear-gradient(135deg, #f093fb 0%, #f5576c 100%)",
+            "linear-gradient(135deg, #fa709a 0%, #fee140 100%)",
+            "linear-gradient(135deg, #ff6a88 0%, #ff99ac 100%)",
+            "linear-gradient(135deg, #fc6767 0%, #ec008c 100%)",
+            "linear-gradient(135deg, #ff758c 0%, #ff7eb3 100%)"
+        ]
+
+        for idx, (vf_path, duration, percent) in enumerate(voice_file_durations):
+            color = voice_colors[idx % len(voice_colors)]
+            filename = os.path.basename(vf_path)
+            # Shorten filename if too long
+            display_name = filename if len(
+                filename) <= 20 else filename[:17] + "..."
+
+            # Determine if we show overlap indicators
+            show_left_overlap = (intro_duration > 0 and idx == 0) or idx > 0
+            show_right_overlap = (outro_duration > 0 and idx == len(
+                voice_file_durations) - 1) or idx < len(voice_file_durations) - 1
+
+            html += f"""
+                    <div style="width: {percent}%; background: {color};
                          display: flex; align-items: center; justify-content: center; color: white;
-                         font-size: 12px; font-weight: bold; border-right: 2px solid white; position: relative;">
-                        <div style="text-align: center; padding: 5px;">
-                            <div>VOICE</div>
-                            <div style="font-size: 10px; opacity: 0.9;">{format_time(voice_duration)}</div>
+                         font-size: 10px; font-weight: bold; border-right: 2px solid white; position: relative; overflow: hidden;">
+                        <div style="text-align: center; padding: 2px; line-height: 1.2;">
+                            <div style="font-size: 11px;">{display_name}</div>
+                            <div style="font-size: 9px; opacity: 0.9;">{format_time(duration)}</div>
                         </div>
-                        {"<div style='position: absolute; left: -10px; top: 0; bottom: 0; width: 20px; background: rgba(255,255,255,0.3); z-index: 10;'></div>" if intro_duration > 0 else ""}
-                        {"<div style='position: absolute; right: -10px; top: 0; bottom: 0; width: 20px; background: rgba(255,255,255,0.3); z-index: 10;'></div>" if outro_duration > 0 else ""}
+                        {"<div style='position: absolute; left: -10px; top: 0; bottom: 0; width: 20px; background: rgba(255,255,255,0.3); z-index: 10;'></div>" if show_left_overlap else ""}
+                        {"<div style='position: absolute; right: -10px; top: 0; bottom: 0; width: 20px; background: rgba(255,255,255,0.3); z-index: 10;'></div>" if show_right_overlap else ""}
                     </div>
-        """
+            """
 
     # Add outro segment
     if outro_duration > 0:
@@ -224,11 +253,23 @@ def generate_timeline_chart(voice_file, intro_file: Optional[str],
 
     if intro_duration > 0:
         html += "<div style='margin: 3px 0;'>🟣 <strong>INTRO</strong> - Plays first (no background music)</div>"
+
     if voice_duration > 0:
-        html += "<div style='margin: 3px 0;'>🔴 <strong>VOICE</strong> - Your recording"
-        if has_background:
-            html += " (see background music layer above)"
-        html += "</div>"
+        if len(voice_files) > 1:
+            html += f"<div style='margin: 3px 0;'>🔴 <strong>VOICE RECORDINGS</strong> - {len(voice_files)} file(s), total {format_time(voice_duration)}"
+            if has_background:
+                html += " (see background music layer above)"
+            html += "</div>"
+            # List individual files
+            for idx, (vf_path, duration, _) in enumerate(voice_file_durations, start=1):
+                filename = os.path.basename(vf_path)
+                html += f"<div style='margin-left: 15px; font-size: 12px;'>• {filename} - {format_time(duration)}</div>"
+        else:
+            html += "<div style='margin: 3px 0;'>🔴 <strong>VOICE</strong> - Your recording"
+            if has_background:
+                html += " (see background music layer above)"
+            html += "</div>"
+
     if outro_duration > 0:
         html += "<div style='margin: 3px 0;'>🔵 <strong>OUTRO</strong> - Plays last (no background music)</div>"
     if has_background and voice_duration > 0:
