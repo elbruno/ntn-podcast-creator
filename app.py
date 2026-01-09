@@ -4,10 +4,12 @@ import os
 import shutil
 import datetime
 import re
+import urllib.request
+import xml.etree.ElementTree as ET
 import gradio as gr
-from typing import Optional, List
+from typing import Optional, List, Tuple
 from features.audio_processor import AudioProcessor
-from features.config_manager import ConfigManager
+from features.config_manager import ConfigManager, DEFAULT_RSS_FEED_URL
 from features.adobe_audio_enhancer import enhance_audio_file
 from features.audio_denoiser_processor import denoise_audio_file
 
@@ -28,6 +30,9 @@ config_manager.load_default_audio_files()
 
 # Store uploaded background tracks
 background_tracks_list = []
+
+# Cache for RSS feed lookups
+rss_cache = {"url": None, "last_title": None, "next_slug": None, "error": None}
 
 
 # Global variable for console log
@@ -892,6 +897,8 @@ def get_current_settings():
     outro = config_manager.get_outro()
     bg_tracks = config_manager.get_background_tracks()
     volume = config_manager.get_volume()
+    rss_url = config_manager.get_rss_feed_url()
+    last_title, next_slug, _ = fetch_rss_episode_info(rss_url)
 
     settings = []
     settings.append("📋 Current Audio Configuration:")
@@ -906,6 +913,11 @@ def get_current_settings():
             if os.path.exists(track):
                 settings.append(f"   • {os.path.basename(track)}")
     settings.append(f"🔊 Background Volume: {volume}%")
+    settings.append(f"🔗 RSS Feed: {rss_url}")
+    if last_title:
+        settings.append(f"   Last episode: {last_title}")
+    if next_slug:
+        settings.append(f"   Next suggested: {next_slug}")
 
     return "\\n".join(settings)
 
@@ -1444,6 +1456,7 @@ def export_settings() -> str:
             "background_volume": config_manager.get_volume(),
             "track_volumes": config_manager.get_all_track_volumes(),
             "last_output_name": config_manager.get_last_output_name(),
+            "rss_feed_url": config_manager.get_rss_feed_url(),
             "export_date": datetime.datetime.now().isoformat()
         }
 
@@ -1535,6 +1548,9 @@ def import_settings(settings_file) -> str:
             config_manager.update_last_output_name(
                 settings["last_output_name"])
 
+        if "rss_feed_url" in settings:
+            config_manager.set_rss_feed_url(settings["rss_feed_url"])
+
         log_message(
             f"Settings imported successfully from {os.path.basename(file_path)}")
         return f"✓ Settings imported successfully from {os.path.basename(file_path)}"
@@ -1549,51 +1565,112 @@ def import_settings(settings_file) -> str:
         return error_msg
 
 
-def get_next_ntn_counter() -> int:
-    """Scan outputs folder to find the highest ntn### counter and return next value.
+def extract_ntn_number(title: Optional[str]) -> Optional[int]:
+    """Extract NTN episode number from a title string."""
 
-    Looks for files matching pattern: *_ntn###.mp3 where ### is a number.
-    Returns the next sequential number.
+    if not title:
+        return None
 
-    Returns:
-        Next ntn counter value (starts at 1 if no existing files)
+    match = re.search(r"ntn\s*(\d+)", title, re.IGNORECASE)
+    if match:
+        try:
+            return int(match.group(1))
+        except ValueError:
+            return None
+    return None
+
+
+def fetch_rss_episode_info(feed_url: Optional[str], force_refresh: bool = False) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+    """Fetch latest episode info from RSS feed.
+
+    Returns a tuple of (last_title, next_slug, error_message).
     """
-    outputs_dir = "outputs"
-    max_counter = 0
 
-    if os.path.exists(outputs_dir):
-        # Pattern to match ntn followed by numbers
-        ntn_pattern = re.compile(r'_ntn(\d+)\.mp3$', re.IGNORECASE)
+    url = (feed_url or DEFAULT_RSS_FEED_URL).strip()
 
-        for filename in os.listdir(outputs_dir):
-            match = ntn_pattern.search(filename)
-            if match:
-                counter = int(match.group(1))
-                if counter > max_counter:
-                    max_counter = counter
+    if not force_refresh and rss_cache.get("url") == url and (rss_cache.get("last_title") or rss_cache.get("error")):
+        return rss_cache.get("last_title"), rss_cache.get("next_slug"), rss_cache.get("error")
 
-    return max_counter + 1
+    try:
+        with urllib.request.urlopen(url, timeout=10) as response:
+            data = response.read()
+
+        root = ET.fromstring(data)
+        title_el = root.find('.//channel/item/title')
+        last_title = title_el.text.strip() if title_el is not None and title_el.text else None
+
+        episode_number = extract_ntn_number(last_title)
+        next_slug = f"ntn{episode_number + 1}" if episode_number is not None else None
+
+        rss_cache.update({
+            "url": url,
+            "last_title": last_title,
+            "next_slug": next_slug,
+            "error": None
+        })
+
+        return last_title, next_slug, None
+    except Exception as exc:  # pragma: no cover - network errors
+        error_message = str(exc)
+        rss_cache.update({
+            "url": url,
+            "last_title": None,
+            "next_slug": None,
+            "error": error_message
+        })
+        log_message(f"RSS fetch failed: {error_message}")
+        return None, None, error_message
+
+
+def build_rss_status_html(last_title: Optional[str], next_slug: Optional[str], error: Optional[str] = None) -> str:
+    """Render a small HTML snippet showing RSS state."""
+
+    lines = ["<div style=\"font-size:14px; line-height:1.4;\">"]
+
+    if last_title:
+        lines.append(f"<div>Last episode: <strong>{last_title}</strong></div>")
+    else:
+        lines.append("<div>Last episode: <strong>Unavailable</strong></div>")
+
+    if next_slug:
+        lines.append(
+            f"<div>Next suggested: <strong>{next_slug}</strong></div>")
+    else:
+        lines.append(
+            "<div>Next suggested: <strong>Waiting for feed</strong></div>")
+
+    if error:
+        lines.append(f"<div style=\"color:#c00;\">RSS error: {error}</div>")
+
+    lines.append("</div>")
+    return "".join(lines)
 
 
 def suggest_podcast_name(voice_file) -> str:
-    """Generate suggested podcast filename with date and incremental ntn counter.
+    """Generate suggested podcast filename using RSS; fallback is a simple default slug."""
 
-    Args:
-        voice_file: Uploaded voice file (not used in current implementation but kept for API compatibility)
+    rss_url = config_manager.get_rss_feed_url()
+    _, next_slug, _ = fetch_rss_episode_info(rss_url)
 
-    Returns:
-        Suggested filename in format: yymmdd_ntn### where ### is incremental counter
-    """
-    # Get current date in yymmdd format
-    date_str = datetime.datetime.now().strftime("%y%m%d")
+    if next_slug:
+        return next_slug
 
-    # Get next incremental counter
-    next_counter = get_next_ntn_counter()
+    # Minimal fallback to keep the field populated if RSS is unavailable
+    return "ntn001"
 
-    # Combine date and ntn counter (format: yymmdd_ntn###)
-    suggested_name = f"{date_str}_ntn{next_counter}"
 
-    return suggested_name
+def refresh_rss_feed_settings(feed_url: Optional[str], current_output_name: Optional[str]) -> Tuple[str, str]:
+    """Refresh RSS feed data, persist URL, and produce status + suggested name."""
+
+    rss_url = (feed_url or DEFAULT_RSS_FEED_URL).strip()
+    config_manager.set_rss_feed_url(rss_url)
+
+    last_title, next_slug, error = fetch_rss_episode_info(
+        rss_url, force_refresh=True)
+    status_html = build_rss_status_html(last_title, next_slug, error)
+
+    suggested_name = next_slug or current_output_name or "ntn001"
+    return status_html, suggested_name
 
 
 def create_ui():
@@ -1601,7 +1678,13 @@ def create_ui():
 
     # Load saved settings
     saved_volume = config_manager.get_volume()
-    saved_output_name = config_manager.get_last_output_name()
+    rss_url = config_manager.get_rss_feed_url()
+    rss_last_title, rss_next_slug, rss_error = fetch_rss_episode_info(
+        rss_url, force_refresh=True)
+    saved_output_name = rss_next_slug or config_manager.get_last_output_name(
+    ) or "ntn001"
+    rss_status_html_value = build_rss_status_html(
+        rss_last_title, rss_next_slug, rss_error)
 
     with gr.Blocks(title="NTN Podcast Creator") as app:
         gr.HTML("""
@@ -1906,8 +1989,8 @@ def create_ui():
                             output_name_input = gr.Textbox(
                                 label="📝 Podcast Episode Name",
                                 value=saved_output_name,
-                                placeholder="podcast_episode",
-                                info="Auto-suggested based on date (yymmdd) + your file name"
+                                placeholder="ntn###",
+                                info=f"Auto-suggested from RSS (last: {rss_last_title or 'unavailable'})"
                             )
 
                         with gr.Accordion("⚙️ Processing Options", open=False):
@@ -2035,6 +2118,22 @@ def create_ui():
                                 )
 
                         with gr.Accordion("📥 Download & Import Settings", open=False):
+                            gr.Markdown("**Podcast RSS Feed**")
+                            rss_feed_input = gr.Textbox(
+                                label="RSS Feed URL",
+                                value=rss_url,
+                                placeholder=DEFAULT_RSS_FEED_URL
+                            )
+                            refresh_rss_button = gr.Button(
+                                "🔄 Refresh from RSS",
+                                variant="secondary",
+                                size="sm"
+                            )
+                            rss_status_html = gr.HTML(
+                                label="RSS Status",
+                                value=rss_status_html_value
+                            )
+
                             gr.Markdown("**Export Settings**")
                             export_settings_button = gr.Button(
                                 "💾 Download Current Settings",
@@ -2787,6 +2886,19 @@ def create_ui():
         whisper_model_dropdown.change(
             fn=lambda model: config_manager.set_whisper_model(model),
             inputs=[whisper_model_dropdown],
+            outputs=[]
+        )
+
+        refresh_rss_button.click(
+            fn=refresh_rss_feed_settings,
+            inputs=[rss_feed_input, output_name_input],
+            outputs=[rss_status_html, output_name_input]
+        )
+
+        rss_feed_input.change(
+            fn=lambda url: config_manager.set_rss_feed_url(
+                (url or DEFAULT_RSS_FEED_URL).strip()),
+            inputs=[rss_feed_input],
             outputs=[]
         )
 

@@ -6,6 +6,9 @@ import glob
 from typing import Dict, List, Any, Optional
 
 
+DEFAULT_RSS_FEED_URL = "https://feeds.ivoox.com/feed_fg_f1277993_filtro_1.xml"
+
+
 class ConfigManager:
     """Manages application configuration with persistent storage."""
 
@@ -46,6 +49,7 @@ class ConfigManager:
             "background_volume": 10,
             "track_volumes": {},  # Individual volumes per track
             "last_output_name": "podcast_output",
+            "rss_feed_url": DEFAULT_RSS_FEED_URL,
             # Audio denoising feature (enabled by default)
             "denoise_audio": True,
             "denoise_method": "audio_denoiser",  # audio_denoiser, spectral, rnnoise
@@ -188,6 +192,23 @@ class ConfigManager:
             name: Output filename
         """
         self.set("last_output_name", name)
+
+    def get_rss_feed_url(self) -> str:
+        """Get the configured RSS feed URL for episode suggestions.
+
+        Returns:
+            RSS feed URL string
+        """
+        return self.get("rss_feed_url", DEFAULT_RSS_FEED_URL)
+
+    def set_rss_feed_url(self, url: str) -> None:
+        """Update RSS feed URL used for episode suggestions.
+
+        Args:
+            url: RSS feed URL
+        """
+        cleaned_url = (url or DEFAULT_RSS_FEED_URL).strip()
+        self.set("rss_feed_url", cleaned_url)
 
     def get_track_volume(self, track_path: str) -> int:
         """Get volume setting for a specific track.

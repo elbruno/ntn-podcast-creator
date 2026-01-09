@@ -197,12 +197,9 @@ class TestAppFunctions(unittest.TestCase):
         mock_file = '/path/to/my_recording.mp3'
         suggested_name = suggest_podcast_name(mock_file)
 
-        # Should contain date prefix and ntn counter format
-        date_str = datetime.datetime.now().strftime("%y%m%d")
-        self.assertTrue(suggested_name.startswith(date_str))
-        # Should match pattern yymmdd_ntn###
-        self.assertTrue(re.match(r'^\d{6}_ntn\d+$', suggested_name),
-                        f"Name '{suggested_name}' should match yymmdd_ntn### format")
+        # Should match RSS-first pattern (ntn###) or minimal default slug
+        self.assertTrue(re.match(r'^(?i:ntn\d+)$', suggested_name),
+                        f"Name '{suggested_name}' should match ntn### format")
 
     def test_suggest_podcast_name_no_file(self):
         """Test podcast name suggestion without a file (uses ntn### format)."""
@@ -211,20 +208,8 @@ class TestAppFunctions(unittest.TestCase):
 
         suggested_name = suggest_podcast_name(None)
 
-        date_str = datetime.datetime.now().strftime("%y%m%d")
-        self.assertTrue(suggested_name.startswith(date_str))
-        # Should match pattern yymmdd_ntn###
-        self.assertTrue(re.match(r'^\d{6}_ntn\d+$', suggested_name),
-                        f"Name '{suggested_name}' should match yymmdd_ntn### format")
-
-    def test_get_next_ntn_counter(self):
-        """Test get_next_ntn_counter finds highest counter and increments."""
-        from app import get_next_ntn_counter
-
-        # Function should return an integer >= 1
-        counter = get_next_ntn_counter()
-        self.assertIsInstance(counter, int)
-        self.assertGreaterEqual(counter, 1)
+        self.assertTrue(re.match(r'^(?i:ntn\d+)$', suggested_name),
+                        f"Name '{suggested_name}' should match ntn### format")
 
     def test_log_message(self):
         """Test log message creation."""
