@@ -455,21 +455,9 @@ class AudioProcessor:
         else:
             podcast += voice_with_bg
 
-        # Overlap: voice's last second overlaps with outro's first second
-        if outro and len(voice_with_bg) >= overlap_ms:
-            log(f"Applying {overlap_ms}ms overlap between voice and outro")
-            # Remove last second from current podcast
-            podcast = podcast[:-overlap_ms]
-
-            # Extract the last second of voice to mix with first second of outro
-            voice_tail = voice_with_bg[-overlap_ms:]
-            outro_head = outro[:overlap_ms]
-            outro_tail = outro[overlap_ms:]
-
-            # Mix the overlapping parts
-            overlapped_section = voice_tail.overlay(outro_head)
-            podcast += overlapped_section + outro_tail
-        elif outro:
+        # Add outro after voice (no overlap to prevent outro being heard during voice)
+        if outro:
+            log(f"Adding outro: {os.path.basename(outro_file)}")
             podcast += outro
 
         # Export final podcast
