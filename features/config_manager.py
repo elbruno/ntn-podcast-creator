@@ -53,12 +53,14 @@ class ConfigManager:
             # Audio denoising feature (enabled by default)
             "denoise_audio": True,
             "denoise_method": "audio_denoiser",  # audio_denoiser, spectral, rnnoise
-            "enhance_audio": False,  # Adobe audio enhancement feature
-            # Phase 2 features
-            "normalize_lufs": False,  # LUFS normalization
+            # LUFS normalization
+            "normalize_lufs": False,
             "target_lufs": -16.0,  # Target LUFS level
-            "generate_transcript": False,  # Whisper transcription
-            "whisper_model": "base"  # Whisper model size
+            # Overlap settings
+            "intro_voice_overlap": True,  # Enable 1-second overlap between intro and voice
+            "voice_outro_overlap": False,  # Enable 1-second overlap between voice and outro
+            # Template feature
+            "active_template": None  # Currently active template name
         }
 
     def save_config(self) -> None:
@@ -274,22 +276,6 @@ class ConfigManager:
         """
         self.set("denoise_audio", enabled)
 
-    def get_enhance_audio(self) -> bool:
-        """Get audio enhancement setting.
-
-        Returns:
-            True if audio enhancement is enabled, False otherwise
-        """
-        return self.get("enhance_audio", False)
-
-    def set_enhance_audio(self, enabled: bool) -> None:
-        """Set audio enhancement setting.
-
-        Args:
-            enabled: True to enable audio enhancement, False to disable
-        """
-        self.set("enhance_audio", enabled)
-
     def get_denoise_method(self) -> str:
         """Get noise reduction method.
 
@@ -338,37 +324,37 @@ class ConfigManager:
         """
         self.set("target_lufs", target)
 
-    def get_generate_transcript(self) -> bool:
-        """Get transcript generation setting.
+    def get_intro_voice_overlap(self) -> bool:
+        """Get intro-voice overlap setting.
 
         Returns:
-            True if transcript generation is enabled, False otherwise
+            True if intro-voice overlap is enabled, False otherwise
         """
-        return self.get("generate_transcript", False)
+        return self.get("intro_voice_overlap", True)
 
-    def set_generate_transcript(self, enabled: bool) -> None:
-        """Set transcript generation setting.
+    def set_intro_voice_overlap(self, enabled: bool) -> None:
+        """Set intro-voice overlap setting.
 
         Args:
-            enabled: True to enable transcript generation, False to disable
+            enabled: True to enable intro-voice overlap, False to disable
         """
-        self.set("generate_transcript", enabled)
+        self.set("intro_voice_overlap", enabled)
 
-    def get_whisper_model(self) -> str:
-        """Get Whisper model size.
+    def get_voice_outro_overlap(self) -> bool:
+        """Get voice-outro overlap setting.
 
         Returns:
-            Whisper model size
+            True if voice-outro overlap is enabled, False otherwise
         """
-        return self.get("whisper_model", "base")
+        return self.get("voice_outro_overlap", False)
 
-    def set_whisper_model(self, model: str) -> None:
-        """Set Whisper model size.
+    def set_voice_outro_overlap(self, enabled: bool) -> None:
+        """Set voice-outro overlap setting.
 
         Args:
-            model: Model size (tiny, base, small, medium, large)
+            enabled: True to enable voice-outro overlap, False to disable
         """
-        self.set("whisper_model", model)
+        self.set("voice_outro_overlap", enabled)
 
     def load_default_audio_files(self) -> None:
         """Load default audio files from dedicated directories.
@@ -417,3 +403,93 @@ class ConfigManager:
                 self.update_background_tracks(valid_files)
                 print(
                     f"Loaded {len(valid_files)} default background music track(s)")
+
+    def get_active_template(self) -> Optional[str]:
+        """Get the currently active template name.
+
+        Returns:
+            Active template name or None
+        """
+        return self.get("active_template")
+
+    def set_active_template(self, template_name: Optional[str]) -> None:
+        """Set the currently active template.
+
+        Args:
+            template_name: Name of the active template or None
+        """
+        self.set("active_template", template_name)
+
+    def get_template_settings(self) -> Dict[str, Any]:
+        """Get all settings that should be saved in a template.
+
+        Returns:
+            Dictionary of template-saveable settings
+        """
+        return {
+            "intro_file": self.get_intro(),
+            "outro_file": self.get_outro(),
+            "background_tracks": self.get_background_tracks(),
+            "background_volume": self.get_volume(),
+            "track_volumes": self.get_all_track_volumes(),
+            "denoise_audio": self.get_denoise_audio(),
+            "denoise_method": self.get_denoise_method(),
+            "normalize_lufs": self.get_normalize_lufs(),
+            "target_lufs": self.get_target_lufs(),
+            "intro_voice_overlap": self.get_intro_voice_overlap(),
+            "voice_outro_overlap": self.get_voice_outro_overlap()
+        }
+
+    def apply_template_settings(self, settings: Dict[str, Any]) -> None:
+        """Apply settings from a template to current configuration.
+
+        Args:
+            settings: Dictionary of settings to apply
+        """
+        # Audio files
+        if "intro_file" in settings:
+            intro = settings["intro_file"]
+            if intro and os.path.exists(intro):
+                self.update_intro(intro)
+            elif not intro:
+                self.update_intro(None)
+
+        if "outro_file" in settings:
+            outro = settings["outro_file"]
+            if outro and os.path.exists(outro):
+                self.update_outro(outro)
+            elif not outro:
+                self.update_outro(None)
+
+        if "background_tracks" in settings:
+            tracks = settings["background_tracks"]
+            # Filter to only existing files
+            valid_tracks = [t for t in tracks if os.path.exists(t)] if tracks else []
+            self.update_background_tracks(valid_tracks)
+
+        # Volumes
+        if "background_volume" in settings:
+            self.update_volume(settings["background_volume"])
+
+        if "track_volumes" in settings:
+            self.set("track_volumes", settings["track_volumes"])
+
+        # Processing options
+        if "denoise_audio" in settings:
+            self.set_denoise_audio(settings["denoise_audio"])
+
+        if "denoise_method" in settings:
+            self.set_denoise_method(settings["denoise_method"])
+
+        if "normalize_lufs" in settings:
+            self.set_normalize_lufs(settings["normalize_lufs"])
+
+        if "target_lufs" in settings:
+            self.set_target_lufs(settings["target_lufs"])
+
+        # Overlap settings
+        if "intro_voice_overlap" in settings:
+            self.set_intro_voice_overlap(settings["intro_voice_overlap"])
+
+        if "voice_outro_overlap" in settings:
+            self.set_voice_outro_overlap(settings["voice_outro_overlap"])

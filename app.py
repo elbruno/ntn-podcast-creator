@@ -10,13 +10,14 @@ import gradio as gr
 from typing import Optional, List, Tuple
 from features.audio_processor import AudioProcessor
 from features.config_manager import ConfigManager, DEFAULT_RSS_FEED_URL
-from features.adobe_audio_enhancer import enhance_audio_file
 from features.audio_denoiser_processor import denoise_audio_file
+from features.template_manager import TemplateManager
 
 
 # Initialize components
 config_manager = ConfigManager()
 audio_processor = AudioProcessor()
+template_manager = TemplateManager()
 
 # Create necessary directories
 os.makedirs("uploads", exist_ok=True)
@@ -943,7 +944,7 @@ def get_progress_html(pct, msg):
     """
 
 
-def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, trim_silence, denoise_audio, denoise_method, enhance_audio, normalize_lufs, target_lufs, generate_transcript, whisper_model, voice_order_table=None, progress=gr.Progress()):
+def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, trim_silence, denoise_audio, denoise_method, normalize_lufs, target_lufs, intro_voice_overlap, voice_outro_overlap, voice_order_table=None, progress=gr.Progress()):
     """Handle podcast creation request with progress tracking.
 
     Args:
@@ -953,11 +954,11 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
         trim_silence: Whether to trim silence
         denoise_audio: Whether to apply denoising
         denoise_method: Denoising method to use
-        enhance_audio: Whether to apply Adobe enhancement
         normalize_lufs: Whether to normalize audio levels
         target_lufs: Target LUFS level for normalization
-        generate_transcript: Whether to generate transcript
-        whisper_model: Whisper model to use for transcription
+        intro_voice_overlap: Whether to enable intro-voice overlap
+        voice_outro_overlap: Whether to enable voice-outro overlap
+        voice_order_table: Table for custom voice file ordering
         progress: Gradio progress tracker
     """
     import threading
@@ -1054,10 +1055,9 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
     log_message(f"  Volume: {volume}%")
     log_message(f"  Trim silence: {trim_silence}")
     log_message(f"  Denoise audio: {denoise_audio} (method: {denoise_method})")
-    log_message(f"  Enhance audio: {enhance_audio}")
     log_message(f"  Normalize LUFS: {normalize_lufs} (target: {target_lufs})")
-    log_message(
-        f"  Generate transcript: {generate_transcript} (model: {whisper_model})")
+    log_message(f"  Intro-voice overlap: {intro_voice_overlap}")
+    log_message(f"  Voice-outro overlap: {voice_outro_overlap}")
 
     # Create output path
     output_path = os.path.join("outputs", f"{output_name}.mp3")
@@ -1124,11 +1124,10 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
                 trim_silence=trim_silence,
                 denoise_audio=denoise_audio,
                 denoise_method=denoise_method,
-                enhance_audio=enhance_audio,
                 normalize_lufs=normalize_lufs,
                 target_lufs=target_lufs,
-                generate_transcript=generate_transcript,
-                whisper_model=whisper_model,
+                intro_voice_overlap=intro_voice_overlap,
+                voice_outro_overlap=voice_outro_overlap,
                 log_callback=threaded_log_callback
             )
             result_container['result'] = (
@@ -1214,7 +1213,7 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
         yield f"✓ Podcast created successfully: {output_name}.mp3", result_path, denoised_path, final_transcript, final_console_log, get_progress_html(1.0, "✅ Complete!"), get_bottom_console_html(final_console_log, visible=True, show_close=True)
 
 
-def create_podcast_handler(voice_file, output_name, delete_voice, trim_silence, denoise_audio, denoise_method, enhance_audio, normalize_lufs, target_lufs, generate_transcript, whisper_model):
+def create_podcast_handler(voice_file, output_name, delete_voice, trim_silence, denoise_audio, denoise_method, normalize_lufs, target_lufs):
     """Handle podcast creation request.
 
     Args:
@@ -1224,11 +1223,8 @@ def create_podcast_handler(voice_file, output_name, delete_voice, trim_silence, 
         trim_silence: Whether to trim silence from start/end
         denoise_audio: Whether to denoise audio
         denoise_method: Noise reduction method to use
-        enhance_audio: Whether to enhance audio using Adobe Enhance
         normalize_lufs: Whether to normalize to target LUFS
         target_lufs: Target LUFS level
-        generate_transcript: Whether to generate transcript
-        whisper_model: Whisper model size to use
 
     Returns:
         Tuple of (status message, output file path or None, denoised file path or None, transcript file path or None, console log)
@@ -1268,10 +1264,7 @@ def create_podcast_handler(voice_file, output_name, delete_voice, trim_silence, 
     log_message(f"  Volume: {volume}%")
     log_message(f"  Trim silence: {trim_silence}")
     log_message(f"  Denoise audio: {denoise_audio} (method: {denoise_method})")
-    log_message(f"  Enhance audio: {enhance_audio}")
     log_message(f"  Normalize LUFS: {normalize_lufs} (target: {target_lufs})")
-    log_message(
-        f"  Generate transcript: {generate_transcript} (model: {whisper_model})")
 
     # Create output path
     output_path = os.path.join("outputs", f"{output_name}.mp3")
@@ -1280,7 +1273,7 @@ def create_podcast_handler(voice_file, output_name, delete_voice, trim_silence, 
     config_manager.update_last_output_name(output_name)
 
     try:
-        # Create podcast with Phase 2 features
+        # Create podcast
         result_path, denoised_path, transcript_path = audio_processor.create_podcast(
             voice_file=voice_path,
             intro_file=intro_path,
@@ -1292,11 +1285,8 @@ def create_podcast_handler(voice_file, output_name, delete_voice, trim_silence, 
             trim_silence=trim_silence,
             denoise_audio=denoise_audio,
             denoise_method=denoise_method,
-            enhance_audio=enhance_audio,
             normalize_lufs=normalize_lufs,
             target_lufs=target_lufs,
-            generate_transcript=generate_transcript,
-            whisper_model=whisper_model,
             log_callback=log_message
         )
 
@@ -1379,61 +1369,6 @@ def denoise_audio_only_handler(voice_file, delete_after):
         return f"Error denoising audio: {exc}", None, get_console_log()
 
 
-def enhance_audio_only_handler(voice_file, delete_after):
-    """Run Adobe Enhance as a standalone preprocessing step.
-
-    Args:
-        voice_file: Uploaded voice file to enhance
-        delete_after: Whether to delete the uploaded original after processing
-
-    Returns:
-        Tuple of (status message, enhanced audio file path or None, console log)
-    """
-    log_message("=" * 50)
-    log_message("Starting standalone Adobe Enhance run")
-
-    if voice_file is None:
-        log_message("Error: Please upload a voice recording to enhance")
-        return "Error: Please upload a voice recording", None, get_console_log()
-
-    saved_voice = save_uploaded_file(voice_file, "enhance")
-    if not saved_voice:
-        log_message("Error: Could not save uploaded voice file")
-        return "Error: Could not save uploaded voice file", None, get_console_log()
-
-    try:
-        enhanced_path = enhance_audio_file(
-            input_file=saved_voice,
-            enabled=True,
-            log_callback=log_message
-        )
-
-        if delete_after and os.path.exists(saved_voice):
-            try:
-                os.remove(saved_voice)
-                log_message(
-                    f"Deleted original upload: {os.path.basename(saved_voice)}")
-            except Exception as delete_error:
-                log_message(
-                    f"Warning: Unable to delete original upload: {delete_error}")
-
-        if enhanced_path and os.path.exists(enhanced_path):
-            log_message(
-                f"Standalone enhancement ready: {os.path.basename(enhanced_path)}")
-            log_message("=" * 50)
-            return f"✓ Enhanced audio ready: {os.path.basename(enhanced_path)}", enhanced_path, get_console_log()
-
-        log_message(
-            "Adobe Enhance returned no file. Please check credentials or try again later.")
-        log_message("=" * 50)
-        return "Enhancement failed. Please check the console log for details.", None, get_console_log()
-
-    except Exception as exc:
-        log_message(f"Error enhancing audio: {exc}")
-        log_message("=" * 50)
-        return f"Error enhancing audio: {exc}", None, get_console_log()
-
-
 def export_settings() -> str:
     """Export current settings to a JSON file.
 
@@ -1457,6 +1392,8 @@ def export_settings() -> str:
             "track_volumes": config_manager.get_all_track_volumes(),
             "last_output_name": config_manager.get_last_output_name(),
             "rss_feed_url": config_manager.get_rss_feed_url(),
+            "intro_voice_overlap": config_manager.get_intro_voice_overlap(),
+            "voice_outro_overlap": config_manager.get_voice_outro_overlap(),
             "export_date": datetime.datetime.now().isoformat()
         }
 
@@ -1551,6 +1488,15 @@ def import_settings(settings_file) -> str:
         if "rss_feed_url" in settings:
             config_manager.set_rss_feed_url(settings["rss_feed_url"])
 
+        # Overlap settings
+        if "intro_voice_overlap" in settings:
+            config_manager.set_intro_voice_overlap(
+                settings["intro_voice_overlap"])
+
+        if "voice_outro_overlap" in settings:
+            config_manager.set_voice_outro_overlap(
+                settings["voice_outro_overlap"])
+
         log_message(
             f"Settings imported successfully from {os.path.basename(file_path)}")
         return f"✓ Settings imported successfully from {os.path.basename(file_path)}"
@@ -1563,6 +1509,123 @@ def import_settings(settings_file) -> str:
         error_msg = f"Error importing settings: {e}"
         log_message(error_msg)
         return error_msg
+
+
+def save_template_handler(template_name: str) -> tuple[str, str]:
+    """Handler to save current settings as a template.
+
+    Args:
+        template_name: Name for the new template
+
+    Returns:
+        Tuple of (dropdown_choices_json, status_message)
+    """
+    import json
+
+    if not template_name or not template_name.strip():
+        return json.dumps([]), "❌ Please enter a template name"
+
+    try:
+        # Get current settings from config manager
+        settings = config_manager.get_template_settings()
+
+        # Save template
+        success, message = template_manager.save_template(
+            template_name, settings)
+
+        if success:
+            log_message(f"Template saved: {template_name}")
+            config_manager.set_active_template(template_name)
+
+            # Return updated template list
+            templates = template_manager.list_templates()
+            return json.dumps(templates), f"✅ {message}"
+        else:
+            log_message(f"Failed to save template: {message}")
+            return json.dumps([]), f"❌ {message}"
+    except Exception as e:
+        log_message(f"Error saving template: {e}")
+        return json.dumps([]), f"❌ Error: {str(e)}"
+
+
+def load_template_handler(template_name: str) -> str:
+    """Handler to load settings from a template.
+
+    Args:
+        template_name: Name of the template to load
+
+    Returns:
+        Status message
+    """
+    if not template_name or not template_name.strip():
+        return "❌ Please select a template"
+
+    try:
+        # Load template
+        settings, message = template_manager.load_template(template_name)
+
+        if settings:
+            # Apply settings to config manager
+            config_manager.apply_template_settings(settings)
+            config_manager.set_active_template(template_name)
+            log_message(f"Template loaded: {template_name}")
+            return f"✅ {message}"
+        else:
+            log_message(f"Failed to load template: {message}")
+            return f"❌ {message}"
+    except Exception as e:
+        log_message(f"Error loading template: {e}")
+        return f"❌ Error: {str(e)}"
+
+
+def delete_template_handler(template_name: str) -> tuple[str, str]:
+    """Handler to delete a template.
+
+    Args:
+        template_name: Name of the template to delete
+
+    Returns:
+        Tuple of (dropdown_choices_json, status_message)
+    """
+    import json
+
+    if not template_name or not template_name.strip():
+        return json.dumps([]), "❌ Please select a template to delete"
+
+    try:
+        # Delete template
+        success, message = template_manager.delete_template(template_name)
+
+        if success:
+            log_message(f"Template deleted: {template_name}")
+
+            # Clear active template if it was deleted
+            if config_manager.get_active_template() == template_name:
+                config_manager.set_active_template(None)
+
+            # Return updated template list
+            templates = template_manager.list_templates()
+            return json.dumps(templates), f"✅ {message}"
+        else:
+            log_message(f"Failed to delete template: {message}")
+            templates = template_manager.list_templates()
+            return json.dumps(templates), f"❌ {message}"
+    except Exception as e:
+        log_message(f"Error deleting template: {e}")
+        return json.dumps([]), f"❌ Error: {str(e)}"
+
+
+def get_template_choices() -> List[str]:
+    """Get list of available templates for dropdown.
+
+    Returns:
+        List of template names
+    """
+    try:
+        return template_manager.list_templates()
+    except Exception as e:
+        log_message(f"Error getting template list: {e}")
+        return []
 
 
 def extract_ntn_number(title: Optional[str]) -> Optional[int]:
@@ -2007,6 +2070,21 @@ def create_ui():
                                     info="Removes silence from start and end"
                                 )
 
+                            gr.Markdown("### Audio Transitions")
+
+                            with gr.Row(elem_classes=["compact-row"]):
+                                intro_voice_overlap_checkbox = gr.Checkbox(
+                                    label="Enable intro-voice overlap (1 second)",
+                                    value=config_manager.get_intro_voice_overlap(),
+                                    info="Smooth transition from intro to voice"
+                                )
+
+                                voice_outro_overlap_checkbox = gr.Checkbox(
+                                    label="Enable voice-outro overlap (1 second)",
+                                    value=config_manager.get_voice_outro_overlap(),
+                                    info="Smooth transition from voice to outro"
+                                )
+
                             gr.Markdown("### Noise Reduction")
 
                             denoise_audio_checkbox = gr.Checkbox(
@@ -2026,14 +2104,6 @@ def create_ui():
                                 info="Choose your preferred noise reduction algorithm"
                             )
 
-                            gr.Markdown("### Audio Enhancement")
-
-                            enhance_audio_checkbox = gr.Checkbox(
-                                label="✨ Apply Adobe Enhance (optional cloud-based)",
-                                value=config_manager.get_enhance_audio(),
-                                info="Uses Adobe's AI to improve audio quality (adds 2-5 minutes)"
-                            )
-
                             gr.Markdown("### Volume Normalization")
 
                             normalize_lufs_checkbox = gr.Checkbox(
@@ -2049,27 +2119,6 @@ def create_ui():
                                 step=1,
                                 label="Target LUFS Level",
                                 info="-16 for podcasts (recommended), -14 for louder content"
-                            )
-
-                            gr.Markdown("### Automatic Transcription")
-
-                            generate_transcript_checkbox = gr.Checkbox(
-                                label="Generate transcript with Whisper",
-                                value=config_manager.get_generate_transcript(),
-                                info="Creates text transcript of your voice recording"
-                            )
-
-                            whisper_model_dropdown = gr.Dropdown(
-                                label="Whisper Model Size",
-                                choices=[
-                                    ("Tiny (Fastest)", "tiny"),
-                                    ("Base (Recommended)", "base"),
-                                    ("Small (Better Quality)", "small"),
-                                    ("Medium (High Quality)", "medium"),
-                                    ("Large (Best Quality)", "large")
-                                ],
-                                value=config_manager.get_whisper_model(),
-                                info="Larger models are more accurate but slower"
                             )
 
                         with gr.Group(elem_classes=["clean-card"]):
@@ -2155,6 +2204,61 @@ def create_ui():
                                 interactive=False
                             )
 
+                        with gr.Accordion("📋 Templates", open=False):
+                            gr.Markdown("""
+                            Save and load your podcast settings as templates for quick access.
+                            Templates include intro/outro, background music, and processing options.
+                            """)
+
+                            # Get available templates
+                            available_templates = get_template_choices()
+                            active_template = config_manager.get_active_template()
+
+                            with gr.Row():
+                                template_dropdown = gr.Dropdown(
+                                    label="Select Template",
+                                    choices=available_templates,
+                                    value=active_template,
+                                    interactive=True,
+                                    allow_custom_value=False
+                                )
+
+                            with gr.Row():
+                                load_template_button = gr.Button(
+                                    "📂 Load Template",
+                                    variant="secondary",
+                                    size="sm",
+                                    scale=1
+                                )
+                                delete_template_button = gr.Button(
+                                    "🗑️ Delete Template",
+                                    variant="secondary",
+                                    size="sm",
+                                    scale=1
+                                )
+
+                            gr.Markdown(
+                                "**Save Current Settings as Template**")
+
+                            with gr.Row():
+                                template_name_input = gr.Textbox(
+                                    label="Template Name",
+                                    placeholder="e.g., My Weekly Podcast",
+                                    scale=2
+                                )
+                                save_template_button = gr.Button(
+                                    "💾 Save Template",
+                                    variant="primary",
+                                    size="sm",
+                                    scale=1
+                                )
+
+                            template_status = gr.Textbox(
+                                label="Template Status",
+                                interactive=False,
+                                lines=2
+                            )
+
                 # Hidden component for console log updates
                 realtime_console_output = gr.Textbox(
                     value="",
@@ -2232,77 +2336,6 @@ def create_ui():
                 - You can also enable automatic denoising in the **🎙️ Create Podcast** tab
                 - No internet connection required - everything runs on your machine
                 - Install `audio-denoiser` package for this feature to work
-                """)
-
-            # Adobe Enhance Tab - Standalone Enhancement
-            with gr.Tab("✨ Adobe Enhance"):
-                gr.Markdown("""
-                ### Enhance Voice Recordings with Adobe AI
-                Use Adobe's Enhance Speech AI to clean and improve your audio files.
-                This is a standalone tool - upload audio, enhance it, and download the result.
-                """)
-
-                with gr.Row():
-                    with gr.Column():
-                        gr.Markdown("""
-                        **How to use:**
-                        1. Upload a voice recording below
-                        2. Click "Enhance Audio"
-                        3. Wait 2-5 minutes for processing
-                        4. Download the enhanced audio
-
-                        **What it does:**
-                        - Removes background noise
-                        - Reduces echo
-                        - Improves speech clarity
-                        - Normalizes audio levels
-                        """)
-
-                        enhance_tab_voice_input = gr.Audio(
-                            label="🎤 Voice Recording to Enhance",
-                            type="filepath"
-                        )
-
-                        enhance_only_delete_checkbox = gr.Checkbox(
-                            label="Delete uploaded file after enhancement",
-                            value=True,
-                            info="Keeps the uploads folder tidy"
-                        )
-
-                        enhance_only_button = gr.Button(
-                            "✨ Enhance Audio",
-                            variant="primary",
-                            size="lg"
-                        )
-
-                    with gr.Column():
-                        enhance_only_status = gr.Textbox(
-                            label="Status",
-                            interactive=False,
-                            lines=3
-                        )
-
-                        enhance_only_output = gr.Audio(
-                            label="🎧 Enhanced Voice Preview",
-                            type="filepath"
-                        )
-
-                        with gr.Accordion("📋 Processing Log", open=False):
-                            enhance_only_log = gr.Textbox(
-                                label="Enhancement Log",
-                                value=get_console_log(),
-                                interactive=False,
-                                lines=15,
-                                max_lines=30
-                            )
-
-                gr.Markdown("""
-                ---
-                ### 💡 Adobe Enhance Tips
-                - Processing typically takes 2-5 minutes depending on file size
-                - You can also enable automatic enhancement in the **🎙️ Create Podcast** tab
-                - Adobe credentials can be configured via `.env` file (optional)
-                - The service is free to use via Adobe Podcast web interface
                 """)
 
             # Settings Tab - Audio Configuration
@@ -2744,9 +2777,8 @@ def create_ui():
             inputs=[voice_input, output_name_input,
                     delete_voice_checkbox, trim_silence_checkbox,
                     denoise_audio_checkbox, denoise_method_dropdown,
-                    enhance_audio_checkbox,
                     normalize_lufs_checkbox, target_lufs_slider,
-                    generate_transcript_checkbox, whisper_model_dropdown,
+                    intro_voice_overlap_checkbox, voice_outro_overlap_checkbox,
                     voice_order_table],
             outputs=[status_output, audio_output,
                      denoised_audio_output, transcript_output, realtime_console_output, progress_bar, bottom_console],
@@ -2781,20 +2813,6 @@ def create_ui():
         )
 
         denoise_only_button_event.then(
-            fn=get_console_log,
-            inputs=[],
-            outputs=[console_output]
-        )
-
-        # Adobe Enhance tab handlers
-        enhance_only_button_event = enhance_only_button.click(
-            fn=enhance_audio_only_handler,
-            inputs=[enhance_tab_voice_input, enhance_only_delete_checkbox],
-            outputs=[enhance_only_status,
-                     enhance_only_output, enhance_only_log]
-        )
-
-        enhance_only_button_event.then(
             fn=get_console_log,
             inputs=[],
             outputs=[console_output]
@@ -2856,10 +2874,16 @@ def create_ui():
             outputs=[]
         )
 
-        # Save enhance audio setting when changed
-        enhance_audio_checkbox.change(
-            fn=lambda enabled: config_manager.set_enhance_audio(enabled),
-            inputs=[enhance_audio_checkbox],
+        # Save overlap settings when changed
+        intro_voice_overlap_checkbox.change(
+            fn=lambda enabled: config_manager.set_intro_voice_overlap(enabled),
+            inputs=[intro_voice_overlap_checkbox],
+            outputs=[]
+        )
+
+        voice_outro_overlap_checkbox.change(
+            fn=lambda enabled: config_manager.set_voice_outro_overlap(enabled),
+            inputs=[voice_outro_overlap_checkbox],
             outputs=[]
         )
 
@@ -2914,6 +2938,39 @@ def create_ui():
             fn=import_settings,
             inputs=[import_settings_input],
             outputs=[import_status]
+        )
+
+        # Template management - wrapper functions to handle dropdown updates
+        def save_template_and_update(template_name: str):
+            """Save template and return updated choices and status."""
+            import json
+            choices_json, status = save_template_handler(template_name)
+            choices = json.loads(choices_json) if choices_json else []
+            return choices, status, ""  # Clear the input field
+
+        def delete_template_and_update(template_name: str):
+            """Delete template and return updated choices and status."""
+            import json
+            choices_json, status = delete_template_handler(template_name)
+            choices = json.loads(choices_json) if choices_json else []
+            return choices, status
+
+        save_template_button.click(
+            fn=save_template_and_update,
+            inputs=[template_name_input],
+            outputs=[template_dropdown, template_status, template_name_input]
+        )
+
+        load_template_button.click(
+            fn=load_template_handler,
+            inputs=[template_dropdown],
+            outputs=[template_status]
+        )
+
+        delete_template_button.click(
+            fn=delete_template_and_update,
+            inputs=[template_dropdown],
+            outputs=[template_dropdown, template_status]
         )
 
     return app

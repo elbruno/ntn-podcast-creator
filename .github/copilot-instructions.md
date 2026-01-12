@@ -176,6 +176,7 @@ yield "status", ..., '<div style="display: block; ...">Progress</div>'
 - Background music mixing
 - LUFS normalization
 - Whisper transcription
+- Template management (save/load/delete settings configurations)
 - MIDI support (if implemented)
 - Multiple audio format support
 
@@ -325,7 +326,31 @@ whisper_model: str  # e.g., "base", "small", "medium"
 background_volume: int  # 0-100
 track_volumes: dict  # per-track volumes
 last_output_name: str
+
+# Template management
+active_template: str  # Currently active template name or None
 ```
+
+### Template Management (features/template_manager.py)
+Templates allow users to save and load complete podcast settings configurations:
+```python
+# Save current settings as template
+settings = config_manager.get_template_settings()  # Gets all template-saveable settings
+template_manager.save_template("My Template", settings)
+
+# Load template
+settings, message = template_manager.load_template("My Template")
+config_manager.apply_template_settings(settings)  # Applies all settings
+
+# List and delete
+templates = template_manager.list_templates()  # Returns list of template names
+template_manager.delete_template("My Template")
+```
+
+Templates are stored in `core/templates/` as JSON files and include:
+- Audio files (intro, outro, background tracks)
+- Volume settings (global and per-track)
+- All processing options (denoise, enhance, normalize, transcription)
 
 ---
 
@@ -336,6 +361,7 @@ app.py                          # Main UI & orchestration (~2400 lines)
 features/
   ├── audio_processor.py        # Mixing, trim silence, overlap logic
   ├── config_manager.py         # Config persistence & defaults
+  ├── template_manager.py       # Template save/load/delete management
   ├── audio_denoiser_processor.py  # AI denoising w/ chunking
   ├── adobe_audio_enhancer.py   # Playwright-based enhancement
   ├── noise_reducer.py          # Spectral gating
@@ -344,10 +370,13 @@ features/
 tests/                          # All test files
   ├── test_ui_core.py           # 7 core tests
   ├── test_ui_podcast_creation.py  # Integration tests
+  ├── test_template_feature.py  # Template feature tests
   └── README_TESTS.md           # Testing documentation
 docs/                           # Technical documentation & guides
   ├── USER_MANUAL.md            # End-user guide with screenshots
   ├── TECHNICAL_IMPLEMENTATION.md  # Architecture & API reference
+  ├── TEMPLATE_FEATURE.md       # Template feature documentation
+  ├── TEMPLATE_FEATURE_UI.md    # Template UI layout documentation
   ├── DOCKER.md                 # Docker deployment guide
   ├── DOCKER_PUBLISH.md         # Docker image publishing
   ├── AUDIO_DENOISING_IMPLEMENTATION.md  # AI denoising guide
@@ -366,7 +395,9 @@ audios/
   └── test/                      # Test audio files
 outputs/                        # Generated podcasts
 uploads/                        # Temporary uploaded files
-core/config.json                # Persistent config
+core/
+  ├── config.json               # Persistent config
+  └── templates/                # Saved template configurations
 README.md                       # Project overview (root)
 LICENSE                         # MIT license (root)
 ```
