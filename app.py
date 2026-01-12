@@ -12,11 +12,13 @@ from features.audio_processor import AudioProcessor
 from features.config_manager import ConfigManager, DEFAULT_RSS_FEED_URL
 from features.adobe_audio_enhancer import enhance_audio_file
 from features.audio_denoiser_processor import denoise_audio_file
+from features.template_manager import TemplateManager
 
 
 # Initialize components
 config_manager = ConfigManager()
 audio_processor = AudioProcessor()
+template_manager = TemplateManager()
 
 # Create necessary directories
 os.makedirs("uploads", exist_ok=True)
@@ -1565,6 +1567,122 @@ def import_settings(settings_file) -> str:
         return error_msg
 
 
+def save_template_handler(template_name: str) -> tuple[str, str]:
+    """Handler to save current settings as a template.
+
+    Args:
+        template_name: Name for the new template
+
+    Returns:
+        Tuple of (dropdown_choices_json, status_message)
+    """
+    import json
+    
+    if not template_name or not template_name.strip():
+        return json.dumps([]), "❌ Please enter a template name"
+
+    try:
+        # Get current settings from config manager
+        settings = config_manager.get_template_settings()
+        
+        # Save template
+        success, message = template_manager.save_template(template_name, settings)
+        
+        if success:
+            log_message(f"Template saved: {template_name}")
+            config_manager.set_active_template(template_name)
+            
+            # Return updated template list
+            templates = template_manager.list_templates()
+            return json.dumps(templates), f"✅ {message}"
+        else:
+            log_message(f"Failed to save template: {message}")
+            return json.dumps([]), f"❌ {message}"
+    except Exception as e:
+        log_message(f"Error saving template: {e}")
+        return json.dumps([]), f"❌ Error: {str(e)}"
+
+
+def load_template_handler(template_name: str) -> str:
+    """Handler to load settings from a template.
+
+    Args:
+        template_name: Name of the template to load
+
+    Returns:
+        Status message
+    """
+    if not template_name or not template_name.strip():
+        return "❌ Please select a template"
+
+    try:
+        # Load template
+        settings, message = template_manager.load_template(template_name)
+        
+        if settings:
+            # Apply settings to config manager
+            config_manager.apply_template_settings(settings)
+            config_manager.set_active_template(template_name)
+            log_message(f"Template loaded: {template_name}")
+            return f"✅ {message}"
+        else:
+            log_message(f"Failed to load template: {message}")
+            return f"❌ {message}"
+    except Exception as e:
+        log_message(f"Error loading template: {e}")
+        return f"❌ Error: {str(e)}"
+
+
+def delete_template_handler(template_name: str) -> tuple[str, str]:
+    """Handler to delete a template.
+
+    Args:
+        template_name: Name of the template to delete
+
+    Returns:
+        Tuple of (dropdown_choices_json, status_message)
+    """
+    import json
+    
+    if not template_name or not template_name.strip():
+        return json.dumps([]), "❌ Please select a template to delete"
+
+    try:
+        # Delete template
+        success, message = template_manager.delete_template(template_name)
+        
+        if success:
+            log_message(f"Template deleted: {template_name}")
+            
+            # Clear active template if it was deleted
+            if config_manager.get_active_template() == template_name:
+                config_manager.set_active_template(None)
+            
+            # Return updated template list
+            templates = template_manager.list_templates()
+            return json.dumps(templates), f"✅ {message}"
+        else:
+            log_message(f"Failed to delete template: {message}")
+            templates = template_manager.list_templates()
+            return json.dumps(templates), f"❌ {message}"
+    except Exception as e:
+        log_message(f"Error deleting template: {e}")
+        return json.dumps([]), f"❌ Error: {str(e)}"
+
+
+def get_template_choices() -> List[str]:
+    """Get list of available templates for dropdown.
+
+    Returns:
+        List of template names
+    """
+    try:
+        return template_manager.list_templates()
+    except Exception as e:
+        log_message(f"Error getting template list: {e}")
+        return []
+
+
 def extract_ntn_number(title: Optional[str]) -> Optional[int]:
     """Extract NTN episode number from a title string."""
 
@@ -2153,6 +2271,60 @@ def create_ui():
                             import_status = gr.Textbox(
                                 label="Import Status",
                                 interactive=False
+                            )
+
+                        with gr.Accordion("📋 Templates", open=False):
+                            gr.Markdown("""
+                            Save and load your podcast settings as templates for quick access.
+                            Templates include intro/outro, background music, and processing options.
+                            """)
+                            
+                            # Get available templates
+                            available_templates = get_template_choices()
+                            active_template = config_manager.get_active_template()
+                            
+                            with gr.Row():
+                                template_dropdown = gr.Dropdown(
+                                    label="Select Template",
+                                    choices=available_templates,
+                                    value=active_template,
+                                    interactive=True,
+                                    allow_custom_value=False
+                                )
+                            
+                            with gr.Row():
+                                load_template_button = gr.Button(
+                                    "📂 Load Template",
+                                    variant="secondary",
+                                    size="sm",
+                                    scale=1
+                                )
+                                delete_template_button = gr.Button(
+                                    "🗑️ Delete Template",
+                                    variant="secondary",
+                                    size="sm",
+                                    scale=1
+                                )
+                            
+                            gr.Markdown("**Save Current Settings as Template**")
+                            
+                            with gr.Row():
+                                template_name_input = gr.Textbox(
+                                    label="Template Name",
+                                    placeholder="e.g., My Weekly Podcast",
+                                    scale=2
+                                )
+                                save_template_button = gr.Button(
+                                    "💾 Save Template",
+                                    variant="primary",
+                                    size="sm",
+                                    scale=1
+                                )
+                            
+                            template_status = gr.Textbox(
+                                label="Template Status",
+                                interactive=False,
+                                lines=2
                             )
 
                 # Hidden component for console log updates
@@ -2914,6 +3086,39 @@ def create_ui():
             fn=import_settings,
             inputs=[import_settings_input],
             outputs=[import_status]
+        )
+
+        # Template management - wrapper functions to handle dropdown updates
+        def save_template_and_update(template_name: str):
+            """Save template and return updated choices and status."""
+            import json
+            choices_json, status = save_template_handler(template_name)
+            choices = json.loads(choices_json) if choices_json else []
+            return choices, status, ""  # Clear the input field
+
+        def delete_template_and_update(template_name: str):
+            """Delete template and return updated choices and status."""
+            import json
+            choices_json, status = delete_template_handler(template_name)
+            choices = json.loads(choices_json) if choices_json else []
+            return choices, status
+
+        save_template_button.click(
+            fn=save_template_and_update,
+            inputs=[template_name_input],
+            outputs=[template_dropdown, template_status, template_name_input]
+        )
+
+        load_template_button.click(
+            fn=load_template_handler,
+            inputs=[template_dropdown],
+            outputs=[template_status]
+        )
+
+        delete_template_button.click(
+            fn=delete_template_and_update,
+            inputs=[template_dropdown],
+            outputs=[template_dropdown, template_status]
         )
 
     return app

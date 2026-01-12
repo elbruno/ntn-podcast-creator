@@ -58,7 +58,9 @@ class ConfigManager:
             "normalize_lufs": False,  # LUFS normalization
             "target_lufs": -16.0,  # Target LUFS level
             "generate_transcript": False,  # Whisper transcription
-            "whisper_model": "base"  # Whisper model size
+            "whisper_model": "base",  # Whisper model size
+            # Template feature
+            "active_template": None  # Currently active template name
         }
 
     def save_config(self) -> None:
@@ -417,3 +419,96 @@ class ConfigManager:
                 self.update_background_tracks(valid_files)
                 print(
                     f"Loaded {len(valid_files)} default background music track(s)")
+
+    def get_active_template(self) -> Optional[str]:
+        """Get the currently active template name.
+
+        Returns:
+            Active template name or None
+        """
+        return self.get("active_template")
+
+    def set_active_template(self, template_name: Optional[str]) -> None:
+        """Set the currently active template.
+
+        Args:
+            template_name: Name of the active template or None
+        """
+        self.set("active_template", template_name)
+
+    def get_template_settings(self) -> Dict[str, Any]:
+        """Get all settings that should be saved in a template.
+
+        Returns:
+            Dictionary of template-saveable settings
+        """
+        return {
+            "intro_file": self.get_intro(),
+            "outro_file": self.get_outro(),
+            "background_tracks": self.get_background_tracks(),
+            "background_volume": self.get_volume(),
+            "track_volumes": self.get_all_track_volumes(),
+            "denoise_audio": self.get_denoise_audio(),
+            "denoise_method": self.get_denoise_method(),
+            "enhance_audio": self.get_enhance_audio(),
+            "normalize_lufs": self.get_normalize_lufs(),
+            "target_lufs": self.get_target_lufs(),
+            "generate_transcript": self.get_generate_transcript(),
+            "whisper_model": self.get_whisper_model()
+        }
+
+    def apply_template_settings(self, settings: Dict[str, Any]) -> None:
+        """Apply settings from a template to current configuration.
+
+        Args:
+            settings: Dictionary of settings to apply
+        """
+        # Audio files
+        if "intro_file" in settings:
+            intro = settings["intro_file"]
+            if intro and os.path.exists(intro):
+                self.update_intro(intro)
+            elif not intro:
+                self.update_intro(None)
+
+        if "outro_file" in settings:
+            outro = settings["outro_file"]
+            if outro and os.path.exists(outro):
+                self.update_outro(outro)
+            elif not outro:
+                self.update_outro(None)
+
+        if "background_tracks" in settings:
+            tracks = settings["background_tracks"]
+            # Filter to only existing files
+            valid_tracks = [t for t in tracks if os.path.exists(t)] if tracks else []
+            self.update_background_tracks(valid_tracks)
+
+        # Volumes
+        if "background_volume" in settings:
+            self.update_volume(settings["background_volume"])
+
+        if "track_volumes" in settings:
+            self.set("track_volumes", settings["track_volumes"])
+
+        # Processing options
+        if "denoise_audio" in settings:
+            self.set_denoise_audio(settings["denoise_audio"])
+
+        if "denoise_method" in settings:
+            self.set_denoise_method(settings["denoise_method"])
+
+        if "enhance_audio" in settings:
+            self.set_enhance_audio(settings["enhance_audio"])
+
+        if "normalize_lufs" in settings:
+            self.set_normalize_lufs(settings["normalize_lufs"])
+
+        if "target_lufs" in settings:
+            self.set_target_lufs(settings["target_lufs"])
+
+        if "generate_transcript" in settings:
+            self.set_generate_transcript(settings["generate_transcript"])
+
+        if "whisper_model" in settings:
+            self.set_whisper_model(settings["whisper_model"])
