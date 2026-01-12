@@ -7,11 +7,9 @@ import tempfile
 from typing import List, Optional, Callable, Tuple
 from pydub import AudioSegment
 from pydub.silence import detect_leading_silence
-from .adobe_audio_enhancer import enhance_audio_file
 from .audio_denoiser_processor import denoise_audio_file
 from .noise_reducer import reduce_noise
 from .lufs_normalizer import normalize_audio_lufs
-from .whisper_transcriber import transcribe_audio
 
 
 class AudioProcessor:
@@ -309,11 +307,8 @@ class AudioProcessor:
         trim_silence: bool = False,
         denoise_audio: bool = True,
         denoise_method: str = "audio_denoiser",
-        enhance_audio: bool = False,
         normalize_lufs: bool = False,
         target_lufs: float = -16.0,
-        generate_transcript: bool = False,
-        whisper_model: str = "base",
         intro_voice_overlap: bool = True,
         voice_outro_overlap: bool = False,
         log_callback: Optional[Callable[[str], None]] = None
@@ -331,17 +326,14 @@ class AudioProcessor:
             trim_silence: Whether to trim silence from voice recording
             denoise_audio: Whether to denoise audio (optional)
             denoise_method: Denoising method ("audio_denoiser", "spectral", "rnnoise")
-            enhance_audio: Whether to enhance audio using Adobe Enhance (optional)
             normalize_lufs: Whether to normalize to target LUFS level
             target_lufs: Target LUFS level (-14 or -16 recommended)
-            generate_transcript: Whether to generate transcript with Whisper
-            whisper_model: Whisper model size (tiny, base, small, medium, large)
             intro_voice_overlap: Whether to enable 1-second overlap between intro and voice
             voice_outro_overlap: Whether to enable 1-second overlap between voice and outro
             log_callback: Optional callback function for logging
 
         Returns:
-            Tuple of (path to output file, path to denoised audio or None, path to transcript or None)
+            Tuple of (path to output file, path to denoised audio or None, None)
 
         Raises:
             Exception: If processing fails
@@ -356,9 +348,8 @@ class AudioProcessor:
 
         # Store processed file paths
         denoised_file_path = None
-        transcript_file_path = None
 
-        # Phase 2: Noise reduction (multiple methods available)
+        # Noise reduction (multiple methods available)
         voice_file_to_process = voice_file
         if denoise_audio:
             if denoise_method == "audio_denoiser":
@@ -398,20 +389,6 @@ class AudioProcessor:
                 log(f"Using denoised audio: {os.path.basename(denoised_file)}")
             else:
                 log("Using original audio (denoising not available or failed)")
-
-        # Enhance audio if requested
-        if enhance_audio:
-            log("Enhancing audio quality using Adobe Enhance...")
-            enhanced_file = enhance_audio_file(
-                voice_file_to_process,
-                enabled=True,
-                log_callback=log
-            )
-            if enhanced_file and enhanced_file != voice_file_to_process:
-                voice_file_to_process = enhanced_file
-                log(f"Using enhanced audio: {os.path.basename(enhanced_file)}")
-            else:
-                log("Using current audio (enhancement not available)")
 
         # Load main voice recording
         log(f"Loading main voice: {os.path.basename(voice_file_to_process)}")
@@ -575,31 +552,4 @@ class AudioProcessor:
 
         log("Podcast creation complete!")
 
-        # Phase 2: Generate transcript if requested
-        if generate_transcript:
-            log(
-                f"Generating transcript using Whisper ({whisper_model} model)...")
-            # Transcribe the final podcast audio (with intro + content + outro)
-            transcript_file = transcribe_audio(
-                output_file,
-                model_size=whisper_model,
-                with_timestamps=True,
-                log_callback=log
-            )
-            if transcript_file:
-                transcript_file_path = transcript_file
-                log(f"✓ Transcript generated: {os.path.basename(transcript_file)}")
-            else:
-                log("Transcript generation failed or not available")
-
-        # Clean up temporary enhanced file if it was created
-        if enhance_audio and voice_file_to_process != voice_file and voice_file_to_process != denoised_file_path:
-            try:
-                if os.path.exists(voice_file_to_process):
-                    os.remove(voice_file_to_process)
-                    log(
-                        f"Cleaned up temporary enhanced file: {os.path.basename(voice_file_to_process)}")
-            except Exception as e:
-                log(f"Note: Could not clean up temporary file: {e}")
-
-        return output_file, denoised_file_path, transcript_file_path
+        return output_file, denoised_file_path, None

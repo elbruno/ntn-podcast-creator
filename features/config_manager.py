@@ -53,12 +53,9 @@ class ConfigManager:
             # Audio denoising feature (enabled by default)
             "denoise_audio": True,
             "denoise_method": "audio_denoiser",  # audio_denoiser, spectral, rnnoise
-            "enhance_audio": False,  # Adobe audio enhancement feature
-            # Phase 2 features
-            "normalize_lufs": False,  # LUFS normalization
+            # LUFS normalization
+            "normalize_lufs": False,
             "target_lufs": -16.0,  # Target LUFS level
-            "generate_transcript": False,  # Whisper transcription
-            "whisper_model": "base",  # Whisper model size
             # Overlap settings
             "intro_voice_overlap": True,  # Enable 1-second overlap between intro and voice
             "voice_outro_overlap": False,  # Enable 1-second overlap between voice and outro
@@ -279,22 +276,6 @@ class ConfigManager:
         """
         self.set("denoise_audio", enabled)
 
-    def get_enhance_audio(self) -> bool:
-        """Get audio enhancement setting.
-
-        Returns:
-            True if audio enhancement is enabled, False otherwise
-        """
-        return self.get("enhance_audio", False)
-
-    def set_enhance_audio(self, enabled: bool) -> None:
-        """Set audio enhancement setting.
-
-        Args:
-            enabled: True to enable audio enhancement, False to disable
-        """
-        self.set("enhance_audio", enabled)
-
     def get_denoise_method(self) -> str:
         """Get noise reduction method.
 
@@ -342,38 +323,6 @@ class ConfigManager:
             target: Target LUFS level (-14 or -16 recommended)
         """
         self.set("target_lufs", target)
-
-    def get_generate_transcript(self) -> bool:
-        """Get transcript generation setting.
-
-        Returns:
-            True if transcript generation is enabled, False otherwise
-        """
-        return self.get("generate_transcript", False)
-
-    def set_generate_transcript(self, enabled: bool) -> None:
-        """Set transcript generation setting.
-
-        Args:
-            enabled: True to enable transcript generation, False to disable
-        """
-        self.set("generate_transcript", enabled)
-
-    def get_whisper_model(self) -> str:
-        """Get Whisper model size.
-
-        Returns:
-            Whisper model size
-        """
-        return self.get("whisper_model", "base")
-
-    def set_whisper_model(self, model: str) -> None:
-        """Set Whisper model size.
-
-        Args:
-            model: Model size (tiny, base, small, medium, large)
-        """
-        self.set("whisper_model", model)
 
     def get_intro_voice_overlap(self) -> bool:
         """Get intro-voice overlap setting.
@@ -485,11 +434,8 @@ class ConfigManager:
             "track_volumes": self.get_all_track_volumes(),
             "denoise_audio": self.get_denoise_audio(),
             "denoise_method": self.get_denoise_method(),
-            "enhance_audio": self.get_enhance_audio(),
             "normalize_lufs": self.get_normalize_lufs(),
             "target_lufs": self.get_target_lufs(),
-            "generate_transcript": self.get_generate_transcript(),
-            "whisper_model": self.get_whisper_model(),
             "intro_voice_overlap": self.get_intro_voice_overlap(),
             "voice_outro_overlap": self.get_voice_outro_overlap()
         }
@@ -535,20 +481,11 @@ class ConfigManager:
         if "denoise_method" in settings:
             self.set_denoise_method(settings["denoise_method"])
 
-        if "enhance_audio" in settings:
-            self.set_enhance_audio(settings["enhance_audio"])
-
         if "normalize_lufs" in settings:
             self.set_normalize_lufs(settings["normalize_lufs"])
 
         if "target_lufs" in settings:
             self.set_target_lufs(settings["target_lufs"])
-
-        if "generate_transcript" in settings:
-            self.set_generate_transcript(settings["generate_transcript"])
-
-        if "whisper_model" in settings:
-            self.set_whisper_model(settings["whisper_model"])
 
         # Overlap settings
         if "intro_voice_overlap" in settings:
