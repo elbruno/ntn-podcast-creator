@@ -314,6 +314,8 @@ class AudioProcessor:
         target_lufs: float = -16.0,
         generate_transcript: bool = False,
         whisper_model: str = "base",
+        intro_voice_overlap: bool = True,
+        voice_outro_overlap: bool = False,
         log_callback: Optional[Callable[[str], None]] = None
     ) -> Tuple[str, Optional[str], Optional[str]]:
         """Create complete podcast with intro, outro, and background music.
@@ -334,6 +336,8 @@ class AudioProcessor:
             target_lufs: Target LUFS level (-14 or -16 recommended)
             generate_transcript: Whether to generate transcript with Whisper
             whisper_model: Whisper model size (tiny, base, small, medium, large)
+            intro_voice_overlap: Whether to enable 1-second overlap between intro and voice
+            voice_outro_overlap: Whether to enable 1-second overlap between voice and outro
             log_callback: Optional callback function for logging
 
         Returns:
@@ -464,19 +468,19 @@ class AudioProcessor:
         else:
             outro = None
 
-        # Build podcast with overlaps
+        # Build podcast with overlaps (configurable)
         podcast = AudioSegment.empty()
 
         if intro:
             podcast += intro
-            # Overlap: intro's last second overlaps with voice's first second
-            if len(podcast) >= overlap_ms:
+            # Conditional overlap: intro's last second overlaps with voice's first second
+            if intro_voice_overlap and len(podcast) >= overlap_ms:
                 log(f"Applying {overlap_ms}ms overlap between intro and voice")
                 # Remove last second from intro
                 podcast = podcast[:-overlap_ms]
 
-        # Add voice with background (overlays with end of intro if present)
-        if intro and len(intro) >= overlap_ms:
+        # Add voice with background (overlays with end of intro if overlap is enabled)
+        if intro and intro_voice_overlap and len(intro) >= overlap_ms:
             # Extract the last second of intro to mix with first second of voice
             intro_tail = intro[-overlap_ms:]
             voice_head = voice_with_bg[:overlap_ms]
@@ -488,28 +492,47 @@ class AudioProcessor:
         else:
             podcast += voice_with_bg
 
-        # Add outro after voice (no overlap to prevent outro being heard during voice)
+        # Add outro after voice
         if outro:
-            log(f"Adding outro: {os.path.basename(outro_file)}")
-            # Apply fade-in to outro (200ms) for smooth transition from voice
-            outro_with_fade = self.fade_in(outro, 200)
-
-            # If we have background music, fade it out in the last 500ms before outro
-            if background_files and background:
-                fade_duration = 500  # 500ms fade-out
-                # Apply fade-out to background in final section
-                if len(voice_with_bg) >= fade_duration:
-                    # The voice+background has already been added to podcast
-                    # So we need to fade out the last 500ms of it
-                    fade_start = len(podcast) - fade_duration
-                    if fade_start >= 0:
-                        podcast_before_fade = podcast[:fade_start]
-                        podcast_fade_section = podcast[fade_start:].fade_out(
-                            fade_duration)
-                        podcast = podcast_before_fade + podcast_fade_section
-                        log(f"Applied {fade_duration}ms fade-out to background music before outro")
-
-            podcast += outro_with_fade
+            if voice_outro_overlap:
+                # Apply overlap between voice and outro
+                log(f"Adding outro with {overlap_ms}ms overlap")
+                # Extract the last second of voice+bg to mix with first second of outro
+                if len(podcast) >= overlap_ms and len(outro) >= overlap_ms:
+                    # Remove last second from current podcast
+                    podcast = podcast[:-overlap_ms]
+                    # Get the last second of original podcast and first second of outro
+                    voice_tail = voice_with_bg[-overlap_ms:] if intro else podcast[-overlap_ms:]
+                    outro_head = outro[:overlap_ms]
+                    outro_tail = outro[overlap_ms:]
+                    
+                    # Mix the overlapping parts
+                    overlapped_section = voice_tail.overlay(outro_head)
+                    podcast += overlapped_section + outro_tail
+                else:
+                    # Not enough audio for overlap, just append
+                    podcast += outro
+            else:
+                # No overlap - apply fade-in to outro for smooth transition
+                log(f"Adding outro without overlap (with fade-in)")
+                outro_with_fade = self.fade_in(outro, 200)
+                
+                # If we have background music, fade it out in the last 500ms before outro
+                if background_files and background and not voice_outro_overlap:
+                    fade_duration = 500  # 500ms fade-out
+                    # Apply fade-out to background in final section
+                    if len(podcast) >= fade_duration:
+                        # The voice+background has already been added to podcast
+                        # So we need to fade out the last 500ms of it
+                        fade_start = len(podcast) - fade_duration
+                        if fade_start >= 0:
+                            podcast_before_fade = podcast[:fade_start]
+                            podcast_fade_section = podcast[fade_start:].fade_out(
+                                fade_duration)
+                            podcast = podcast_before_fade + podcast_fade_section
+                            log(f"Applied {fade_duration}ms fade-out to background music before outro")
+                
+                podcast += outro_with_fade
         else:
             log("No outro file provided")
 

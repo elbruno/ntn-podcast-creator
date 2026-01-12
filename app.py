@@ -1131,6 +1131,8 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
                 target_lufs=target_lufs,
                 generate_transcript=generate_transcript,
                 whisper_model=whisper_model,
+                intro_voice_overlap=intro_voice_overlap,
+                voice_outro_overlap=voice_outro_overlap,
                 log_callback=threaded_log_callback
             )
             result_container['result'] = (
@@ -1459,6 +1461,8 @@ def export_settings() -> str:
             "track_volumes": config_manager.get_all_track_volumes(),
             "last_output_name": config_manager.get_last_output_name(),
             "rss_feed_url": config_manager.get_rss_feed_url(),
+            "intro_voice_overlap": config_manager.get_intro_voice_overlap(),
+            "voice_outro_overlap": config_manager.get_voice_outro_overlap(),
             "export_date": datetime.datetime.now().isoformat()
         }
 
@@ -1552,6 +1556,13 @@ def import_settings(settings_file) -> str:
 
         if "rss_feed_url" in settings:
             config_manager.set_rss_feed_url(settings["rss_feed_url"])
+
+        # Overlap settings
+        if "intro_voice_overlap" in settings:
+            config_manager.set_intro_voice_overlap(settings["intro_voice_overlap"])
+
+        if "voice_outro_overlap" in settings:
+            config_manager.set_voice_outro_overlap(settings["voice_outro_overlap"])
 
         log_message(
             f"Settings imported successfully from {os.path.basename(file_path)}")
@@ -2123,6 +2134,21 @@ def create_ui():
                                     label="Trim silence from voice recording",
                                     value=True,
                                     info="Removes silence from start and end"
+                                )
+
+                            gr.Markdown("### Audio Transitions")
+
+                            with gr.Row(elem_classes=["compact-row"]):
+                                intro_voice_overlap_checkbox = gr.Checkbox(
+                                    label="Enable intro-voice overlap (1 second)",
+                                    value=config_manager.get_intro_voice_overlap(),
+                                    info="Smooth transition from intro to voice"
+                                )
+
+                                voice_outro_overlap_checkbox = gr.Checkbox(
+                                    label="Enable voice-outro overlap (1 second)",
+                                    value=config_manager.get_voice_outro_overlap(),
+                                    info="Smooth transition from voice to outro"
                                 )
 
                             gr.Markdown("### Noise Reduction")
@@ -2919,6 +2945,7 @@ def create_ui():
                     enhance_audio_checkbox,
                     normalize_lufs_checkbox, target_lufs_slider,
                     generate_transcript_checkbox, whisper_model_dropdown,
+                    intro_voice_overlap_checkbox, voice_outro_overlap_checkbox,
                     voice_order_table],
             outputs=[status_output, audio_output,
                      denoised_audio_output, transcript_output, realtime_console_output, progress_bar, bottom_console],
@@ -3025,6 +3052,19 @@ def create_ui():
         denoise_method_dropdown.change(
             fn=lambda method: config_manager.set_denoise_method(method),
             inputs=[denoise_method_dropdown],
+            outputs=[]
+        )
+
+        # Save overlap settings when changed
+        intro_voice_overlap_checkbox.change(
+            fn=lambda enabled: config_manager.set_intro_voice_overlap(enabled),
+            inputs=[intro_voice_overlap_checkbox],
+            outputs=[]
+        )
+
+        voice_outro_overlap_checkbox.change(
+            fn=lambda enabled: config_manager.set_voice_outro_overlap(enabled),
+            inputs=[voice_outro_overlap_checkbox],
             outputs=[]
         )
 

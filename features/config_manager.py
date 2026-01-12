@@ -59,6 +59,9 @@ class ConfigManager:
             "target_lufs": -16.0,  # Target LUFS level
             "generate_transcript": False,  # Whisper transcription
             "whisper_model": "base",  # Whisper model size
+            # Overlap settings
+            "intro_voice_overlap": True,  # Enable 1-second overlap between intro and voice
+            "voice_outro_overlap": False,  # Enable 1-second overlap between voice and outro
             # Template feature
             "active_template": None  # Currently active template name
         }
@@ -372,6 +375,38 @@ class ConfigManager:
         """
         self.set("whisper_model", model)
 
+    def get_intro_voice_overlap(self) -> bool:
+        """Get intro-voice overlap setting.
+
+        Returns:
+            True if intro-voice overlap is enabled, False otherwise
+        """
+        return self.get("intro_voice_overlap", True)
+
+    def set_intro_voice_overlap(self, enabled: bool) -> None:
+        """Set intro-voice overlap setting.
+
+        Args:
+            enabled: True to enable intro-voice overlap, False to disable
+        """
+        self.set("intro_voice_overlap", enabled)
+
+    def get_voice_outro_overlap(self) -> bool:
+        """Get voice-outro overlap setting.
+
+        Returns:
+            True if voice-outro overlap is enabled, False otherwise
+        """
+        return self.get("voice_outro_overlap", False)
+
+    def set_voice_outro_overlap(self, enabled: bool) -> None:
+        """Set voice-outro overlap setting.
+
+        Args:
+            enabled: True to enable voice-outro overlap, False to disable
+        """
+        self.set("voice_outro_overlap", enabled)
+
     def load_default_audio_files(self) -> None:
         """Load default audio files from dedicated directories.
 
@@ -454,7 +489,9 @@ class ConfigManager:
             "normalize_lufs": self.get_normalize_lufs(),
             "target_lufs": self.get_target_lufs(),
             "generate_transcript": self.get_generate_transcript(),
-            "whisper_model": self.get_whisper_model()
+            "whisper_model": self.get_whisper_model(),
+            "intro_voice_overlap": self.get_intro_voice_overlap(),
+            "voice_outro_overlap": self.get_voice_outro_overlap()
         }
 
     def apply_template_settings(self, settings: Dict[str, Any]) -> None:
@@ -512,3 +549,10 @@ class ConfigManager:
 
         if "whisper_model" in settings:
             self.set_whisper_model(settings["whisper_model"])
+
+        # Overlap settings
+        if "intro_voice_overlap" in settings:
+            self.set_intro_voice_overlap(settings["intro_voice_overlap"])
+
+        if "voice_outro_overlap" in settings:
+            self.set_voice_outro_overlap(settings["voice_outro_overlap"])
