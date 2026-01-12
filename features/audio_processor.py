@@ -119,7 +119,7 @@ class AudioProcessor:
 
         return output_path
 
-    def trim_silence(self, audio: AudioSegment, silence_threshold: int = -40) -> AudioSegment:
+    def trim_silence(self, audio: AudioSegment, silence_threshold: int = -35) -> AudioSegment:
         """Trim silence from the beginning and end of audio.
 
         Args:
@@ -166,6 +166,38 @@ class AudioProcessor:
         # volume_percent of 100 = 0 dB, 50 = -6 dB, 10 = -20 dB
         db_change = 20 * math.log10(volume_percent / 100)
         return audio + db_change
+
+    def fade_out(self, audio: AudioSegment, duration_ms: int) -> AudioSegment:
+        """Apply fade-out effect to audio.
+
+        Args:
+            audio: AudioSegment to process
+            duration_ms: Duration of fade-out in milliseconds
+
+        Returns:
+            AudioSegment with fade-out applied
+        """
+        if duration_ms <= 0 or len(audio) <= 0:
+            return audio
+
+        fade_duration = min(duration_ms, len(audio))
+        return audio.fade_out(fade_duration)
+
+    def fade_in(self, audio: AudioSegment, duration_ms: int) -> AudioSegment:
+        """Apply fade-in effect to audio.
+
+        Args:
+            audio: AudioSegment to process
+            duration_ms: Duration of fade-in in milliseconds
+
+        Returns:
+            AudioSegment with fade-in applied
+        """
+        if duration_ms <= 0 or len(audio) <= 0:
+            return audio
+
+        fade_duration = min(duration_ms, len(audio))
+        return audio.fade_in(fade_duration)
 
     def create_looped_background(
         self,
@@ -459,7 +491,27 @@ class AudioProcessor:
         # Add outro after voice (no overlap to prevent outro being heard during voice)
         if outro:
             log(f"Adding outro: {os.path.basename(outro_file)}")
-            podcast += outro
+            # Apply fade-in to outro (200ms) for smooth transition from voice
+            outro_with_fade = self.fade_in(outro, 200)
+
+            # If we have background music, fade it out in the last 500ms before outro
+            if background_files and background:
+                fade_duration = 500  # 500ms fade-out
+                # Apply fade-out to background in final section
+                if len(voice_with_bg) >= fade_duration:
+                    # The voice+background has already been added to podcast
+                    # So we need to fade out the last 500ms of it
+                    fade_start = len(podcast) - fade_duration
+                    if fade_start >= 0:
+                        podcast_before_fade = podcast[:fade_start]
+                        podcast_fade_section = podcast[fade_start:].fade_out(
+                            fade_duration)
+                        podcast = podcast_before_fade + podcast_fade_section
+                        log(f"Applied {fade_duration}ms fade-out to background music before outro")
+
+            podcast += outro_with_fade
+        else:
+            log("No outro file provided")
 
         # Export final podcast
         log(f"Exporting to: {output_file}")
