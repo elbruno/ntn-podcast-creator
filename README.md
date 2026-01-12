@@ -63,6 +63,7 @@ The application supports three theme modes:
 - **📊 Professional Normalization**: LUFS normalization to broadcast standards
 - **📝 Automatic Transcription**: Generate transcripts in 99+ languages with Whisper
 - **🎛️ Individual Volume Controls**: Fine-tune each background track separately
+- **📋 Template Management**: Save and load complete settings configurations for different podcast types
 - **💾 Settings Management**: Export and import configurations
 - **🎨 Theme Selector**: Choose between light, dark, or system themes
 
