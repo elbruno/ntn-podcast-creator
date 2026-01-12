@@ -85,7 +85,7 @@ class AudioProcessor:
         for i, file_path in enumerate(audio_files, 1):
             if not os.path.exists(file_path):
                 raise ValueError(f"Audio file not found: {file_path}")
-            
+
             try:
                 log(f"Loading file {i}/{len(audio_files)}: {os.path.basename(file_path)}")
                 audio = self.load_audio(file_path)
@@ -110,8 +110,9 @@ class AudioProcessor:
         if output_path is None:
             # Create temporary file
             temp_dir = tempfile.gettempdir()
-            output_path = os.path.join(temp_dir, f"concatenated_{os.getpid()}.mp3")
-        
+            output_path = os.path.join(
+                temp_dir, f"concatenated_{os.getpid()}.mp3")
+
         log(f"Exporting concatenated audio to: {os.path.basename(output_path)}")
         concatenated.export(output_path, format="mp3")
         log("Concatenation complete!")
@@ -469,7 +470,8 @@ class AudioProcessor:
             log(f"Normalizing audio to {target_lufs} LUFS...")
             # Create temporary WAV for normalization
             import tempfile
-            temp_wav = tempfile.NamedTemporaryFile(delete=False, suffix=".wav").name
+            temp_wav = tempfile.NamedTemporaryFile(
+                delete=False, suffix=".wav").name
             podcast.export(temp_wav, format="wav")
 
             # Normalize
@@ -500,7 +502,8 @@ class AudioProcessor:
 
         # Phase 2: Generate transcript if requested
         if generate_transcript:
-            log(f"Generating transcript using Whisper ({whisper_model} model)...")
+            log(
+                f"Generating transcript using Whisper ({whisper_model} model)...")
             # Transcribe the final podcast audio (with intro + content + outro)
             transcript_file = transcribe_audio(
                 output_file,
