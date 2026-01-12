@@ -945,7 +945,7 @@ def get_progress_html(pct, msg):
     """
 
 
-def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, trim_silence, denoise_audio, denoise_method, enhance_audio, normalize_lufs, target_lufs, generate_transcript, whisper_model, voice_order_table=None, progress=gr.Progress()):
+def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, trim_silence, denoise_audio, denoise_method, enhance_audio, normalize_lufs, target_lufs, generate_transcript, whisper_model, intro_voice_overlap, voice_outro_overlap, voice_order_table=None, progress=gr.Progress()):
     """Handle podcast creation request with progress tracking.
 
     Args:
@@ -960,6 +960,9 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
         target_lufs: Target LUFS level for normalization
         generate_transcript: Whether to generate transcript
         whisper_model: Whisper model to use for transcription
+        intro_voice_overlap: Whether to apply intro-voice overlap
+        voice_outro_overlap: Whether to apply voice-outro overlap
+        voice_order_table: Table for custom voice file ordering
         progress: Gradio progress tracker
     """
     import threading
@@ -1559,10 +1562,12 @@ def import_settings(settings_file) -> str:
 
         # Overlap settings
         if "intro_voice_overlap" in settings:
-            config_manager.set_intro_voice_overlap(settings["intro_voice_overlap"])
+            config_manager.set_intro_voice_overlap(
+                settings["intro_voice_overlap"])
 
         if "voice_outro_overlap" in settings:
-            config_manager.set_voice_outro_overlap(settings["voice_outro_overlap"])
+            config_manager.set_voice_outro_overlap(
+                settings["voice_outro_overlap"])
 
         log_message(
             f"Settings imported successfully from {os.path.basename(file_path)}")
@@ -1588,21 +1593,22 @@ def save_template_handler(template_name: str) -> tuple[str, str]:
         Tuple of (dropdown_choices_json, status_message)
     """
     import json
-    
+
     if not template_name or not template_name.strip():
         return json.dumps([]), "❌ Please enter a template name"
 
     try:
         # Get current settings from config manager
         settings = config_manager.get_template_settings()
-        
+
         # Save template
-        success, message = template_manager.save_template(template_name, settings)
-        
+        success, message = template_manager.save_template(
+            template_name, settings)
+
         if success:
             log_message(f"Template saved: {template_name}")
             config_manager.set_active_template(template_name)
-            
+
             # Return updated template list
             templates = template_manager.list_templates()
             return json.dumps(templates), f"✅ {message}"
@@ -1629,7 +1635,7 @@ def load_template_handler(template_name: str) -> str:
     try:
         # Load template
         settings, message = template_manager.load_template(template_name)
-        
+
         if settings:
             # Apply settings to config manager
             config_manager.apply_template_settings(settings)
@@ -1654,21 +1660,21 @@ def delete_template_handler(template_name: str) -> tuple[str, str]:
         Tuple of (dropdown_choices_json, status_message)
     """
     import json
-    
+
     if not template_name or not template_name.strip():
         return json.dumps([]), "❌ Please select a template to delete"
 
     try:
         # Delete template
         success, message = template_manager.delete_template(template_name)
-        
+
         if success:
             log_message(f"Template deleted: {template_name}")
-            
+
             # Clear active template if it was deleted
             if config_manager.get_active_template() == template_name:
                 config_manager.set_active_template(None)
-            
+
             # Return updated template list
             templates = template_manager.list_templates()
             return json.dumps(templates), f"✅ {message}"
@@ -2304,11 +2310,11 @@ def create_ui():
                             Save and load your podcast settings as templates for quick access.
                             Templates include intro/outro, background music, and processing options.
                             """)
-                            
+
                             # Get available templates
                             available_templates = get_template_choices()
                             active_template = config_manager.get_active_template()
-                            
+
                             with gr.Row():
                                 template_dropdown = gr.Dropdown(
                                     label="Select Template",
@@ -2317,7 +2323,7 @@ def create_ui():
                                     interactive=True,
                                     allow_custom_value=False
                                 )
-                            
+
                             with gr.Row():
                                 load_template_button = gr.Button(
                                     "📂 Load Template",
@@ -2331,9 +2337,10 @@ def create_ui():
                                     size="sm",
                                     scale=1
                                 )
-                            
-                            gr.Markdown("**Save Current Settings as Template**")
-                            
+
+                            gr.Markdown(
+                                "**Save Current Settings as Template**")
+
                             with gr.Row():
                                 template_name_input = gr.Textbox(
                                     label="Template Name",
@@ -2346,7 +2353,7 @@ def create_ui():
                                     size="sm",
                                     scale=1
                                 )
-                            
+
                             template_status = gr.Textbox(
                                 label="Template Status",
                                 interactive=False,
