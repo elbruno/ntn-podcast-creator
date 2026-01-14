@@ -2798,12 +2798,6 @@ def create_ui():
             outputs=[realtime_console_output]
         )
 
-        create_button_event.then(
-            fn=get_console_log,
-            inputs=[],
-            outputs=[enhance_only_log]
-        )
-
         # AI Denoiser tab handlers
         denoise_only_button_event = denoise_only_button.click(
             fn=denoise_audio_only_handler,
@@ -2836,12 +2830,6 @@ def create_ui():
             outputs=[denoise_only_log]
         )
 
-        refresh_log_event.then(
-            fn=get_console_log,
-            inputs=[],
-            outputs=[enhance_only_log]
-        )
-
         clear_log_event = clear_log_button.click(
             fn=clear_console_log,
             inputs=[],
@@ -2852,12 +2840,6 @@ def create_ui():
             fn=get_console_log,
             inputs=[],
             outputs=[denoise_only_log]
-        )
-
-        clear_log_event.then(
-            fn=get_console_log,
-            inputs=[],
-            outputs=[enhance_only_log]
         )
 
         # Save denoise audio setting when changed
@@ -2901,17 +2883,8 @@ def create_ui():
         )
 
         # Save transcript generation settings
-        generate_transcript_checkbox.change(
-            fn=lambda enabled: config_manager.set_generate_transcript(enabled),
-            inputs=[generate_transcript_checkbox],
-            outputs=[]
-        )
-
-        whisper_model_dropdown.change(
-            fn=lambda model: config_manager.set_whisper_model(model),
-            inputs=[whisper_model_dropdown],
-            outputs=[]
-        )
+        # Note: Transcription UI components not currently defined in the interface
+        # TODO: Add generate_transcript_checkbox and whisper_model_dropdown to Processing Options
 
         refresh_rss_button.click(
             fn=refresh_rss_feed_settings,

@@ -120,7 +120,7 @@ class AudioDenoiserProcessor:
         output_file: str,
         log_callback: Optional[Callable[[str], None]] = None
     ) -> bool:
-        """Merge processed audio chunks back into a single file.
+        """Merge processed audio chunks back into a single file with crossfading.
 
         Args:
             chunk_files: List of paths to processed chunk files
@@ -137,16 +137,51 @@ class AudioDenoiserProcessor:
                 print(message)
 
         try:
-            log(f"Merging {len(chunk_files)} chunks...")
+            log(f"Merging {len(chunk_files)} chunks with crossfading...")
 
-            # Load first chunk
-            merged_audio = AudioSegment.from_file(chunk_files[0])
+            # Load all chunks first to validate they're readable
+            loaded_chunks = []
+            for i, chunk_file in enumerate(chunk_files):
+                try:
+                    chunk = AudioSegment.from_file(chunk_file)
+                    loaded_chunks.append(chunk)
+                except Exception as e:
+                    log(f"Error loading chunk {i + 1}: {e}")
+                    raise Exception(f"Failed to load chunk {i + 1}")
 
-            # Append remaining chunks
-            for i, chunk_file in enumerate(chunk_files[1:], 1):
-                chunk = AudioSegment.from_file(chunk_file)
-                merged_audio += chunk
-                log(f"Merged chunk {i + 1}/{len(chunk_files)}")
+            # Start with first chunk
+            merged_audio = loaded_chunks[0]
+
+            # Crossfade duration at chunk boundaries (50ms for smooth transitions)
+            crossfade_duration_ms = 50
+
+            # Append remaining chunks with crossfading
+            for i in range(1, len(loaded_chunks)):
+                chunk = loaded_chunks[i]
+
+                # Apply crossfade at chunk boundary to smooth the transition
+                # This prevents clicks and artifacts from denoising boundary effects
+                if len(merged_audio) >= crossfade_duration_ms and len(chunk) >= crossfade_duration_ms:
+                    # Get tail of merged audio (last 50ms) and head of new chunk (first 50ms)
+                    merged_tail = merged_audio[-crossfade_duration_ms:]
+                    chunk_head = chunk[:crossfade_duration_ms]
+                    chunk_tail = chunk[crossfade_duration_ms:]
+
+                    # Remove last 50ms from merged audio
+                    merged_audio = merged_audio[:-crossfade_duration_ms]
+
+                    # Apply crossfade: fade-out on merged tail, fade-in on chunk head
+                    crossfaded_section = merged_tail.fade_out(crossfade_duration_ms).overlay(
+                        chunk_head.fade_in(crossfade_duration_ms)
+                    )
+
+                    # Combine: merged + crossfaded section + rest of chunk
+                    merged_audio += crossfaded_section + chunk_tail
+                else:
+                    # If chunks are too small for crossfading, just concatenate
+                    merged_audio += chunk
+
+                log(f"Merged chunk {i + 1}/{len(loaded_chunks)}")
 
             # Export merged audio
             merged_audio.export(output_file, format="wav")
@@ -325,28 +360,25 @@ class AudioDenoiserProcessor:
 
                 # Step 4: Cleanup temporary files
                 log("Cleaning up temporary chunk files...")
-                self._cleanup_chunks(chunk_files)
-
-                # Cleanup processed chunks (different from original chunks)
-                for chunk in processed_chunks:
-                    # Don't delete original chunks twice
-                    if chunk != chunk_file and os.path.exists(chunk):
-                        try:
-                            os.remove(chunk)
-                        except Exception as e:
-                            log(
-                                f"Warning: Could not remove processed chunk {chunk}: {e}")
+                # Clean up both original chunks and processed chunks
+                all_temp_chunks = set(chunk_files + processed_chunks)
+                self._cleanup_chunks(list(all_temp_chunks))
 
                 return output_file
             else:
                 log("Failed to merge chunks, falling back to original file")
-                self._cleanup_chunks(chunk_files)
+                # Clean up both original chunks and processed chunks when merge fails
+                all_temp_chunks = set(chunk_files + processed_chunks)
+                self._cleanup_chunks(list(all_temp_chunks))
                 return input_file
 
         except Exception as e:
             log(f"Error during chunked denoising: {e}")
             log("Cleaning up and falling back to original file")
-            self._cleanup_chunks(chunk_files)
+            # Clean up all temporary files on exception
+            all_temp_chunks = set(
+                chunk_files + [pc for pc in processed_chunks if pc])
+            self._cleanup_chunks(list(all_temp_chunks))
             return input_file
 
 
