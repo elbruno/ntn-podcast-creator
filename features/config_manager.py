@@ -53,6 +53,9 @@ class ConfigManager:
             # Audio denoising feature (enabled by default)
             "denoise_audio": True,
             "denoise_method": "audio_denoiser",  # audio_denoiser, spectral, rnnoise
+            # Voice enhancement feature (disabled by default)
+            "enhance_voice": False,
+            "voice_enhancement_preset": "podcast",  # podcast, light, aggressive
             # LUFS normalization
             "normalize_lufs": False,
             "target_lufs": -16.0,  # Target LUFS level
