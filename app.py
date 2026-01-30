@@ -944,7 +944,7 @@ def get_progress_html(pct, msg):
     """
 
 
-def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, trim_silence, denoise_audio, denoise_method, normalize_lufs, target_lufs, intro_voice_overlap, voice_outro_overlap, voice_order_table=None, progress=gr.Progress()):
+def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, trim_silence, denoise_audio, denoise_method, enhance_voice, voice_enhancement_preset, normalize_lufs, target_lufs, intro_voice_overlap, voice_outro_overlap, voice_order_table=None, progress=gr.Progress()):
     """Handle podcast creation request with progress tracking.
 
     Args:
@@ -954,6 +954,8 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
         trim_silence: Whether to trim silence
         denoise_audio: Whether to apply denoising
         denoise_method: Denoising method to use
+        enhance_voice: Whether to apply voice enhancement
+        voice_enhancement_preset: Enhancement preset (podcast, light, aggressive)
         normalize_lufs: Whether to normalize audio levels
         target_lufs: Target LUFS level for normalization
         intro_voice_overlap: Whether to enable intro-voice overlap
@@ -1124,6 +1126,8 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
                 trim_silence=trim_silence,
                 denoise_audio=denoise_audio,
                 denoise_method=denoise_method,
+                enhance_voice_enabled=enhance_voice,
+                voice_enhancement_preset=voice_enhancement_preset,
                 normalize_lufs=normalize_lufs,
                 target_lufs=target_lufs,
                 intro_voice_overlap=intro_voice_overlap,
@@ -2104,6 +2108,25 @@ def create_ui():
                                 info="Choose your preferred noise reduction algorithm"
                             )
 
+                            gr.Markdown("### Voice Enhancement")
+
+                            enhance_voice_checkbox = gr.Checkbox(
+                                label="Enable professional voice enhancement",
+                                value=config_manager.get("enhance_voice", False),
+                                info="Apply EQ, compression, and de-essing for clearer voice"
+                            )
+
+                            voice_enhancement_preset_dropdown = gr.Dropdown(
+                                label="Enhancement Preset",
+                                choices=[
+                                    ("Podcast (Balanced)", "podcast"),
+                                    ("Light (Gentle)", "light"),
+                                    ("Aggressive (Strong)", "aggressive")
+                                ],
+                                value=config_manager.get("voice_enhancement_preset", "podcast"),
+                                info="Choose enhancement strength: Light for clean recordings, Aggressive for noisy ones"
+                            )
+
                             gr.Markdown("### Volume Normalization")
 
                             normalize_lufs_checkbox = gr.Checkbox(
@@ -2777,6 +2800,7 @@ def create_ui():
             inputs=[voice_input, output_name_input,
                     delete_voice_checkbox, trim_silence_checkbox,
                     denoise_audio_checkbox, denoise_method_dropdown,
+                    enhance_voice_checkbox, voice_enhancement_preset_dropdown,
                     normalize_lufs_checkbox, target_lufs_slider,
                     intro_voice_overlap_checkbox, voice_outro_overlap_checkbox,
                     voice_order_table],
@@ -2853,6 +2877,19 @@ def create_ui():
         denoise_method_dropdown.change(
             fn=lambda method: config_manager.set_denoise_method(method),
             inputs=[denoise_method_dropdown],
+            outputs=[]
+        )
+
+        # Save voice enhancement settings when changed
+        enhance_voice_checkbox.change(
+            fn=lambda enabled: config_manager.set("enhance_voice", enabled),
+            inputs=[enhance_voice_checkbox],
+            outputs=[]
+        )
+
+        voice_enhancement_preset_dropdown.change(
+            fn=lambda preset: config_manager.set("voice_enhancement_preset", preset),
+            inputs=[voice_enhancement_preset_dropdown],
             outputs=[]
         )
 

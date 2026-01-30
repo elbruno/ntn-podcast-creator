@@ -10,6 +10,7 @@ from pydub.silence import detect_leading_silence
 from .audio_denoiser_processor import denoise_audio_file
 from .noise_reducer import reduce_noise
 from .lufs_normalizer import normalize_audio_lufs
+from .voice_enhancer import enhance_voice
 
 
 class AudioProcessor:
@@ -307,6 +308,8 @@ class AudioProcessor:
         trim_silence: bool = False,
         denoise_audio: bool = True,
         denoise_method: str = "audio_denoiser",
+        enhance_voice_enabled: bool = False,
+        voice_enhancement_preset: str = "podcast",
         normalize_lufs: bool = False,
         target_lufs: float = -16.0,
         intro_voice_overlap: bool = True,
@@ -326,6 +329,8 @@ class AudioProcessor:
             trim_silence: Whether to trim silence from voice recording
             denoise_audio: Whether to denoise audio (optional)
             denoise_method: Denoising method ("audio_denoiser", "spectral", "rnnoise")
+            enhance_voice_enabled: Whether to apply voice enhancement (optional)
+            voice_enhancement_preset: Enhancement preset ("podcast", "light", "aggressive")
             normalize_lufs: Whether to normalize to target LUFS level
             target_lufs: Target LUFS level (-14 or -16 recommended)
             intro_voice_overlap: Whether to enable 1-second overlap between intro and voice
@@ -389,6 +394,22 @@ class AudioProcessor:
                 log(f"Using denoised audio: {os.path.basename(denoised_file)}")
             else:
                 log("Using original audio (denoising not available or failed)")
+
+        # Voice enhancement (applied after denoising)
+        if enhance_voice_enabled:
+            log(f"Applying voice enhancement (preset: {voice_enhancement_preset})...")
+            enhanced_file = enhance_voice(
+                voice_file_to_process,
+                output_file=None,
+                preset=voice_enhancement_preset,
+                log_callback=log
+            )
+            
+            if enhanced_file and enhanced_file != voice_file_to_process:
+                voice_file_to_process = enhanced_file
+                log(f"Using enhanced audio: {os.path.basename(enhanced_file)}")
+            else:
+                log("Voice enhancement failed or not available, continuing with current audio")
 
         # Load main voice recording
         log(f"Loading main voice: {os.path.basename(voice_file_to_process)}")

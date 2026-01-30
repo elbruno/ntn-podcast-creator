@@ -1,75 +1,28 @@
-# NTN Podcast Creator
+# NTN Podcast Creator 🎙️
 
-A powerful local Python application for creating professional podcast episodes. Combine your voice recordings with intro/outro audio and background music, with advanced AI-powered audio processing capabilities.
+**Transform your voice recordings into professional podcasts in minutes!**
 
-## 🎯 Goal
+A simple, powerful desktop app that combines your recordings with intro/outro music and applies professional audio processing—all with just a few clicks.
 
-NTN Podcast Creator simplifies podcast production by providing an intuitive web interface for:
-- **Multi-file audio upload**: Automatically concatenate multiple recordings into one episode
-- Mixing voice recordings with intro, outro, and background music
-- AI-powered noise reduction and audio enhancement
-- Professional loudness normalization (LUFS)
-- Automatic transcription with OpenAI Whisper
-- Individual volume controls for each audio track
+---
 
-This tool was created to support the **"No Tiene Nombre"** podcast production workflow, making it easy to produce high-quality episodes efficiently.
+## 🎯 What Does It Do?
 
-## 🎙️ Created for "No Tiene Nombre" Podcast
+**In short**: Upload your voice recording, click "Create Podcast", and get a professional-quality podcast episode with intro music, outro music, noise reduction, and perfect volume levels.
 
-This application is built to support the production needs of the **No Tiene Nombre** podcast.
+**Perfect for**:
+- 🎙️ Podcasters who want studio-quality sound without expensive equipment
+- 🎬 Content creators making audio content
+- 📻 Radio shows and interviews
+- 🎓 Educational content and audiobooks
 
-**🌐 Visit the podcast:** [https://notienenombre.com](https://notienenombre.com/)
+Created for the **[No Tiene Nombre](https://notienenombre.com/)** podcast production workflow.
 
-While designed with this podcast in mind, the tool is flexible and can be used by anyone looking to create professional podcasts.
+---
 
-## 📸 Screenshots
+## ⚡ Quick Start
 
-### Application Demo
-
-![NTN Podcast Creator Demo](docs/images/app-demo.gif)
-
-*Complete podcast creation workflow - from audio upload to final export with transcription*
-
-> **Note:** To generate updated screenshots, run `python scripts/capture_screenshots.py` while the application is running. 
-> See [Screenshot Guidelines](docs/images/SCREENSHOT_GUIDELINES.md) for details.
-
-### Main Features
-
-The application provides an intuitive interface for podcast creation with:
-- Voice recording upload and processing
-- Intro/outro audio integration
-- Background music with individual track controls
-- AI-powered audio denoising
-- Professional LUFS normalization
-- Automatic transcription with Whisper
-
-For detailed screenshots of each feature, see the [User Manual](docs/USER_MANUAL.md).
-
-### Theme Support
-
-The application supports three theme modes:
-- **Light**: Bright interface for daytime use
-- **Dark**: Easy on the eyes for low-light environments  
-- **System**: Automatically matches your system theme
-
-<!-- Theme selector screenshots will be available in docs/images/screenshots/ -->
-
-## ✨ Key Features
-
-- **📁 Multi-File Upload**: Upload and automatically concatenate multiple audio files into one podcast episode
-- **🎨 Intuitive Multi-Tab Interface**: Easy navigation for podcast creation, audio processing, and settings
-- **🎵 Smart Audio Mixing**: Automatically mix intro, outro, and background music with your voice
-- **🤖 AI Audio Processing**: Multiple noise reduction methods and Adobe Enhance integration
-- **📊 Professional Normalization**: LUFS normalization to broadcast standards
-- **📝 Automatic Transcription**: Generate transcripts in 99+ languages with Whisper
-- **🎛️ Individual Volume Controls**: Fine-tune each background track separately
-- **📋 Template Management**: Save and load complete settings configurations for different podcast types
-- **💾 Settings Management**: Export and import configurations
-- **🎨 Theme Selector**: Choose between light, dark, or system themes
-
-## 🚀 Quick Start
-
-### Using Docker (Recommended)
+### Option 1: Docker (Easiest - No Setup!)
 
 ```bash
 git clone https://github.com/elbruno/ntn-podcast-creator.git
@@ -77,72 +30,194 @@ cd ntn-podcast-creator/deployment
 docker-compose up -d
 ```
 
-Access at http://localhost:7860
+Open your browser to **http://localhost:7860** and you're ready!
 
-### Local Installation
+### Option 2: Local Installation
 
-```bash
-git clone https://github.com/elbruno/ntn-podcast-creator.git
-cd ntn-podcast-creator
-pip install -r requirements.txt
-python app.py
+1. **Install Requirements**:
+   ```bash
+   # Install FFmpeg first
+   # Ubuntu/Debian:
+   sudo apt-get install ffmpeg
+   # macOS:
+   brew install ffmpeg
+   # Windows: Download from ffmpeg.org
+   ```
+
+2. **Install & Run**:
+   ```bash
+   git clone https://github.com/elbruno/ntn-podcast-creator.git
+   cd ntn-podcast-creator
+   pip install -r requirements.txt
+   python app.py
+   ```
+
+3. Open **http://localhost:7860**
+
+---
+
+## ✨ Key Features
+
+### 🎵 Audio Production
+- **Multi-File Upload**: Automatically combine multiple recordings
+- **Smart Audio Mixing**: Add intro, outro, and background music
+- **Individual Track Controls**: Adjust volume for each background music track
+
+### 🔊 Professional Audio Quality
+- **AI Noise Reduction**: Remove background noise with 3 different methods
+  - AI Denoiser (Deep learning-based - recommended)
+  - Spectral Gating (Fast and effective)
+  - FFmpeg RNNoise (Neural network denoiser)
+- **Voice Enhancement** ⭐NEW⭐: Professional EQ, compression, and de-essing
+  - **Podcast preset**: Balanced enhancement for clear voice
+  - **Light preset**: Gentle processing for clean recordings
+  - **Aggressive preset**: Strong processing for very noisy environments
+- **LUFS Normalization**: Professional loudness standards for consistent volume
+- **Silence Trimming**: Automatically remove dead air
+
+### 📝 Extras
+- **Auto Transcription**: Generate transcripts in 99+ languages (Whisper AI)
+- **Template Management**: Save and load your favorite settings
+- **Theme Selector**: Light, dark, or system theme
+
+---
+
+## 🎨 How It Works
+
+### Basic Workflow
+
+```
+1. Upload Voice Recording → 2. (Optional) Apply Audio Processing → 3. Click "Create Podcast" → 4. Download Final Episode!
 ```
 
-**Note:** FFmpeg is required. See installation instructions below.
+### Audio Processing Pipeline
+
+Your audio goes through these optional enhancement steps:
+
+```
+Original Recording
+    ↓
+[Noise Reduction] ← Remove background noise (AI, Spectral, or RNNoise)
+    ↓
+[Voice Enhancement] ← NEW! Apply EQ, compression, de-essing
+    ↓
+[Silence Trimming] ← Remove dead air at start/end
+    ↓
+[Audio Mixing] ← Add intro, outro, background music
+    ↓
+[LUFS Normalization] ← Professional loudness standards
+    ↓
+Final Podcast Episode 🎉
+```
+
+**All steps are optional!** Enable only what you need.
+
+---
+
+## 🆕 What's New - Voice Enhancement
+
+We've added **professional voice enhancement** to make your podcasts sound even better:
+
+### What It Does:
+- **High-pass filter**: Removes low-frequency rumble and background noise
+- **EQ enhancement**: Boosts voice clarity and presence (2-5 kHz range)
+- **De-esser**: Reduces harsh "S" and "SH" sounds
+- **Dynamic compression**: Evens out volume levels for consistent listening
+
+### When to Use:
+- ✅ **Podcast preset** (default): Balanced enhancement for most recordings
+- ✅ **Light preset**: For already-clean recordings in quiet environments
+- ✅ **Aggressive preset**: For noisy environments or challenging recordings
+
+### How to Use:
+1. In the "Audio Processing" tab, check **"Enable professional voice enhancement"**
+2. Choose your preset (Podcast recommended)
+3. Create your podcast as normal
+
+**Pro tip**: Use noise reduction first, then voice enhancement for best results!
+
+---
 
 ## 📚 Documentation
 
-Comprehensive documentation is available in the `docs/` folder:
+- **[User Manual](docs/USER_MANUAL.md)** - Complete step-by-step guide with screenshots
+- **[Technical Docs](docs/TECHNICAL_IMPLEMENTATION.md)** - Architecture and API details
+- **[Docker Guide](docs/DOCKER.md)** - Containerized deployment
+- **[Audio Denoising Guide](docs/AUDIO_DENOISING_IMPLEMENTATION.md)** - Deep dive into AI noise reduction
 
-- **[User Manual](docs/USER_MANUAL.md)** - Complete guide with step-by-step instructions and screenshots
-- **[Technical Implementation](docs/TECHNICAL_IMPLEMENTATION.md)** - Architecture, API reference, and technical details
-- **[Docker Deployment Guide](docs/DOCKER.md)** - Run with Docker in minutes (no Python/FFmpeg install needed)
-- **[Docker Publishing Guide](docs/DOCKER_PUBLISH.md)** - Instructions for publishing Docker images
-- **[Audio Denoising Implementation](docs/AUDIO_DENOISING_IMPLEMENTATION.md)** - AI-powered noise reduction guide
-- **[Structure Improvements](docs/STRUCTURE_IMPROVEMENTS.md)** - Project organization and architecture
-- **[Release Notes](docs/RELEASE_NOTES_CHUNKING.md)** - Latest features and enhancements
-- **[Dev Container Guide](.devcontainer/README.md)** - Setup for containerized development
+---
 
-## 📋 Requirements
+## 🛠️ Technology Stack
 
-- Python 3.8 or higher
-- FFmpeg 4.0+ (required for audio processing)
-- Optional: Docker for containerized deployment
+**Built with**:
+- **Python** - Core application
+- **Gradio** - Web interface
+- **FFmpeg** - Professional audio processing (EQ, compression, normalization)
+- **PyTorch** - AI-powered noise reduction
+- **Whisper AI** - Automatic transcription
+- **Docker** - Easy deployment
 
-### Installing FFmpeg
+---
 
-**Ubuntu/Debian:**
-```bash
-sudo apt-get update && sudo apt-get install ffmpeg
-```
+## 💡 Tips for Best Results
 
-**macOS:**
-```bash
-brew install ffmpeg
-```
+1. **Start Simple**: Try creating a podcast without any processing first
+2. **Layer Processing**: Enable features one at a time to hear the difference
+3. **Noise Reduction**: If your recording is noisy, start with AI Denoiser
+4. **Voice Enhancement**: Try the "Podcast" preset—it works great for most recordings
+5. **Save Templates**: Found settings you like? Save them as a template!
 
-**Windows:**
-Download from [FFmpeg website](https://ffmpeg.org/download.html) and add to PATH.
+---
 
 ## 🧪 Testing
 
-Run the comprehensive unit test suite:
+Run tests to verify everything works:
 
 ```bash
 python -m unittest tests.test_units -v
 ```
 
-All tests cover ConfigManager, AudioProcessor, and app helper functions.
+---
 
 ## 👨‍💻 Created By
 
 **Bruno Capuano**  
 🔗 [https://aka.ms/elbruno](https://aka.ms/elbruno)
 
-**Podcast: No Tiene Nombre**  
+**For: No Tiene Nombre Podcast**  
 🎙️ [https://notienenombre.com](https://notienenombre.com/)
+
+---
 
 ## 📄 License
 
-MIT License - see [LICENSE](LICENSE) file for details
+MIT License - Free to use and modify. See [LICENSE](LICENSE) for details.
+
+---
+
+## 🤝 Contributing
+
+Found a bug? Have a feature idea? Open an issue or submit a pull request!
+
+---
+
+## ❓ FAQ
+
+**Q: Do I need to know anything about audio engineering?**  
+A: Nope! The defaults work great. Just upload and click "Create Podcast".
+
+**Q: Which noise reduction method should I use?**  
+A: Start with "AI Denoiser" (recommended). It's the most advanced.
+
+**Q: What's the difference between noise reduction and voice enhancement?**  
+A: Noise reduction removes unwanted sounds. Voice enhancement makes your voice clearer and more pleasant to listen to. Use both for best results!
+
+**Q: My podcast sounds too quiet/loud. What do I do?**  
+A: Enable "LUFS Normalization" in Audio Processing. It ensures professional loudness levels.
+
+**Q: Can I use my own intro/outro music?**  
+A: Yes! Go to "Audio Files" tab and upload your own audio files.
+
+**Q: Do I need a powerful computer?**  
+A: Not really. AI Denoiser works faster with a GPU but runs fine on CPU. Processing a 20-minute podcast takes about 5-15 minutes on most computers.
 
