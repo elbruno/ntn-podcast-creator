@@ -12,7 +12,7 @@ Added a complete professional audio processing system using FFmpeg filters to im
 
 #### New Files Created
 
-**`features/voice_enhancer.py`** (371 lines)
+**`features/voice_enhancer.py`** (333 lines)
 - `VoiceEnhancer` class for professional audio processing
 - Three enhancement presets: Podcast (balanced), Light (gentle), Aggressive (strong)
 - FFmpeg filter chain integration:
@@ -223,14 +223,14 @@ if enhance_voice_enabled:
 
 | File | Lines Changed | Type | Description |
 |------|---------------|------|-------------|
-| `features/voice_enhancer.py` | +371 | NEW | Voice enhancement implementation |
+| `features/voice_enhancer.py` | +333 | NEW | Voice enhancement implementation |
 | `features/audio_processor.py` | +18 | MODIFIED | Pipeline integration |
 | `features/config_manager.py` | +2 | MODIFIED | Config persistence |
 | `app.py` | +28 | MODIFIED | UI controls & handlers |
 | `README.md` | -149, +334 | REWRITTEN | Simplified for beginners |
-| `docs/VOICE_ENHANCEMENT_IMPLEMENTATION.md` | +396 | NEW | Technical documentation |
-| `test_voice_enhancement.py` | +88 | NEW | Test suite |
-| **Total** | **+1,088 lines** | **4 new, 4 modified** | |
+| `docs/VOICE_ENHANCEMENT_IMPLEMENTATION.md` | +365 | NEW | Technical documentation |
+| `test_voice_enhancement.py` | +96 | NEW | Test suite |
+| **Total** | **+1,027 lines** | **4 new, 4 modified** | |
 
 ## Benefits to Users
 
