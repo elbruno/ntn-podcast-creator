@@ -62,6 +62,9 @@ class ConfigManager:
             # Overlap settings
             "intro_voice_overlap": True,  # Enable 1-second overlap between intro and voice
             "voice_outro_overlap": False,  # Enable 1-second overlap between voice and outro
+            # Whisper transcription feature (disabled by default)
+            "generate_transcript": False,
+            "whisper_model": "base",  # tiny, base, small, medium, large
             # Template feature
             "active_template": None  # Currently active template name
         }
@@ -358,6 +361,38 @@ class ConfigManager:
             enabled: True to enable voice-outro overlap, False to disable
         """
         self.set("voice_outro_overlap", enabled)
+
+    def get_generate_transcript(self) -> bool:
+        """Get transcription generation setting.
+
+        Returns:
+            True if transcription generation is enabled, False otherwise
+        """
+        return self.get("generate_transcript", False)
+
+    def set_generate_transcript(self, enabled: bool) -> None:
+        """Set transcription generation setting.
+
+        Args:
+            enabled: True to enable transcription generation, False to disable
+        """
+        self.set("generate_transcript", enabled)
+
+    def get_whisper_model(self) -> str:
+        """Get Whisper model size setting.
+
+        Returns:
+            Whisper model size ('tiny', 'base', 'small', 'medium', 'large')
+        """
+        return self.get("whisper_model", "base")
+
+    def set_whisper_model(self, model: str) -> None:
+        """Set Whisper model size setting.
+
+        Args:
+            model: Whisper model size ('tiny', 'base', 'small', 'medium', 'large')
+        """
+        self.set("whisper_model", model)
 
     def load_default_audio_files(self) -> None:
         """Load default audio files from dedicated directories.
