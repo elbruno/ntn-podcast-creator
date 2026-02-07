@@ -65,7 +65,7 @@ Added a complete professional audio processing system using FFmpeg filters to im
 - Usage recommendations and best practices
 - Troubleshooting guide
 
-**`test_voice_enhancement.py`** (Test suite)
+**`tests/test_voice_enhancement.py`** (Test suite)
 - Initialization tests
 - FFmpeg availability detection
 - Filter chain generation verification
@@ -229,7 +229,7 @@ if enhance_voice_enabled:
 | `app.py` | +28 | MODIFIED | UI controls & handlers |
 | `README.md` | -149, +334 | REWRITTEN | Simplified for beginners |
 | `docs/VOICE_ENHANCEMENT_IMPLEMENTATION.md` | +365 | NEW | Technical documentation |
-| `test_voice_enhancement.py` | +96 | NEW | Test suite |
+| `tests/test_voice_enhancement.py` | +96 | NEW | Test suite |
 | **Total** | **+1,027 lines** | **4 new, 4 modified** | |
 
 ## Benefits to Users
@@ -291,14 +291,14 @@ Potential improvements identified:
 
 This implementation successfully:
 
-✅ Adds professional voice enhancement using FFmpeg filters  
-✅ Integrates seamlessly with existing audio pipeline  
-✅ Provides three useful presets for different scenarios  
-✅ Maintains graceful error handling  
-✅ Simplifies README for better accessibility  
-✅ Documents FFmpeg usage throughout codebase  
-✅ Creates comprehensive technical documentation  
-✅ Includes automated tests  
+✅ Adds professional voice enhancement using FFmpeg filters
+✅ Integrates seamlessly with existing audio pipeline
+✅ Provides three useful presets for different scenarios
+✅ Maintains graceful error handling
+✅ Simplifies README for better accessibility
+✅ Documents FFmpeg usage throughout codebase
+✅ Creates comprehensive technical documentation
+✅ Includes automated tests
 
 The voice enhancement feature is production-ready and follows all project conventions:
 - Minimal code changes

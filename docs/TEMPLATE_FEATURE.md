@@ -138,7 +138,7 @@ The template management UI is located in the main "🎙️ Podcast Creator" tab,
 ## Testing
 
 ### Unit Tests
-Test script: `test_template_feature.py`
+Test script: `tests/test_template_feature.py`
 
 Tests include:
 - ✅ Save template functionality

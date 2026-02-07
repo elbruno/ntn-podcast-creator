@@ -127,7 +127,7 @@ The app is a Gradio 6.0 web tool that combines voice recordings with intro/outro
 
 #### 20. Remove dead / duplicate code
 - `create_podcast_handler` (non-progress version) is defined but never wired to the UI — remove it
-- Multiple implementation summary markdown files at root level (`IMPLEMENTATION_COMPLETE.md`, `IMPLEMENTATION_COMPLETE_PREVIOUS.md`, `MULTI_FILE_UPLOAD_SUMMARY.md`, `TEMPLATE_IMPLEMENTATION_SUMMARY.md`) clutter the repo — move to `docs/` or remove
+- ✅ COMPLETED: Implementation summary markdown files moved to `docs/` folder (`docs/IMPLEMENTATION_COMPLETE.md`, `docs/IMPLEMENTATION_COMPLETE_PREVIOUS.md`, `docs/MULTI_FILE_UPLOAD_SUMMARY.md`, `docs/TEMPLATE_IMPLEMENTATION_SUMMARY.md`)
 
 #### 21. Add proper error handling per pipeline stage
 - `create_podcast()` lacks try/catch around individual stages — a background file loading failure crashes the whole pipeline
