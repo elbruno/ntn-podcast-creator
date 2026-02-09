@@ -354,11 +354,30 @@ Templates are stored in `core/templates/` as JSON files and include:
 
 ---
 
+## File Organization Policy
+
+**Root Level**: Only the following should exist at root:
+- **Code files**: `app.py` (main application)
+- **Dependencies**: `requirements.txt`
+- **Configuration**: `verify_implementation.sh` (scripts)
+- **Documentation**: `README.md` (project overview only)
+- **Legal**: `LICENSE` (MIT license)
+
+**All other documentation** (implementation reports, guides, summaries) must be in the `docs/` folder.
+
+---
+
 ## File Structure Reference
 
 ```
-app.py                          # Main UI & orchestration (~2400 lines)
-features/
+Root Level (App & Config Only)
+├── app.py                      # Main UI & orchestration (~2400 lines)
+├── requirements.txt            # Python dependencies
+├── README.md                   # Project overview (root only)
+├── LICENSE                     # MIT license
+└── verify_implementation.sh    # Implementation verification script
+
+features/                       # Business logic & audio processors
   ├── audio_processor.py        # Mixing, trim silence, overlap logic
   ├── config_manager.py         # Config persistence & defaults
   ├── template_manager.py       # Template save/load/delete management
@@ -366,13 +385,18 @@ features/
   ├── adobe_audio_enhancer.py   # Playwright-based enhancement
   ├── noise_reducer.py          # Spectral gating
   ├── lufs_normalizer.py        # FFmpeg loudnorm wrapper
-  └── whisper_transcriber.py    # Parallel transcription
-tests/                          # All test files
+  ├── whisper_transcriber.py    # Parallel transcription
+  └── voice_enhancer.py         # Voice enhancement processor
+
+tests/                          # All test files (including test runners)
   ├── test_ui_core.py           # 7 core tests
   ├── test_ui_podcast_creation.py  # Integration tests
   ├── test_template_feature.py  # Template feature tests
-  └── README_TESTS.md           # Testing documentation
-docs/                           # Technical documentation & guides
+  ├── test_voice_enhancement.py # Voice enhancement tests
+  ├── README_TESTS.md           # Testing documentation
+  └── *.py                       # Additional test files
+
+docs/                           # All documentation (non-code files)
   ├── USER_MANUAL.md            # End-user guide with screenshots
   ├── TECHNICAL_IMPLEMENTATION.md  # Architecture & API reference
   ├── TEMPLATE_FEATURE.md       # Template feature documentation
@@ -380,26 +404,41 @@ docs/                           # Technical documentation & guides
   ├── DOCKER.md                 # Docker deployment guide
   ├── DOCKER_PUBLISH.md         # Docker image publishing
   ├── AUDIO_DENOISING_IMPLEMENTATION.md  # AI denoising guide
+  ├── VOICE_ENHANCEMENT_IMPLEMENTATION.md # Voice enhancement guide
   ├── STRUCTURE_IMPROVEMENTS.md # Project organization docs
   ├── RELEASE_NOTES_CHUNKING.md # Latest features & enhancements
+  ├── IMPLEMENTATION_SUMMARY.md # Overall implementation summary
+  ├── README.md                 # Docs folder overview
+  ├── images/                   # Screenshots, diagrams
+  ├── implementation/           # Implementation planning docs
+  ├── plans/                    # Feature planning docs
   └── tasks/                    # Task output & progress documents
-      ├── ERROR_FIX_SUMMARY.md  # Error fixes & implementations
-      ├── FIX_PROGRESS_CONSOLE.md  # Progress bar/console fixes
-      ├── TESTING_REPORT.md     # Comprehensive testing report
-      ├── FIX_COMPLETE_SUMMARY.md  # Completion summaries
-      └── WORK_COMPLETE.md      # Overall work status
-audios/
-  ├── intro_audio/              # Default intro files
-  ├── outro_audio/              # Default outro files
-  ├── background_music/         # Background track library
-  └── test/                      # Test audio files
-outputs/                        # Generated podcasts
-uploads/                        # Temporary uploaded files
-core/
-  ├── config.json               # Persistent config
-  └── templates/                # Saved template configurations
-README.md                       # Project overview (root)
-LICENSE                         # MIT license (root)
+      ├── ERROR_FIX_SUMMARY.md
+      ├── FIX_PROGRESS_CONSOLE.md
+      ├── TESTING_REPORT.md
+      ├── FIX_COMPLETE_SUMMARY.md
+      └── WORK_COMPLETE.md
+
+deployment/                     # Deployment configuration
+  ├── Dockerfile               # Docker image definition
+  └── docker-compose.yml       # Docker Compose configuration
+
+core/                          # Application state & persistence
+  ├── config.json              # Persistent configuration
+  └── templates/               # Saved template configurations
+
+audios/                        # Audio files & libraries
+  ├── intro_audio/             # Default intro files
+  ├── outro_audio/             # Default outro files
+  ├── background_music/        # Background track library
+  └── test/                    # Test audio files for development
+
+outputs/                       # Generated podcast outputs
+uploads/                       # Temporary uploaded files (cleaned on startup)
+
+scripts/                       # Utility scripts
+  ├── setup.sh
+  └── test_docker.sh
 ```
 
 ---

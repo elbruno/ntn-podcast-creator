@@ -944,7 +944,7 @@ def get_progress_html(pct, msg):
     """
 
 
-def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, trim_silence, denoise_audio, denoise_method, enhance_voice, voice_enhancement_preset, normalize_lufs, target_lufs, intro_voice_overlap, voice_outro_overlap, voice_order_table=None, progress=gr.Progress()):
+def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, trim_silence, denoise_audio, denoise_method, enhance_voice, voice_enhancement_preset, normalize_lufs, target_lufs, intro_voice_overlap, voice_outro_overlap, generate_transcript, whisper_model, voice_order_table=None, progress=gr.Progress()):
     """Handle podcast creation request with progress tracking.
 
     Args:
@@ -960,6 +960,8 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
         target_lufs: Target LUFS level for normalization
         intro_voice_overlap: Whether to enable intro-voice overlap
         voice_outro_overlap: Whether to enable voice-outro overlap
+        generate_transcript: Whether to generate transcript
+        whisper_model: Whisper model size to use
         voice_order_table: Table for custom voice file ordering
         progress: Gradio progress tracker
     """
@@ -1060,6 +1062,7 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
     log_message(f"  Normalize LUFS: {normalize_lufs} (target: {target_lufs})")
     log_message(f"  Intro-voice overlap: {intro_voice_overlap}")
     log_message(f"  Voice-outro overlap: {voice_outro_overlap}")
+    log_message(f"  Generate transcript: {generate_transcript} (model: {whisper_model})")
 
     # Create output path
     output_path = os.path.join("outputs", f"{output_name}.mp3")
@@ -1132,6 +1135,8 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
                 target_lufs=target_lufs,
                 intro_voice_overlap=intro_voice_overlap,
                 voice_outro_overlap=voice_outro_overlap,
+                generate_transcript=generate_transcript,
+                whisper_model=whisper_model,
                 log_callback=threaded_log_callback
             )
             result_container['result'] = (
@@ -2144,6 +2149,27 @@ def create_ui():
                                 info="-16 for podcasts (recommended), -14 for louder content"
                             )
 
+                            gr.Markdown("### Transcription")
+
+                            generate_transcript_checkbox = gr.Checkbox(
+                                label="Generate transcript with Whisper AI",
+                                value=config_manager.get_generate_transcript(),
+                                info="Create text transcript from final podcast audio"
+                            )
+
+                            whisper_model_dropdown = gr.Dropdown(
+                                label="Whisper Model",
+                                choices=[
+                                    ("Tiny (Fastest)", "tiny"),
+                                    ("Base (Recommended)", "base"),
+                                    ("Small (Better Quality)", "small"),
+                                    ("Medium (High Quality)", "medium"),
+                                    ("Large (Best Quality)", "large")
+                                ],
+                                value=config_manager.get_whisper_model(),
+                                info="Larger models are more accurate but slower"
+                            )
+
                         with gr.Group(elem_classes=["clean-card"]):
                             create_button = gr.Button(
                                 "🎬 Create Podcast",
@@ -2584,7 +2610,6 @@ def create_ui():
                 - Generated podcasts are saved in the `outputs/` directory
                 - Configure intro, outro, and background music in the **⚙️ Settings** tab
                 - Use the **🤖 AI Denoiser** tab to clean audio files with machine learning
-                - Use the **✨ Adobe Enhance** tab to enhance audio files with Adobe AI
 
                 ---
 
@@ -2803,6 +2828,7 @@ def create_ui():
                     enhance_voice_checkbox, voice_enhancement_preset_dropdown,
                     normalize_lufs_checkbox, target_lufs_slider,
                     intro_voice_overlap_checkbox, voice_outro_overlap_checkbox,
+                    generate_transcript_checkbox, whisper_model_dropdown,
                     voice_order_table],
             outputs=[status_output, audio_output,
                      denoised_audio_output, transcript_output, realtime_console_output, progress_bar, bottom_console],
@@ -2920,8 +2946,17 @@ def create_ui():
         )
 
         # Save transcript generation settings
-        # Note: Transcription UI components not currently defined in the interface
-        # TODO: Add generate_transcript_checkbox and whisper_model_dropdown to Processing Options
+        generate_transcript_checkbox.change(
+            fn=lambda enabled: config_manager.set_generate_transcript(enabled),
+            inputs=[generate_transcript_checkbox],
+            outputs=[]
+        )
+
+        whisper_model_dropdown.change(
+            fn=lambda model: config_manager.set_whisper_model(model),
+            inputs=[whisper_model_dropdown],
+            outputs=[]
+        )
 
         refresh_rss_button.click(
             fn=refresh_rss_feed_settings,

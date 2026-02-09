@@ -314,6 +314,8 @@ class AudioProcessor:
         target_lufs: float = -16.0,
         intro_voice_overlap: bool = True,
         voice_outro_overlap: bool = False,
+        generate_transcript: bool = False,
+        whisper_model: str = "base",
         log_callback: Optional[Callable[[str], None]] = None
     ) -> Tuple[str, Optional[str], Optional[str]]:
         """Create complete podcast with intro, outro, and background music.
@@ -335,10 +337,12 @@ class AudioProcessor:
             target_lufs: Target LUFS level (-14 or -16 recommended)
             intro_voice_overlap: Whether to enable 1-second overlap between intro and voice
             voice_outro_overlap: Whether to enable 1-second overlap between voice and outro
+            generate_transcript: Whether to generate transcript using Whisper (optional)
+            whisper_model: Whisper model size ("tiny", "base", "small", "medium", "large")
             log_callback: Optional callback function for logging
 
         Returns:
-            Tuple of (path to output file, path to denoised audio or None, None)
+            Tuple of (path to output file, path to denoised audio or None, path to transcript or None)
 
         Raises:
             Exception: If processing fails
@@ -571,6 +575,35 @@ class AudioProcessor:
             else:
                 log("LUFS normalization skipped or failed")
 
+        # Phase 3: Transcription (after final export)
+        transcript_path = None
+        if generate_transcript:
+            try:
+                log(f"Generating transcript using Whisper ({whisper_model} model)...")
+                from .whisper_transcriber import WhisperTranscriber
+                
+                transcriber = WhisperTranscriber(model_size=whisper_model)
+                
+                if transcriber.is_available():
+                    result = transcriber.transcribe(
+                        output_file,
+                        log_callback=log
+                    )
+                    
+                    if result and "output_file" in result:
+                        transcript_path = result["output_file"]
+                        log(f"✓ Transcript generated: {os.path.basename(transcript_path)}")
+                        
+                        # Log detected language
+                        if "language" in result:
+                            log(f"Detected language: {result['language']}")
+                    else:
+                        log("Warning: Transcription failed. Continuing without transcript.")
+                else:
+                    log("Warning: Whisper not available. Install openai-whisper to enable transcription.")
+            except Exception as e:
+                log(f"Error during transcription: {e}. Continuing without transcript.")
+
         log("Podcast creation complete!")
 
-        return output_file, denoised_file_path, None
+        return output_file, denoised_file_path, transcript_path

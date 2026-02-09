@@ -252,7 +252,7 @@ Voice enhancement failures do NOT stop podcast creation:
 ```python
 if enhance_voice_enabled:
     enhanced_file = enhance_voice(voice_file, preset=preset, log_callback=log)
-    
+
     if enhanced_file and enhanced_file != voice_file:
         # Use enhanced audio
         voice_file_to_process = enhanced_file
@@ -268,7 +268,7 @@ if enhance_voice_enabled:
 Run the voice enhancement test suite:
 
 ```bash
-python test_voice_enhancement.py
+python tests/test_voice_enhancement.py
 ```
 
 Tests verify:

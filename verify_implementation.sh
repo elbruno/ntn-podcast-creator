@@ -8,10 +8,10 @@ echo ""
 echo "✓ Checking files..."
 files=(
     "features/template_manager.py"
-    "test_template_feature.py"
+    "tests/test_template_feature.py"
     "docs/TEMPLATE_FEATURE.md"
     "docs/TEMPLATE_FEATURE_UI.md"
-    "TEMPLATE_IMPLEMENTATION_SUMMARY.md"
+    "docs/TEMPLATE_IMPLEMENTATION_SUMMARY.md"
 )
 
 all_exist=true
@@ -37,7 +37,7 @@ fi
 # Run tests
 echo ""
 echo "✓ Running tests..."
-if python test_template_feature.py > /tmp/test_output.txt 2>&1; then
+if python tests/test_template_feature.py > /tmp/test_output.txt 2>&1; then
     echo "  ✓ All tests passed"
     grep "ALL TESTS PASSED" /tmp/test_output.txt
 else
