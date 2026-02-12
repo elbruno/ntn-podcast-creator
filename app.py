@@ -1062,7 +1062,8 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
     log_message(f"  Normalize LUFS: {normalize_lufs} (target: {target_lufs})")
     log_message(f"  Intro-voice overlap: {intro_voice_overlap}")
     log_message(f"  Voice-outro overlap: {voice_outro_overlap}")
-    log_message(f"  Generate transcript: {generate_transcript} (model: {whisper_model})")
+    log_message(
+        f"  Generate transcript: {generate_transcript} (model: {whisper_model})")
 
     # Create output path
     output_path = os.path.join("outputs", f"{output_name}.mp3")
@@ -1118,7 +1119,9 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
 
     def run_process():
         try:
-            result_path, denoised_path, transcript_path = audio_processor.create_podcast(
+            # Phase 1: Create podcast WITHOUT transcription initially
+            # This allows audio to be ready immediately
+            result_path, denoised_path, _ = audio_processor.create_podcast(
                 voice_file=voice_path,
                 intro_file=intro_path,
                 outro_file=outro_path,
@@ -1135,12 +1138,33 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
                 target_lufs=target_lufs,
                 intro_voice_overlap=intro_voice_overlap,
                 voice_outro_overlap=voice_outro_overlap,
-                generate_transcript=generate_transcript,
+                generate_transcript=False,  # Defer transcription to separate stage
                 whisper_model=whisper_model,
                 log_callback=threaded_log_callback
             )
-            result_container['result'] = (
-                result_path, denoised_path, transcript_path)
+            result_container['podcast_ready'] = True
+            result_container['podcast_path'] = result_path
+            result_container['denoised_path'] = denoised_path
+
+            # Phase 2: Transcription (deferred, in same thread but tracked separately)
+            transcript_path = None
+            if generate_transcript:
+                result_container['transcription_started'] = True
+                threaded_log_callback(
+                    "🔄 Starting transcription in background...")
+
+                transcript_path = audio_processor.transcribe_podcast_async(
+                    podcast_file=result_path,
+                    whisper_model=whisper_model,
+                    log_callback=threaded_log_callback
+                )
+
+                result_container['transcript_path'] = transcript_path
+                result_container['transcription_complete'] = True
+
+                if transcript_path:
+                    threaded_log_callback("✓ Transcription complete!")
+
         except Exception as e:
             result_container['error'] = str(e)
 
@@ -1148,12 +1172,12 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
     t = threading.Thread(target=run_process)
     t.start()
 
-    # Yield logs while running
+    # ===== STAGE 1: Wait for podcast creation =====
     current_logs = get_console_log()
     current_pct = 0.3
     current_msg = "Processing..."
 
-    while t.is_alive():
+    while t.is_alive() and not result_container.get('podcast_ready', False):
         # Process any new logs
         logs_updated = False
         while not log_queue.empty():
@@ -1171,55 +1195,118 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
 
         time.sleep(0.1)
 
-    # Process any remaining logs
+    # Process any remaining logs from Stage 1
     while not log_queue.empty():
         log_queue.get()
 
     current_logs = get_console_log()
 
-    # Check result
-    if 'error' in result_container:
+    # Check for podcast creation error
+    if 'error' in result_container and not result_container.get('podcast_ready', False):
         error_msg = f"Error creating podcast: {result_container['error']}"
         log_message(error_msg)
         log_message("=" * 50)
         error_console_log = get_console_log()
         yield error_msg, None, None, None, error_console_log, get_progress_html(1.0, "❌ Error"), get_bottom_console_html(error_console_log, visible=True, show_close=True)
-    else:
-        result_path, denoised_path, transcript_path = result_container['result']
+        return
 
-        # Delete voice recordings if requested
-        if delete_voice:
-            # Delete all original voice files
-            for vpath in voice_paths:
-                if vpath and os.path.exists(vpath):
-                    try:
-                        os.remove(vpath)
-                        log_message(
-                            f"Deleted voice recording: {os.path.basename(vpath)}")
-                    except Exception as e:
-                        log_message(
-                            f"Warning: Could not delete voice file {vpath}: {e}")
+    # ===== STAGE 1 COMPLETE: Podcast is ready, start playback =====
+    result_path = result_container.get('podcast_path')
+    denoised_path = result_container.get('denoised_path')
 
-            # Delete concatenated file if it exists and is different from originals
-            if concatenated_file and os.path.exists(concatenated_file):
+    # Delete voice recordings if requested
+    if delete_voice:
+        # Delete all original voice files
+        for vpath in voice_paths:
+            if vpath and os.path.exists(vpath):
                 try:
-                    os.remove(concatenated_file)
+                    os.remove(vpath)
                     log_message(
-                        f"Deleted concatenated file: {os.path.basename(concatenated_file)}")
+                        f"Deleted voice recording: {os.path.basename(vpath)}")
                 except Exception as e:
                     log_message(
-                        f"Warning: Could not delete concatenated file: {e}")
+                        f"Warning: Could not delete voice file {vpath}: {e}")
 
-        log_message(f"✓ Podcast created successfully: {output_name}.mp3")
+        # Delete concatenated file if it exists and is different from originals
+        if concatenated_file and os.path.exists(concatenated_file):
+            try:
+                os.remove(concatenated_file)
+                log_message(
+                    f"Deleted concatenated file: {os.path.basename(concatenated_file)}")
+            except Exception as e:
+                log_message(
+                    f"Warning: Could not delete concatenated file: {e}")
+
+    log_message(f"✅ Podcast audio ready: {output_name}.mp3")
+
+    # If transcription is enabled, show it as "in progress", otherwise mark complete
+    if generate_transcript:
+        log_message(
+            "🔄 Transcription in progress (audio playing in background)...")
+    else:
         log_message("=" * 50)
 
-        # Ensure transcript path is valid for Gradio
-        final_transcript = transcript_path if transcript_path and os.path.exists(
-            transcript_path) else None
+    current_logs = get_console_log()
 
-        # Show the bottom console with close button when complete
-        final_console_log = get_console_log()
-        yield f"✓ Podcast created successfully: {output_name}.mp3", result_path, denoised_path, final_transcript, final_console_log, get_progress_html(1.0, "✅ Complete!"), get_bottom_console_html(final_console_log, visible=True, show_close=True)
+    # Yield Stage 1 result with podcast ready to play, transcription pending
+    if generate_transcript:
+        # Show transcript as "in progress"
+        yield f"✅ Podcast ready to play! Audio: {output_name}.mp3", result_path, denoised_path, None, current_logs, get_progress_html(0.85, "🎧 Playing... 📝 Transcribing..."), get_bottom_console_html(current_logs)
+    else:
+        # Transcription disabled, mark as complete
+        log_message("=" * 50)
+        yield f"✓ Podcast created successfully: {output_name}.mp3", result_path, denoised_path, None, current_logs, get_progress_html(1.0, "✅ Complete!"), get_bottom_console_html(current_logs, visible=True, show_close=True)
+        return
+
+    # ===== STAGE 2: Wait for transcription completion =====
+    log_message("(Polling for transcript completion...)")
+    max_wait_seconds = 300  # 5 minute timeout
+    elapsed_seconds = 0
+    poll_interval = 0.5  # Check every 0.5 seconds
+
+    while t.is_alive() and not result_container.get('transcription_complete', False):
+        # Process any new logs
+        logs_updated = False
+        while not log_queue.empty():
+            msg = log_queue.get()
+            logs_updated = True
+
+        if logs_updated:
+            current_logs = get_console_log()
+            yield "🎧 Playing... 📝 Transcribing...", result_path, denoised_path, None, current_logs, get_progress_html(0.85 + (elapsed_seconds / max_wait_seconds) * 0.14, f"⏱️ Transcribing... ({elapsed_seconds}s)"), get_bottom_console_html(current_logs)
+
+        elapsed_seconds += poll_interval
+
+        # Safety check: abort if timeout exceeded
+        if elapsed_seconds > max_wait_seconds:
+            log_message(
+                f"⚠️  Transcription timeout ({max_wait_seconds}s exceeded). Finalizing without transcript.")
+            log_message(
+                "✓ Podcast created successfully (transcription may continue in background)")
+            log_message("=" * 50)
+            break
+
+        time.sleep(poll_interval)
+
+    # ===== STAGE 2 COMPLETE or TIMED OUT =====
+    final_logs = get_console_log()
+
+    # Check if transcription succeeded
+    transcript_path = result_container.get('transcript_path')
+    if transcript_path and os.path.exists(transcript_path):
+        log_message("✓ Transcription complete! Updating UI...")
+        log_message("=" * 50)
+        final_logs = get_console_log()
+        yield f"✓ Podcast created successfully: {output_name}.mp3", result_path, denoised_path, transcript_path, final_logs, get_progress_html(1.0, "✅ Complete!"), get_bottom_console_html(final_logs, visible=True, show_close=True)
+    else:
+        # Transcription failed or timed out
+        if not result_container.get('transcription_complete', False):
+            log_message("⚠️  Transcription did not complete in time")
+        else:
+            log_message("⚠️  Transcription failed (check console for details)")
+        log_message("=" * 50)
+        final_logs = get_console_log()
+        yield f"✓ Podcast created successfully: {output_name}.mp3 (transcript unavailable)", result_path, denoised_path, None, final_logs, get_progress_html(1.0, "⚠️ Complete (no transcript)"), get_bottom_console_html(final_logs, visible=True, show_close=True)
 
 
 def create_podcast_handler(voice_file, output_name, delete_voice, trim_silence, denoise_audio, denoise_method, normalize_lufs, target_lufs):
@@ -2117,7 +2204,8 @@ def create_ui():
 
                             enhance_voice_checkbox = gr.Checkbox(
                                 label="Enable professional voice enhancement",
-                                value=config_manager.get("enhance_voice", False),
+                                value=config_manager.get(
+                                    "enhance_voice", False),
                                 info="Apply EQ, compression, and de-essing for clearer voice"
                             )
 
@@ -2128,7 +2216,8 @@ def create_ui():
                                     ("Light (Gentle)", "light"),
                                     ("Aggressive (Strong)", "aggressive")
                                 ],
-                                value=config_manager.get("voice_enhancement_preset", "podcast"),
+                                value=config_manager.get(
+                                    "voice_enhancement_preset", "podcast"),
                                 info="Choose enhancement strength: Light for clean recordings, Aggressive for noisy ones"
                             )
 
@@ -2914,7 +3003,8 @@ def create_ui():
         )
 
         voice_enhancement_preset_dropdown.change(
-            fn=lambda preset: config_manager.set("voice_enhancement_preset", preset),
+            fn=lambda preset: config_manager.set(
+                "voice_enhancement_preset", preset),
             inputs=[voice_enhancement_preset_dropdown],
             outputs=[]
         )

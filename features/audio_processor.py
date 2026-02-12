@@ -20,6 +20,71 @@ class AudioProcessor:
         """Initialize audio processor."""
         pass
 
+    def transcribe_podcast_async(
+        self,
+        podcast_file: str,
+        whisper_model: str = "base",
+        log_callback: Optional[Callable[[str], None]] = None
+    ) -> Optional[str]:
+        """Transcribe podcast audio using Whisper (deferred/async version).
+
+        This method is designed to run after the podcast has been created,
+        allowing for independent progress tracking and UI updates.
+
+        Args:
+            podcast_file: Path to the final podcast MP3 file
+            whisper_model: Whisper model size ("tiny", "base", "small", "medium", "large")
+            log_callback: Optional callback function for logging
+
+        Returns:
+            Path to transcript file (.txt) or None if transcription failed
+
+        Raises:
+            FileNotFoundError: If podcast_file doesn't exist
+        """
+        def log(message: str):
+            if log_callback:
+                log_callback(message)
+            else:
+                print(message)
+
+        if not os.path.exists(podcast_file):
+            log(f"Error: Podcast file not found: {podcast_file}")
+            return None
+
+        try:
+            log(
+                f"🔄 Starting transcription using Whisper ({whisper_model} model)...")
+            from .whisper_transcriber import WhisperTranscriber
+
+            transcriber = WhisperTranscriber(model_size=whisper_model)
+
+            if transcriber.is_available():
+                log("Loading Whisper model...")
+                result = transcriber.transcribe(
+                    podcast_file,
+                    log_callback=log
+                )
+
+                if result and "output_file" in result:
+                    transcript_path = result["output_file"]
+                    log(f"✓ Transcript generated: {os.path.basename(transcript_path)}")
+
+                    # Log detected language
+                    if "language" in result:
+                        log(f"📍 Detected language: {result['language']}")
+
+                    return transcript_path
+                else:
+                    log("⚠️  Transcription failed: No output generated")
+                    return None
+            else:
+                log("⚠️  Whisper not available. Install openai-whisper to enable transcription.")
+                return None
+        except Exception as e:
+            log(f"⚠️  Error during transcription: {e}")
+            return None
+
     def load_audio(self, file_path: str) -> AudioSegment:
         """Load audio file.
 
@@ -401,14 +466,15 @@ class AudioProcessor:
 
         # Voice enhancement (applied after denoising)
         if enhance_voice_enabled:
-            log(f"Applying voice enhancement (preset: {voice_enhancement_preset})...")
+            log(
+                f"Applying voice enhancement (preset: {voice_enhancement_preset})...")
             enhanced_file = enhance_voice(
                 voice_file_to_process,
                 output_file=None,
                 preset=voice_enhancement_preset,
                 log_callback=log
             )
-            
+
             if enhanced_file and enhanced_file != voice_file_to_process:
                 voice_file_to_process = enhanced_file
                 log(f"Using enhanced audio: {os.path.basename(enhanced_file)}")
@@ -504,10 +570,11 @@ class AudioProcessor:
                     # Remove last second from current podcast
                     podcast = podcast[:-overlap_ms]
                     # Get the last second of original podcast and first second of outro
-                    voice_tail = voice_with_bg[-overlap_ms:] if intro else podcast[-overlap_ms:]
+                    voice_tail = voice_with_bg[-overlap_ms:
+                                               ] if intro else podcast[-overlap_ms:]
                     outro_head = outro[:overlap_ms]
                     outro_tail = outro[overlap_ms:]
-                    
+
                     # Mix the overlapping parts
                     overlapped_section = voice_tail.overlay(outro_head)
                     podcast += overlapped_section + outro_tail
@@ -518,7 +585,7 @@ class AudioProcessor:
                 # No overlap - apply fade-in to outro for smooth transition
                 log(f"Adding outro without overlap (with fade-in)")
                 outro_with_fade = self.fade_in(outro, 200)
-                
+
                 # If we have background music, fade it out in the last 500ms before outro
                 if background_files and background and not voice_outro_overlap:
                     fade_duration = 500  # 500ms fade-out
@@ -533,7 +600,7 @@ class AudioProcessor:
                                 fade_duration)
                             podcast = podcast_before_fade + podcast_fade_section
                             log(f"Applied {fade_duration}ms fade-out to background music before outro")
-                
+
                 podcast += outro_with_fade
         else:
             log("No outro file provided")
@@ -575,34 +642,14 @@ class AudioProcessor:
             else:
                 log("LUFS normalization skipped or failed")
 
-        # Phase 3: Transcription (after final export)
+        # Phase 3: Transcription (optional, deferred to caller)
+        # Transcription is now handled separately to allow for real-time UI updates
+        # If generate_transcript=True, the caller should invoke transcribe_podcast_async()
+        # in a background context after this method returns
         transcript_path = None
+
         if generate_transcript:
-            try:
-                log(f"Generating transcript using Whisper ({whisper_model} model)...")
-                from .whisper_transcriber import WhisperTranscriber
-                
-                transcriber = WhisperTranscriber(model_size=whisper_model)
-                
-                if transcriber.is_available():
-                    result = transcriber.transcribe(
-                        output_file,
-                        log_callback=log
-                    )
-                    
-                    if result and "output_file" in result:
-                        transcript_path = result["output_file"]
-                        log(f"✓ Transcript generated: {os.path.basename(transcript_path)}")
-                        
-                        # Log detected language
-                        if "language" in result:
-                            log(f"Detected language: {result['language']}")
-                    else:
-                        log("Warning: Transcription failed. Continuing without transcript.")
-                else:
-                    log("Warning: Whisper not available. Install openai-whisper to enable transcription.")
-            except Exception as e:
-                log(f"Error during transcription: {e}. Continuing without transcript.")
+            log("Note: Transcription will be started after podcast export. Check console for updates.")
 
         log("Podcast creation complete!")
 
