@@ -322,13 +322,14 @@ def get_console_log() -> str:
     return "\n".join(console_log) if console_log else "No logs yet"
 
 
-def get_bottom_console_html(console_text: str, visible: bool = True, show_close: bool = False) -> str:
+def get_bottom_console_html(console_text: str, visible: bool = True, show_close: bool = False, download_path: Optional[str] = None) -> str:
     """Generate bottom console HTML.
 
     Args:
         console_text: The console log text to display
         visible: Whether the console should be visible
         show_close: Whether to show the close button
+        download_path: Optional file path for a download link
 
     Returns:
         HTML string for bottom console
@@ -356,6 +357,15 @@ def get_bottom_console_html(console_text: str, visible: bool = True, show_close:
 
     display_style = "block" if visible else "none"
 
+    download_html = ""
+    if download_path and os.path.exists(download_path):
+        download_href = f"file={download_path}"
+        download_html = f"""
+        <div style=\"margin-top: 8px;\">
+            <a href=\"{download_href}\" download style=\"color: #8ab4f8; text-decoration: underline;\">⬇️ Download episode audio</a>
+        </div>
+        """
+
     return f"""
     <div style="position: fixed; bottom: 0; left: 0; right: 0; z-index: 9998; background: #1e1e1e; border-top: 2px solid #333; box-shadow: 0 -2px 4px rgba(0,0,0,0.3); max-height: 200px; overflow-y: auto; display: {display_style} !important; width: 100%;">
         <div style="background: #333; color: white; padding: 8px 20px; font-weight: bold; border-bottom: 1px solid #555; font-size: 14px; display: flex; justify-content: space-between; align-items: center;">
@@ -364,6 +374,7 @@ def get_bottom_console_html(console_text: str, visible: bool = True, show_close:
         </div>
         <div style="font-family: 'Courier New', monospace; background: #1e1e1e; color: #ffffff; padding: 10px 20px; font-size: 12px; line-height: 1.4; white-space: pre-wrap; max-height: 150px; overflow-y: auto;">
 {display_text}
+{download_html}
         </div>
     </div>
     """
@@ -1246,24 +1257,34 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
             current_console = get_console_log()
             yield "🎧 Playing episode audio...", result_path, denoised_path, None, current_console, get_progress_html(0.9, "🎧 Playing episode audio...") + autoplay_script, get_bottom_console_html(current_console)
 
-            log_message("📝 Starting transcription after playback start...")
-            progress(0.95, "📝 Transcribing...")
+            log_message("📝 Starting transcription in background...")
+            progress(0.95, "📝 Transcribing (background)...")
 
-            transcript_path = audio_processor.transcribe_podcast(
-                audio_file=result_path,
-                whisper_model=whisper_model,
-                log_callback=log_message
-            )
+            def run_background_transcription():
+                transcript_path_local = audio_processor.transcribe_podcast(
+                    audio_file=result_path,
+                    whisper_model=whisper_model,
+                    log_callback=log_message
+                )
 
-            final_transcript = transcript_path if transcript_path and os.path.exists(
-                transcript_path) else None
+                if transcript_path_local and os.path.exists(transcript_path_local):
+                    log_message(
+                        f"✓ Background transcript ready: {os.path.basename(transcript_path_local)}")
+                else:
+                    log_message(
+                        "⚠ Background transcription finished without a transcript file.")
+
+            bg_thread = threading.Thread(
+                target=run_background_transcription, daemon=True)
+            bg_thread.start()
+
             final_console_log = get_console_log()
-            yield f"✓ Podcast created successfully: {output_name}.mp3", result_path, denoised_path, final_transcript, final_console_log, get_progress_html(1.0, "✅ Complete!"), get_bottom_console_html(final_console_log, visible=True, show_close=True)
+            yield f"✓ Podcast created successfully: {output_name}.mp3", result_path, denoised_path, None, final_console_log, get_progress_html(1.0, "✅ Complete!"), get_bottom_console_html(final_console_log, visible=True, show_close=True, download_path=result_path)
         else:
             final_transcript = transcript_path if transcript_path and os.path.exists(
                 transcript_path) else None
             final_console_log = get_console_log()
-            yield f"✓ Podcast created successfully: {output_name}.mp3", result_path, denoised_path, final_transcript, final_console_log, get_progress_html(1.0, "✅ Complete!") + autoplay_script, get_bottom_console_html(final_console_log, visible=True, show_close=True)
+            yield f"✓ Podcast created successfully: {output_name}.mp3", result_path, denoised_path, final_transcript, final_console_log, get_progress_html(1.0, "✅ Complete!") + autoplay_script, get_bottom_console_html(final_console_log, visible=True, show_close=True, download_path=result_path)
 
 
 def create_podcast_handler(voice_file, output_name, delete_voice, trim_silence, denoise_audio, denoise_method, normalize_lufs, target_lufs):
