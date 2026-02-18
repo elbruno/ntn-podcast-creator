@@ -944,6 +944,30 @@ def get_progress_html(pct, msg):
     """
 
 
+def get_audio_autoplay_script(audio_elem_id: str) -> str:
+    """Generate a small script to auto-play the audio element when ready."""
+    return f"""
+    <script>
+    (function() {{
+        function attemptPlay() {{
+            const container = document.getElementById("{audio_elem_id}");
+            if (!container) return;
+            const audio = container.querySelector("audio");
+            if (!audio) return;
+            const playPromise = audio.play();
+            if (playPromise && typeof playPromise.catch === "function") {{
+                playPromise.catch(function() {{}});
+            }}
+        }}
+
+        setTimeout(attemptPlay, 100);
+        setTimeout(attemptPlay, 600);
+        setTimeout(attemptPlay, 1200);
+    }})();
+    </script>
+    """
+
+
 def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, trim_silence, denoise_audio, denoise_method, enhance_voice, voice_enhancement_preset, normalize_lufs, target_lufs, intro_voice_overlap, voice_outro_overlap, generate_transcript, whisper_model, voice_order_table=None, progress=gr.Progress()):
     """Handle podcast creation request with progress tracking.
 
@@ -1062,7 +1086,8 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
     log_message(f"  Normalize LUFS: {normalize_lufs} (target: {target_lufs})")
     log_message(f"  Intro-voice overlap: {intro_voice_overlap}")
     log_message(f"  Voice-outro overlap: {voice_outro_overlap}")
-    log_message(f"  Generate transcript: {generate_transcript} (model: {whisper_model})")
+    log_message(
+        f"  Generate transcript: {generate_transcript} (model: {whisper_model})")
 
     # Create output path
     output_path = os.path.join("outputs", f"{output_name}.mp3")
@@ -1137,6 +1162,7 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
                 voice_outro_overlap=voice_outro_overlap,
                 generate_transcript=generate_transcript,
                 whisper_model=whisper_model,
+                defer_transcription=True,
                 log_callback=threaded_log_callback
             )
             result_container['result'] = (
@@ -1213,13 +1239,31 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
         log_message(f"✓ Podcast created successfully: {output_name}.mp3")
         log_message("=" * 50)
 
-        # Ensure transcript path is valid for Gradio
-        final_transcript = transcript_path if transcript_path and os.path.exists(
-            transcript_path) else None
+        autoplay_script = get_audio_autoplay_script("podcast-audio-player")
 
-        # Show the bottom console with close button when complete
-        final_console_log = get_console_log()
-        yield f"✓ Podcast created successfully: {output_name}.mp3", result_path, denoised_path, final_transcript, final_console_log, get_progress_html(1.0, "✅ Complete!"), get_bottom_console_html(final_console_log, visible=True, show_close=True)
+        if generate_transcript:
+            log_message("🎧 Episode audio ready. Auto-playing in browser...")
+            current_console = get_console_log()
+            yield "🎧 Playing episode audio...", result_path, denoised_path, None, current_console, get_progress_html(0.9, "🎧 Playing episode audio...") + autoplay_script, get_bottom_console_html(current_console)
+
+            log_message("📝 Starting transcription after playback start...")
+            progress(0.95, "📝 Transcribing...")
+
+            transcript_path = audio_processor.transcribe_podcast(
+                audio_file=result_path,
+                whisper_model=whisper_model,
+                log_callback=log_message
+            )
+
+            final_transcript = transcript_path if transcript_path and os.path.exists(
+                transcript_path) else None
+            final_console_log = get_console_log()
+            yield f"✓ Podcast created successfully: {output_name}.mp3", result_path, denoised_path, final_transcript, final_console_log, get_progress_html(1.0, "✅ Complete!"), get_bottom_console_html(final_console_log, visible=True, show_close=True)
+        else:
+            final_transcript = transcript_path if transcript_path and os.path.exists(
+                transcript_path) else None
+            final_console_log = get_console_log()
+            yield f"✓ Podcast created successfully: {output_name}.mp3", result_path, denoised_path, final_transcript, final_console_log, get_progress_html(1.0, "✅ Complete!") + autoplay_script, get_bottom_console_html(final_console_log, visible=True, show_close=True)
 
 
 def create_podcast_handler(voice_file, output_name, delete_voice, trim_silence, denoise_audio, denoise_method, normalize_lufs, target_lufs):
@@ -2117,7 +2161,8 @@ def create_ui():
 
                             enhance_voice_checkbox = gr.Checkbox(
                                 label="Enable professional voice enhancement",
-                                value=config_manager.get("enhance_voice", False),
+                                value=config_manager.get(
+                                    "enhance_voice", False),
                                 info="Apply EQ, compression, and de-essing for clearer voice"
                             )
 
@@ -2128,7 +2173,8 @@ def create_ui():
                                     ("Light (Gentle)", "light"),
                                     ("Aggressive (Strong)", "aggressive")
                                 ],
-                                value=config_manager.get("voice_enhancement_preset", "podcast"),
+                                value=config_manager.get(
+                                    "voice_enhancement_preset", "podcast"),
                                 info="Choose enhancement strength: Light for clean recordings, Aggressive for noisy ones"
                             )
 
@@ -2198,7 +2244,8 @@ def create_ui():
                             audio_output = gr.Audio(
                                 label="🎧 Your Podcast",
                                 type="filepath",
-                                autoplay=True
+                                autoplay=True,
+                                elem_id="podcast-audio-player"
                             )
 
                             with gr.Row():
@@ -2914,7 +2961,8 @@ def create_ui():
         )
 
         voice_enhancement_preset_dropdown.change(
-            fn=lambda preset: config_manager.set("voice_enhancement_preset", preset),
+            fn=lambda preset: config_manager.set(
+                "voice_enhancement_preset", preset),
             inputs=[voice_enhancement_preset_dropdown],
             outputs=[]
         )
