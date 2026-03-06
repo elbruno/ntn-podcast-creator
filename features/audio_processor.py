@@ -302,6 +302,7 @@ class AudioProcessor:
         intro_file: Optional[str] = None,
         outro_file: Optional[str] = None,
         background_files: Optional[List[str]] = None,
+        background_segments: Optional[List[Tuple[int, int]]] = None,
         background_volume: int = 10,
         track_volumes: Optional[dict] = None,
         output_file: str = "output.mp3",
@@ -326,6 +327,9 @@ class AudioProcessor:
             intro_file: Path to intro audio (optional)
             outro_file: Path to outro audio (optional)
             background_files: List of background music files (optional)
+            background_segments: Optional list of (start_ms, end_ms) ranges where
+                background music should be applied on the voice track. If None,
+                background applies to the full voice section.
             background_volume: Default volume percentage for background (0-100)
             track_volumes: Optional dict mapping track paths to individual volumes
             output_file: Path for output file
@@ -449,21 +453,58 @@ class AudioProcessor:
         # Add main voice with background music
         log("Adding main voice recording")
         voice_with_bg = voice
+        background_applied = False
 
         # Add background music only to voice section
         if background_files:
-            log(
-                f"Creating background music for voice (volume: {background_volume}%)")
-            background = self.create_looped_background(
-                background_files,
-                len(voice),
-                background_volume,
-                track_volumes=track_volumes,
-                log_callback=log
-            )
-            if background:
-                log("Mixing background music with voice recording")
-                voice_with_bg = self.mix_audio(voice, background)
+            if background_segments is not None:
+                # Apply background only on selected voice sub-segments
+                valid_segments = []
+                voice_len = len(voice)
+                for start_ms, end_ms in background_segments:
+                    if start_ms is None or end_ms is None:
+                        continue
+                    start = max(0, int(start_ms))
+                    end = min(voice_len, int(end_ms))
+                    if end > start:
+                        valid_segments.append((start, end))
+
+                if valid_segments:
+                    log(
+                        f"Creating selective background music for {len(valid_segments)} voice segment(s) (volume: {background_volume}%)")
+                    for seg_start, seg_end in valid_segments:
+                        segment_duration = seg_end - seg_start
+                        segment_background = self.create_looped_background(
+                            background_files,
+                            segment_duration,
+                            background_volume,
+                            track_volumes=track_volumes,
+                            log_callback=log
+                        )
+                        if segment_background:
+                            voice_with_bg = voice_with_bg.overlay(
+                                segment_background, position=seg_start)
+                            background_applied = True
+                    if background_applied:
+                        log("Mixed background music on selected voice segments")
+                    else:
+                        log("No background music segments could be applied")
+                else:
+                    log("No valid background segments provided; skipping background music")
+            else:
+                log(
+                    f"Creating background music for voice (volume: {background_volume}%)")
+                background = self.create_looped_background(
+                    background_files,
+                    len(voice),
+                    background_volume,
+                    track_volumes=track_volumes,
+                    log_callback=log
+                )
+                if background:
+                    log("Mixing background music with voice recording")
+                    voice_with_bg = self.mix_audio(voice, background)
+                    background_applied = True
 
         # Add outro if provided (no background music)
         if outro_file and os.path.exists(outro_file):
@@ -524,7 +565,7 @@ class AudioProcessor:
                 outro_with_fade = self.fade_in(outro, 200)
 
                 # If we have background music, fade it out in the last 500ms before outro
-                if background_files and background and not voice_outro_overlap:
+                if background_applied and not voice_outro_overlap:
                     fade_duration = 500  # 500ms fade-out
                     # Apply fade-out to background in final section
                     if len(podcast) >= fade_duration:

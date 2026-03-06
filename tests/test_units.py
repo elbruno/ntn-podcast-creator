@@ -246,6 +246,45 @@ class TestAppFunctions(unittest.TestCase):
         log_text = get_console_log()
         self.assertEqual(log_text, "No logs yet")
 
+    def test_build_voice_order_rows_defaults_background_enabled(self):
+        """Uploaded voice rows should default to background enabled."""
+        from app import build_voice_order_rows
+
+        voice_files = [
+            "/tmp/segment_1.mp3",
+            "/tmp/segment_2.mp3"
+        ]
+
+        rows = build_voice_order_rows(voice_files)
+
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0][0], 1)
+        self.assertEqual(rows[0][1], "segment_1.mp3")
+        self.assertTrue(rows[0][2])
+        self.assertTrue(rows[1][2])
+
+    def test_order_voice_segments_respects_background_toggle(self):
+        """Ordering should preserve per-track background toggles from table rows."""
+        from app import order_voice_segments
+
+        voice_files = [
+            "/tmp/voice_a.mp3",
+            "/tmp/voice_b.mp3"
+        ]
+
+        # Move voice_b first and disable background on it
+        order_table = [
+            [1, "voice_b.mp3", False],
+            [2, "voice_a.mp3", True]
+        ]
+
+        ordered_segments = order_voice_segments(voice_files, order_table)
+
+        self.assertEqual(ordered_segments[0][0], "/tmp/voice_b.mp3")
+        self.assertFalse(ordered_segments[0][1])
+        self.assertEqual(ordered_segments[1][0], "/tmp/voice_a.mp3")
+        self.assertTrue(ordered_segments[1][1])
+
 
 if __name__ == '__main__':
     unittest.main()

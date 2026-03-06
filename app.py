@@ -84,7 +84,8 @@ def get_audio_duration_seconds(file_path: str) -> float:
 def generate_timeline_chart(voice_file, intro_file: Optional[str],
                             outro_file: Optional[str], has_background: bool,
                             background_tracks: Optional[List[str]] = None,
-                            track_volumes: Optional[dict] = None) -> str:
+                            track_volumes: Optional[dict] = None,
+                            voice_background_flags: Optional[List[bool]] = None) -> str:
     """Generate a visual timeline chart showing how audio segments are organized.
 
     Args:
@@ -94,6 +95,8 @@ def generate_timeline_chart(voice_file, intro_file: Optional[str],
         has_background: Whether background music will be applied
         background_tracks: List of background track paths
         track_volumes: Dictionary mapping track paths to volumes
+        voice_background_flags: Per-voice-file booleans indicating whether
+            background should be applied on each uploaded voice track
 
     Returns:
         HTML string with timeline visualization
@@ -103,6 +106,16 @@ def generate_timeline_chart(voice_file, intro_file: Optional[str],
 
     # Handle multiple voice files
     voice_files = voice_file if isinstance(voice_file, list) else [voice_file]
+
+    # Normalize per-file background flags (default True for all files)
+    if voice_background_flags and isinstance(voice_background_flags, list):
+        normalized_bg_flags = [
+            bool(v) for v in voice_background_flags[:len(voice_files)]]
+    else:
+        normalized_bg_flags = []
+    if len(normalized_bg_flags) < len(voice_files):
+        normalized_bg_flags.extend(
+            [True] * (len(voice_files) - len(normalized_bg_flags)))
 
     # Calculate total voice duration from all files
     voice_duration = 0.0
@@ -178,7 +191,10 @@ def generate_timeline_chart(voice_file, intro_file: Optional[str],
             if vf:
                 duration = get_audio_duration_seconds(vf)
                 percent = (duration / total_duration) * 100
-                voice_file_durations.append((vf, duration, percent))
+                use_background = normalized_bg_flags[len(voice_file_durations)] if len(
+                    normalized_bg_flags) > len(voice_file_durations) else True
+                voice_file_durations.append(
+                    (vf, duration, percent, use_background))
 
         # Color palette for voice recordings (varying shades of pink/red)
         voice_colors = [
@@ -189,7 +205,7 @@ def generate_timeline_chart(voice_file, intro_file: Optional[str],
             "linear-gradient(135deg, #ff758c 0%, #ff7eb3 100%)"
         ]
 
-        for idx, (vf_path, duration, percent) in enumerate(voice_file_durations):
+        for idx, (vf_path, duration, percent, use_background) in enumerate(voice_file_durations):
             color = voice_colors[idx % len(voice_colors)]
             filename = os.path.basename(vf_path)
             # Shorten filename if too long
@@ -208,6 +224,7 @@ def generate_timeline_chart(voice_file, intro_file: Optional[str],
                         <div style="text-align: center; padding: 2px; line-height: 1.2;">
                             <div style="font-size: 11px;">{display_name}</div>
                             <div style="font-size: 9px; opacity: 0.9;">{format_time(duration)}</div>
+                            <div style="font-size: 8px; opacity: 0.95;">{'🎵 BG ON' if has_background and use_background else '🎵 BG OFF'}</div>
                         </div>
                         {"<div style='position: absolute; left: -10px; top: 0; bottom: 0; width: 20px; background: rgba(255,255,255,0.3); z-index: 10;'></div>" if show_left_overlap else ""}
                         {"<div style='position: absolute; right: -10px; top: 0; bottom: 0; width: 20px; background: rgba(255,255,255,0.3); z-index: 10;'></div>" if show_right_overlap else ""}
@@ -234,18 +251,34 @@ def generate_timeline_chart(voice_file, intro_file: Optional[str],
 
     # Add background music layer on top of voice section
     if has_background and voice_duration > 0:
-        # Calculate position and width for background music overlay
-        bg_start_percent = intro_percent
-        bg_width_percent = voice_percent
+        if len(voice_files) == 1:
+            # Single voice track: show one overlay only if enabled
+            if normalized_bg_flags[0]:
+                bg_start_percent = intro_percent
+                bg_width_percent = voice_percent
 
-        html += f"""
+                html += f"""
                 <!-- Background music layer -->
                 <div style="position: absolute; left: {bg_start_percent}%; width: {bg_width_percent}%; top: 0; height: 20px;
                      background: repeating-linear-gradient(45deg, #FFD700, #FFD700 10px, #FFA500 10px, #FFA500 20px);
                      border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.2); display: flex; align-items: center; justify-content: center;">
                     <span style="font-size: 10px; font-weight: bold; color: #333; text-shadow: 1px 1px 2px rgba(255,255,255,0.8);">🎵 BACKGROUND MUSIC</span>
                 </div>
-        """
+                """
+        else:
+            # Multiple voice tracks: show overlay only on enabled segments
+            voice_start_percent = intro_percent
+            for _, _, segment_percent, use_background in voice_file_durations:
+                if use_background:
+                    html += f"""
+                <!-- Background music segment layer -->
+                <div style="position: absolute; left: {voice_start_percent}%; width: {segment_percent}%; top: 0; height: 20px;
+                     background: repeating-linear-gradient(45deg, #FFD700, #FFD700 10px, #FFA500 10px, #FFA500 20px);
+                     border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.2); display: flex; align-items: center; justify-content: center;">
+                    <span style="font-size: 9px; font-weight: bold; color: #333; text-shadow: 1px 1px 2px rgba(255,255,255,0.8);">🎵 BG</span>
+                </div>
+                    """
+                voice_start_percent += segment_percent
 
     html += """
             </div>
@@ -267,19 +300,28 @@ def generate_timeline_chart(voice_file, intro_file: Optional[str],
                 html += " (see background music layer above)"
             html += "</div>"
             # List individual files
-            for idx, (vf_path, duration, _) in enumerate(voice_file_durations, start=1):
+            for idx, (vf_path, duration, _, use_background) in enumerate(voice_file_durations, start=1):
                 filename = os.path.basename(vf_path)
-                html += f"<div style='margin-left: 15px; font-size: 12px;'>• {filename} - {format_time(duration)}</div>"
+                bg_status = "🎵 BG ON" if has_background and use_background else "🎵 BG OFF"
+                html += f"<div style='margin-left: 15px; font-size: 12px;'>• {filename} - {format_time(duration)} - {bg_status}</div>"
         else:
             html += "<div style='margin: 3px 0;'>🔴 <strong>VOICE</strong> - Your recording"
-            if has_background:
+            if has_background and normalized_bg_flags[0]:
                 html += " (see background music layer above)"
+            elif has_background and not normalized_bg_flags[0]:
+                html += " (background music disabled for this track)"
             html += "</div>"
 
     if outro_duration > 0:
         html += "<div style='margin: 3px 0;'>🔵 <strong>OUTRO</strong> - Plays last (no background music)</div>"
     if has_background and voice_duration > 0:
-        html += "<div style='margin: 3px 0;'>🎵 <strong>BACKGROUND MUSIC</strong> - Plays only during voice recording</div>"
+        enabled_count = sum(1 for enabled in normalized_bg_flags if enabled)
+        if len(voice_files) > 1:
+            html += f"<div style='margin: 3px 0;'>🎵 <strong>BACKGROUND MUSIC</strong> - Enabled on {enabled_count}/{len(voice_files)} voice track(s)</div>"
+        elif normalized_bg_flags[0]:
+            html += "<div style='margin: 3px 0;'>🎵 <strong>BACKGROUND MUSIC</strong> - Plays during voice recording</div>"
+        else:
+            html += "<div style='margin: 3px 0;'>🎵 <strong>BACKGROUND MUSIC</strong> - Disabled for this voice track</div>"
 
         # Show background tracks with volumes
         if background_tracks and len(background_tracks) > 0:
@@ -399,23 +441,40 @@ def clear_console_log():
     return "Console log cleared"
 
 
-def preview_timeline(voice_file) -> str:
+def resolve_intro_override_preview(intro_override_file) -> Optional[str]:
+    """Resolve a one-time intro override path for preview purposes."""
+    if not intro_override_file:
+        return None
+
+    if isinstance(intro_override_file, str):
+        path = intro_override_file
+    elif hasattr(intro_override_file, 'name'):
+        path = intro_override_file.name
+    else:
+        path = str(intro_override_file)
+
+    return path if os.path.exists(path) else None
+
+
+def preview_timeline(voice_file, intro_override_file=None, voice_background_flags: Optional[List[bool]] = None) -> str:
     """Generate timeline preview.
 
     Args:
         voice_file: Path to voice recording or list of paths
+        intro_override_file: Optional uploaded file to override intro
 
     Returns:
         HTML timeline chart
     """
-    intro_file = config_manager.get_intro()
+    intro_file = resolve_intro_override_preview(
+        intro_override_file) or config_manager.get_intro()
     outro_file = config_manager.get_outro()
     background_tracks = config_manager.get_background_tracks()
     track_volumes = config_manager.get_all_track_volumes()
     has_background = background_tracks is not None and len(
         background_tracks) > 0
 
-    return generate_timeline_chart(voice_file, intro_file, outro_file, has_background, background_tracks, track_volumes)
+    return generate_timeline_chart(voice_file, intro_file, outro_file, has_background, background_tracks, track_volumes, voice_background_flags)
 
 
 def save_uploaded_file(uploaded_file, prefix: str = "file") -> Optional[str]:
@@ -499,19 +558,36 @@ def build_voice_order_rows(voice_files) -> List[List]:
     rows = []
     for idx, vf in enumerate(voice_files, start=1):
         if vf:
-            rows.append([idx, os.path.basename(vf)])
+            rows.append([idx, os.path.basename(vf), True])
     return rows
 
 
-def order_voice_files(voice_files, order_table) -> List[str]:
-    """Apply a user-defined order to voice files using an order table.
+def parse_background_enabled_value(value, default: bool = True) -> bool:
+    """Parse a table value into a boolean for background enabled state."""
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+
+    text = str(value).strip().lower()
+    if text in {"true", "yes", "y", "1", "on"}:
+        return True
+    if text in {"false", "no", "n", "0", "off"}:
+        return False
+    return default
+
+
+def order_voice_segments(voice_files, order_table) -> List[Tuple[str, bool]]:
+    """Apply user-defined order and per-track background toggle.
 
     Args:
         voice_files: Single path or list of paths
         order_table: Data from the order table component (list of rows or DataFrame)
 
     Returns:
-        Ordered list of voice file paths
+        Ordered list of tuples: (voice_file_path, use_background_music)
     """
     if not voice_files:
         return []
@@ -520,7 +596,7 @@ def order_voice_files(voice_files, order_table) -> List[str]:
         voice_files, list) else [voice_files]
 
     if not order_table:
-        return voice_list
+        return [(path, True) for path in voice_list]
 
     try:
         if hasattr(order_table, "values"):
@@ -533,7 +609,7 @@ def order_voice_files(voice_files, order_table) -> List[str]:
         order_rows = order_table
 
     if not isinstance(order_rows, list):
-        return voice_list
+        return [(path, True) for path in voice_list]
 
     basename_to_paths = {}
     for path in voice_list:
@@ -550,10 +626,16 @@ def order_voice_files(voice_files, order_table) -> List[str]:
                 order_val = row.get("Order", row.get("order", row.get(0)))
                 name_val = row.get("File Name", row.get(
                     "file name", row.get("File", row.get(1))))
+                use_background_val = row.get(
+                    "Use Background Music",
+                    row.get("use background music", row.get(
+                        "Background Music", row.get("background music", row.get(2, True))))
+                )
             else:
                 if len(row) < 2:
                     continue
                 order_val, name_val = row[0], row[1]
+                use_background_val = row[2] if len(row) > 2 else True
         except Exception:
             continue
 
@@ -566,21 +648,39 @@ def order_voice_files(voice_files, order_table) -> List[str]:
         if not file_name:
             continue
 
+        use_background = parse_background_enabled_value(
+            use_background_val, default=True)
+
         if file_name in basename_to_paths and basename_to_paths[file_name]:
             path = basename_to_paths[file_name].pop(0)
-            ordered_entries.append((position, path))
+            ordered_entries.append((position, path, use_background))
 
     if not ordered_entries:
-        return voice_list
+        return [(path, True) for path in voice_list]
 
     ordered_entries.sort(key=lambda x: (x[0], voice_list.index(x[1])))
-    ordered_paths = [path for _, path in ordered_entries]
+    ordered_segments = [(path, use_background)
+                        for _, path, use_background in ordered_entries]
 
     for path in voice_list:
-        if path not in ordered_paths:
-            ordered_paths.append(path)
+        if path not in [p for p, _ in ordered_segments]:
+            ordered_segments.append((path, True))
 
-    return ordered_paths
+    return ordered_segments
+
+
+def order_voice_files(voice_files, order_table) -> List[str]:
+    """Apply a user-defined order to voice files using an order table.
+
+    Args:
+        voice_files: Single path or list of paths
+        order_table: Data from the order table component (list of rows or DataFrame)
+
+    Returns:
+        Ordered list of voice file paths
+    """
+    ordered_segments = order_voice_segments(voice_files, order_table)
+    return [path for path, _ in ordered_segments]
 
 
 def update_intro_file(file):
@@ -979,7 +1079,7 @@ def get_audio_autoplay_script(audio_elem_id: str) -> str:
     """
 
 
-def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, trim_silence, denoise_audio, denoise_method, enhance_voice, voice_enhancement_preset, normalize_lufs, target_lufs, intro_voice_overlap, voice_outro_overlap, generate_transcript, whisper_model, voice_order_table=None, progress=gr.Progress()):
+def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, trim_silence, denoise_audio, denoise_method, enhance_voice, voice_enhancement_preset, normalize_lufs, target_lufs, intro_voice_overlap, voice_outro_overlap, generate_transcript, whisper_model, voice_order_table=None, intro_override_file=None, progress=gr.Progress()):
     """Handle podcast creation request with progress tracking.
 
     Args:
@@ -1041,13 +1141,36 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
         yield "❌ Error: Could not save voice file(s)", None, None, None, current_console, get_progress_html(0.1, "❌ Error"), get_bottom_console_html(current_console, show_close=True)
         return
 
-    # Apply custom ordering if provided
-    ordered_voice_paths = order_voice_files(voice_paths, voice_order_table)
+    # Apply custom ordering/background toggles if provided
+    ordered_voice_segments = order_voice_segments(
+        voice_paths, voice_order_table)
+    voice_background_flags = [use_bg for _, use_bg in ordered_voice_segments]
+    ordered_voice_paths = [path for path, _ in ordered_voice_segments]
+
     if ordered_voice_paths:
         if ordered_voice_paths != voice_paths:
             log_message("🗂️ Applied custom voice order: " +
                         " → ".join([os.path.basename(p) for p in ordered_voice_paths]))
         voice_paths = ordered_voice_paths
+
+    disabled_bg_tracks = sum(
+        1 for enabled in voice_background_flags if not enabled)
+    if disabled_bg_tracks > 0:
+        log_message(
+            f"🎵 Background disabled on {disabled_bg_tracks}/{len(voice_background_flags)} uploaded voice track(s)")
+
+    # Build optional background segments for selective background mixing
+    background_segments = []
+    segment_start_ms = 0
+    for path, use_bg in zip(voice_paths, voice_background_flags):
+        duration_ms = int(round(get_audio_duration_seconds(path) * 1000))
+        segment_end_ms = segment_start_ms + duration_ms
+        if use_bg and duration_ms > 0:
+            background_segments.append((segment_start_ms, segment_end_ms))
+        segment_start_ms = segment_end_ms
+
+    selective_background_segments = background_segments if len(
+        voice_paths) > 1 else None
 
     # Concatenate files if multiple files provided
     voice_path = voice_paths[0]  # Default to first file
@@ -1080,14 +1203,26 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
     yield "Loading configuration...", None, None, None, current_console, get_progress_html(0.2, "Loading configuration..."), get_bottom_console_html(current_console)
 
     # Get configuration
-    intro_path = config_manager.get_intro()
+    intro_override_path = None
+    if intro_override_file:
+        intro_override_path = save_uploaded_file(
+            intro_override_file, "intro_override")
+        if not intro_override_path:
+            log_message(
+                "⚠️ One-time intro override failed to save. Falling back to default intro.")
+
+    intro_path = intro_override_path or config_manager.get_intro()
     outro_path = config_manager.get_outro()
     background_tracks = config_manager.get_background_tracks()
     volume = config_manager.get_volume()
     track_volumes = config_manager.get_all_track_volumes()
 
     log_message(f"Configuration loaded:")
-    log_message(f"  Intro: {intro_path if intro_path else 'None'}")
+    if intro_override_path:
+        log_message(
+            f"  Intro: {intro_path if intro_path else 'None'} (one-time override)")
+    else:
+        log_message(f"  Intro: {intro_path if intro_path else 'None'}")
     log_message(f"  Outro: {outro_path if outro_path else 'None'}")
     log_message(
         f"  Background tracks: {len(background_tracks) if background_tracks else 0}")
@@ -1158,7 +1293,11 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
                 voice_file=voice_path,
                 intro_file=intro_path,
                 outro_file=outro_path,
-                background_files=background_tracks if background_tracks else None,
+                background_files=background_tracks if (
+                    background_tracks and (
+                        len(voice_paths) <= 1 or len(background_segments) > 0)
+                ) else None,
+                background_segments=selective_background_segments,
                 background_volume=volume,
                 track_volumes=track_volumes if track_volumes else None,
                 output_file=output_path,
@@ -2110,17 +2249,18 @@ def create_ui():
 
                             voice_order_table = gr.Dataframe(
                                 label="Arrange Voice Recordings Order",
-                                headers=["Order", "File Name"],
-                                datatype=["number", "str"],
+                                headers=["Order", "File Name",
+                                         "Use Background Music"],
+                                datatype=["number", "str", "bool"],
                                 row_count=(0, "dynamic"),
-                                col_count=2,
+                                col_count=3,
                                 type="array",
                                 value=[],
                                 interactive=True
                             )
 
                             gr.Markdown("""
-                            Edit the **Order** column to choose playback order (1 = first). Any files not listed keep their upload order.
+                            Edit the **Order** column to choose playback order (1 = first). Use **Use Background Music** to enable/disable background per uploaded track (default: enabled).
                             """)
 
                             output_name_input = gr.Textbox(
@@ -2128,6 +2268,16 @@ def create_ui():
                                 value=saved_output_name,
                                 placeholder="ntn###",
                                 info=f"Auto-suggested from RSS (last: {rss_last_title or 'unavailable'})"
+                            )
+
+                        with gr.Accordion("🎵 One-time Intro Override", open=False):
+                            gr.Markdown("""
+                            Upload a custom intro audio file for this podcast only. This will not change your saved intro settings.
+                            """)
+
+                            intro_override_input = gr.Audio(
+                                label="Custom Intro Audio (Optional)",
+                                type="filepath"
                             )
 
                         with gr.Accordion("⚙️ Processing Options", open=False):
@@ -2865,26 +3015,43 @@ def create_ui():
         )
 
         # Update timeline when voice file is uploaded
-        def update_on_voice_upload(voice_file):
+        def update_on_voice_upload(voice_file, intro_override_file):
             """Update timeline, suggested filename, and order table when voice is uploaded."""
-            timeline = preview_timeline(voice_file)
+            default_bg_flags = [True] * len(voice_file) if isinstance(
+                voice_file, list) and voice_file else [True] if voice_file else []
+            timeline = preview_timeline(
+                voice_file, intro_override_file, default_bg_flags)
             suggested_name = suggest_podcast_name(voice_file)
             order_rows = build_voice_order_rows(voice_file)
             return timeline, suggested_name, order_rows
 
         voice_input.change(
             fn=update_on_voice_upload,
-            inputs=[voice_input],
+            inputs=[voice_input, intro_override_input],
             outputs=[timeline_html, output_name_input, voice_order_table]
         )
 
-        def update_timeline_with_order(voice_file, order_table):
-            ordered_files = order_voice_files(voice_file, order_table)
-            return preview_timeline(ordered_files)
+        def update_timeline_with_intro_override(voice_file, intro_override_file, order_table):
+            ordered_segments = order_voice_segments(voice_file, order_table)
+            ordered_files = [path for path, _ in ordered_segments]
+            bg_flags = [use_bg for _, use_bg in ordered_segments]
+            return preview_timeline(ordered_files, intro_override_file, bg_flags)
+
+        intro_override_input.change(
+            fn=update_timeline_with_intro_override,
+            inputs=[voice_input, intro_override_input, voice_order_table],
+            outputs=[timeline_html]
+        )
+
+        def update_timeline_with_order(voice_file, order_table, intro_override_file):
+            ordered_segments = order_voice_segments(voice_file, order_table)
+            ordered_files = [path for path, _ in ordered_segments]
+            bg_flags = [use_bg for _, use_bg in ordered_segments]
+            return preview_timeline(ordered_files, intro_override_file, bg_flags)
 
         voice_order_table.change(
             fn=update_timeline_with_order,
-            inputs=[voice_input, voice_order_table],
+            inputs=[voice_input, voice_order_table, intro_override_input],
             outputs=[timeline_html]
         )
 
@@ -2897,7 +3064,7 @@ def create_ui():
                     normalize_lufs_checkbox, target_lufs_slider,
                     intro_voice_overlap_checkbox, voice_outro_overlap_checkbox,
                     generate_transcript_checkbox, whisper_model_dropdown,
-                    voice_order_table],
+                    voice_order_table, intro_override_input],
             outputs=[status_output, audio_output,
                      denoised_audio_output, transcript_output, realtime_console_output, progress_bar, bottom_console],
             show_progress='full'
