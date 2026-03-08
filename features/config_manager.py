@@ -50,6 +50,7 @@ class ConfigManager:
             "track_volumes": {},  # Individual volumes per track
             "last_output_name": "podcast_output",
             "rss_feed_url": DEFAULT_RSS_FEED_URL,
+            "prioritize_recording_filename": True,
             # Audio denoising feature (enabled by default)
             "denoise_audio": True,
             "denoise_method": "audio_denoiser",  # audio_denoiser, spectral, rnnoise
@@ -192,6 +193,22 @@ class ConfigManager:
             Last output filename
         """
         return self.get("last_output_name", "podcast_output")
+
+    def get_prioritize_recording_filename(self) -> bool:
+        """Get default upload ordering preference.
+
+        Returns:
+            True if Recording.m4a should be placed first by default
+        """
+        return self.get("prioritize_recording_filename", True)
+
+    def set_prioritize_recording_filename(self, enabled: bool) -> None:
+        """Set default upload ordering preference.
+
+        Args:
+            enabled: True to prioritize Recording.m4a as the first voice file
+        """
+        self.set("prioritize_recording_filename", enabled)
 
     def update_last_output_name(self, name: str) -> None:
         """Update last used output filename.
@@ -502,7 +519,8 @@ class ConfigManager:
         if "background_tracks" in settings:
             tracks = settings["background_tracks"]
             # Filter to only existing files
-            valid_tracks = [t for t in tracks if os.path.exists(t)] if tracks else []
+            valid_tracks = [t for t in tracks if os.path.exists(t)] if tracks else [
+            ]
             self.update_background_tracks(valid_tracks)
 
         # Volumes

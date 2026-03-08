@@ -547,6 +547,33 @@ def save_uploaded_files(uploaded_files, prefix: str = "voice") -> List[str]:
     return saved_paths
 
 
+def prioritize_recording_files(voice_files, enabled: bool = True) -> List[str]:
+    """Prioritize files named Recording.m4a to appear first.
+
+    Args:
+        voice_files: Single path or list of paths
+        enabled: Whether to apply prioritization
+
+    Returns:
+        Ordered list of voice file paths
+    """
+    if not voice_files:
+        return []
+
+    voice_list = voice_files if isinstance(
+        voice_files, list) else [voice_files]
+    if not enabled:
+        return voice_list
+
+    recording_files = [
+        path for path in voice_list if os.path.basename(path).lower() == "recording.m4a"
+    ]
+    other_files = [
+        path for path in voice_list if os.path.basename(path).lower() != "recording.m4a"
+    ]
+    return recording_files + other_files
+
+
 def build_voice_order_rows(voice_files) -> List[List]:
     """Build default order table rows for uploaded voice files."""
     if not voice_files:
@@ -596,7 +623,11 @@ def order_voice_segments(voice_files, order_table) -> List[Tuple[str, bool]]:
         voice_files, list) else [voice_files]
 
     if not order_table:
-        return [(path, True) for path in voice_list]
+        prioritized_list = prioritize_recording_files(
+            voice_list,
+            config_manager.get_prioritize_recording_filename()
+        )
+        return [(path, True) for path in prioritized_list]
 
     try:
         if hasattr(order_table, "values"):
@@ -1026,6 +1057,11 @@ def get_current_settings():
                 settings.append(f"   • {os.path.basename(track)}")
     settings.append(f"🔊 Background Volume: {volume}%")
     settings.append(f"🔗 RSS Feed: {rss_url}")
+    settings.append(
+        "🎤 Default upload order: "
+        + ("Recording.m4a first" if config_manager.get_prioritize_recording_filename()
+           else "Preserve upload order")
+    )
     if last_title:
         settings.append(f"   Last episode: {last_title}")
     if next_slug:
@@ -1605,6 +1641,7 @@ def export_settings() -> str:
             "track_volumes": config_manager.get_all_track_volumes(),
             "last_output_name": config_manager.get_last_output_name(),
             "rss_feed_url": config_manager.get_rss_feed_url(),
+            "prioritize_recording_filename": config_manager.get_prioritize_recording_filename(),
             "intro_voice_overlap": config_manager.get_intro_voice_overlap(),
             "voice_outro_overlap": config_manager.get_voice_outro_overlap(),
             "export_date": datetime.datetime.now().isoformat()
@@ -1700,6 +1737,10 @@ def import_settings(settings_file) -> str:
 
         if "rss_feed_url" in settings:
             config_manager.set_rss_feed_url(settings["rss_feed_url"])
+
+        if "prioritize_recording_filename" in settings:
+            config_manager.set_prioritize_recording_filename(
+                bool(settings["prioritize_recording_filename"]))
 
         # Overlap settings
         if "intro_voice_overlap" in settings:
@@ -2792,6 +2833,16 @@ def create_ui():
                             type="filepath"
                         )
 
+                        gr.Markdown("---")
+
+                        gr.Markdown("#### Upload Defaults")
+
+                        prioritize_recording_checkbox = gr.Checkbox(
+                            label="Prefer Recording.m4a first",
+                            value=config_manager.get_prioritize_recording_filename(),
+                            info="When multiple voice files are uploaded, place Recording.m4a at the top of the default order table"
+                        )
+
                 gr.Markdown("""
                 ---
                 ### 💡 Settings Tips
@@ -3014,15 +3065,25 @@ def create_ui():
                      bg_track_player_with_volume, bg_track_player]
         )
 
+        prioritize_recording_checkbox.change(
+            fn=lambda enabled: config_manager.set_prioritize_recording_filename(
+                enabled),
+            inputs=[prioritize_recording_checkbox],
+            outputs=[]
+        )
+
         # Update timeline when voice file is uploaded
         def update_on_voice_upload(voice_file, intro_override_file):
             """Update timeline, suggested filename, and order table when voice is uploaded."""
-            default_bg_flags = [True] * len(voice_file) if isinstance(
-                voice_file, list) and voice_file else [True] if voice_file else []
+            prefer_recording_first = config_manager.get_prioritize_recording_filename()
+            ordered_voice_files = prioritize_recording_files(
+                voice_file, prefer_recording_first)
+            default_bg_flags = [True] * len(ordered_voice_files) if isinstance(
+                ordered_voice_files, list) and ordered_voice_files else [True] if ordered_voice_files else []
             timeline = preview_timeline(
-                voice_file, intro_override_file, default_bg_flags)
+                ordered_voice_files, intro_override_file, default_bg_flags)
             suggested_name = suggest_podcast_name(voice_file)
-            order_rows = build_voice_order_rows(voice_file)
+            order_rows = build_voice_order_rows(ordered_voice_files)
             return timeline, suggested_name, order_rows
 
         voice_input.change(
