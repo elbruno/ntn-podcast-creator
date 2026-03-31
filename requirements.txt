@@ -1,4 +1,4 @@
-gradio==6.0.0
+gradio==6.10.0
 pydub==0.25.1
 playwright==1.45.0
 python-dotenv==1.0.1

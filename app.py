@@ -2281,7 +2281,9 @@ def create_ui():
                                 label="🎤 Voice Recording(s) (Required)",
                                 file_count="multiple",
                                 file_types=["audio"],
-                                type="filepath"
+                                type="filepath",
+                                interactive=True,
+                                container=True
                             )
 
                             gr.Markdown("""
