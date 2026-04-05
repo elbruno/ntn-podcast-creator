@@ -87,6 +87,7 @@ NTN Podcast Creator follows a modular, three-tier architecture:
 | **audio-denoiser** | 0.1.2 | AI-powered audio noise removal |
 | **noisereduce** | 3.0.2 | Spectral gating noise reduction |
 | **openai-whisper** | 20240930 | Automatic speech transcription |
+| **faster-whisper** | optional | Optimized Whisper inference with VAD support |
 | **PyTorch** | 2.6.0+ | Deep learning framework |
 | **torchaudio** | 2.6.0+ | Audio processing for PyTorch |
 | **soundfile** | 0.12.1 | Audio file I/O |
@@ -331,6 +332,66 @@ class WhisperTranscriber:
 - Word-level timestamping
 - Offline processing after model download
 - Models cached in `~/.cache/whisper/`
+
+### Long-Form Transcription Strategy (Implemented)
+
+The transcription module now supports a robust long-form pipeline:
+
+1. **Backend selection**
+    - Primary: `faster-whisper` (if installed)
+    - Fallback: `openai-whisper`
+
+2. **Long audio detection**
+    - If duration exceeds threshold (default 120s), switch to long-form mode.
+
+3. **Chunking with overlap**
+    - Split audio into fixed windows (default 30s) with overlap (default 2s).
+    - Export temporary chunk files for deterministic processing.
+
+4. **Per-chunk decoding**
+    - Run transcription with timestamps enabled.
+    - Enable VAD filtering when supported by backend (`faster-whisper`).
+    - Carry rolling prompt context between chunks to improve continuity.
+
+5. **Timestamp-preserving stitch/merge**
+    - Rebase chunk timestamps to absolute timeline.
+    - Deduplicate overlap segments by end-time tolerance.
+    - Clip partial overlap boundaries to avoid repeated text.
+
+6. **Output artifacts**
+    - Plain transcript: `*_transcript.txt`
+    - Timestamped transcript: `*_transcript_timestamped.txt`
+
+### Why this approach
+
+This strategy aligns with official Whisper long-form guidance and widely used community implementations:
+- Sequential long-form decoding with context across windows
+- VAD-assisted processing for robustness/performance on long recordings
+- Batched/chunk-aware processing patterns for throughput and memory stability
+
+### Reference links
+
+- Hugging Face Whisper long-form transcription:
+    - https://huggingface.co/docs/transformers/main/en/model_doc/whisper#long-form-transcription
+- Hugging Face pipeline chunk batching:
+    - https://huggingface.co/docs/transformers/main/en/pipeline_tutorial#chunk-batching
+    - https://huggingface.co/docs/transformers/main/en/main_classes/pipelines#transformers.AutomaticSpeechRecognitionPipeline
+- Whisper paper:
+    - https://cdn.openai.com/papers/whisper.pdf
+- faster-whisper:
+    - https://github.com/SYSTRAN/faster-whisper
+    - https://github.com/SYSTRAN/faster-whisper#vad-filter
+    - https://github.com/SYSTRAN/faster-whisper#batched-transcription
+- WhisperX:
+    - https://github.com/m-bain/whisperX
+- VAD ecosystems:
+    - https://github.com/snakers4/silero-vad
+    - https://github.com/pyannote/pyannote-audio
+- Community long-audio discussions:
+    - https://github.com/openai/whisper/discussions/662
+    - https://github.com/openai/whisper/discussions/684
+- Whisper segmentation/timestamp source:
+    - https://github.com/openai/whisper/blob/main/whisper/transcribe.py
 
 ### 7. audio_denoiser_processor.py - AI Denoising with Chunking
 

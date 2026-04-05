@@ -76,7 +76,11 @@ Open your browser to **http://localhost:7860** and you're ready!
 - **Silence Trimming**: Automatically remove dead air
 
 ### 📝 Extras
-- **Auto Transcription**: Generate transcripts in 99+ languages (Whisper AI)
+- **Auto Transcription (Long-Form Ready)**: Generate transcripts in 99+ languages with a robust pipeline
+    - VAD filtering (when supported by backend)
+    - Chunking + overlap for long audio
+    - Timestamp-preserving segment stitching
+    - Graceful backend fallback (`faster-whisper` → `openai-whisper`)
 - **Template Management**: Save and load your favorite settings
 - **Theme Selector**: Light, dark, or system theme
 
@@ -109,6 +113,29 @@ Original Recording
     ↓
 Final Podcast Episode 🎉
 ```
+
+### Transcript Pipeline (Long Audio)
+
+When transcript generation is enabled, the app uses a long-form strategy inspired by Whisper and community best practices:
+
+```
+Final Podcast Audio
+    ↓
+[Voice Activity Detection] (when backend supports it)
+    ↓
+[Chunking + Overlap] (long recordings)
+    ↓
+[Whisper Decoding + Timestamps]
+    ↓
+[Segment Stitching / Dedup on overlaps]
+    ↓
+Transcript (.txt + timestamped .txt)
+```
+
+Notes:
+- Preferred backend: `faster-whisper` (optimized + VAD support)
+- Fallback backend: `openai-whisper`
+- If a backend is unavailable, podcast creation still continues (transcript is optional)
 
 **All steps are optional!** Enable only what you need.
 
@@ -181,10 +208,10 @@ python -m unittest tests.test_units -v
 
 ## 👨‍💻 Created By
 
-**Bruno Capuano**  
+**Bruno Capuano**
 🔗 [https://aka.ms/elbruno](https://aka.ms/elbruno)
 
-**For: No Tiene Nombre Podcast**  
+**For: No Tiene Nombre Podcast**
 🎙️ [https://notienenombre.com](https://notienenombre.com/)
 
 ---
@@ -203,21 +230,21 @@ Found a bug? Have a feature idea? Open an issue or submit a pull request!
 
 ## ❓ FAQ
 
-**Q: Do I need to know anything about audio engineering?**  
+**Q: Do I need to know anything about audio engineering?**
 A: Nope! The defaults work great. Just upload and click "Create Podcast".
 
-**Q: Which noise reduction method should I use?**  
+**Q: Which noise reduction method should I use?**
 A: Start with "AI Denoiser" (recommended). It's the most advanced.
 
-**Q: What's the difference between noise reduction and voice enhancement?**  
+**Q: What's the difference between noise reduction and voice enhancement?**
 A: Noise reduction removes unwanted sounds. Voice enhancement makes your voice clearer and more pleasant to listen to. Use both for best results!
 
-**Q: My podcast sounds too quiet/loud. What do I do?**  
+**Q: My podcast sounds too quiet/loud. What do I do?**
 A: Enable "LUFS Normalization" in Audio Processing. It ensures professional loudness levels.
 
-**Q: Can I use my own intro/outro music?**  
+**Q: Can I use my own intro/outro music?**
 A: Yes! Go to "Audio Files" tab and upload your own audio files.
 
-**Q: Do I need a powerful computer?**  
+**Q: Do I need a powerful computer?**
 A: Not really. AI Denoiser works faster with a GPU but runs fine on CPU. Processing a 20-minute podcast takes about 5-15 minutes on most computers.
 
