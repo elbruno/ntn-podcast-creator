@@ -576,6 +576,13 @@ def prioritize_recording_files(voice_files, enabled: bool = True) -> List[str]:
     return recording_files + other_files
 
 
+def should_enable_background_for_filename(filename: str) -> bool:
+    """Default background toggle: enabled only for files starting with 'recording'."""
+    if not filename:
+        return False
+    return str(filename).strip().lower().startswith("recording")
+
+
 def build_voice_order_rows(voice_files) -> List[List]:
     """Build default order table rows for uploaded voice files."""
     if not voice_files:
@@ -587,7 +594,9 @@ def build_voice_order_rows(voice_files) -> List[List]:
     rows = []
     for idx, vf in enumerate(voice_files, start=1):
         if vf:
-            rows.append([idx, os.path.basename(vf), True])
+            base = os.path.basename(vf)
+            rows.append(
+                [idx, base, should_enable_background_for_filename(base)])
     return rows
 
 
@@ -620,7 +629,7 @@ def normalize_voice_order_table(order_table, voice_files=None, apply_move_action
 
     if order_table is None or order_table == "":
         if voice_basenames:
-            return [[idx, name, True] for idx, name in enumerate(voice_basenames, start=1)]
+            return [[idx, name, should_enable_background_for_filename(name)] for idx, name in enumerate(voice_basenames, start=1)]
         return []
 
     try:
@@ -638,7 +647,7 @@ def normalize_voice_order_table(order_table, voice_files=None, apply_move_action
 
     if not isinstance(order_rows, list):
         if voice_basenames:
-            return [[idx, name, True] for idx, name in enumerate(voice_basenames, start=1)]
+            return [[idx, name, should_enable_background_for_filename(name)] for idx, name in enumerate(voice_basenames, start=1)]
         return []
 
     parsed_rows = []
@@ -654,7 +663,7 @@ def normalize_voice_order_table(order_table, voice_files=None, apply_move_action
                 use_background_val = row.get(
                     "Use Background Music",
                     row.get("use background music", row.get(
-                        "Background Music", row.get("background music", row.get(2, True))))
+                        "Background Music", row.get("background music", row.get(2, should_enable_background_for_filename(name_val)))))
                 )
                 move_up_val = row.get("⬆️ Up", row.get(
                     "Up", row.get("up", row.get(3, False))))
@@ -664,7 +673,8 @@ def normalize_voice_order_table(order_table, voice_files=None, apply_move_action
                 if len(row) < 2:
                     continue
                 order_val, name_val = row[0], row[1]
-                use_background_val = row[2] if len(row) > 2 else True
+                use_background_val = row[2] if len(
+                    row) > 2 else should_enable_background_for_filename(name_val)
                 move_up_val = row[3] if len(row) > 3 else False
                 move_down_val = row[4] if len(row) > 4 else False
         except Exception:
@@ -718,7 +728,7 @@ def normalize_voice_order_table(order_table, voice_files=None, apply_move_action
             if available.get(name, 0) > 0:
                 normalized_rows.append({
                     "name": name,
-                    "use_background": True,
+                    "use_background": should_enable_background_for_filename(name),
                     "move_up": False,
                     "move_down": False,
                 })
@@ -902,13 +912,19 @@ def order_voice_segments(voice_files, order_table) -> List[Tuple[str, bool]]:
             voice_list,
             config_manager.get_prioritize_recording_filename()
         )
-        return [(path, True) for path in prioritized_list]
+        return [
+            (path, should_enable_background_for_filename(os.path.basename(path)))
+            for path in prioritized_list
+        ]
 
     order_rows = normalize_voice_order_table(
         order_table, voice_list, apply_move_action=False)
 
     if not order_rows:
-        return [(path, True) for path in voice_list]
+        return [
+            (path, should_enable_background_for_filename(os.path.basename(path)))
+            for path in voice_list
+        ]
 
     basename_to_paths = {}
     for path in voice_list:
@@ -928,13 +944,14 @@ def order_voice_segments(voice_files, order_table) -> List[Tuple[str, bool]]:
                 use_background_val = row.get(
                     "Use Background Music",
                     row.get("use background music", row.get(
-                        "Background Music", row.get("background music", row.get(2, True))))
+                        "Background Music", row.get("background music", row.get(2, should_enable_background_for_filename(name_val)))))
                 )
             else:
                 if len(row) < 2:
                     continue
                 order_val, name_val = row[0], row[1]
-                use_background_val = row[2] if len(row) > 2 else True
+                use_background_val = row[2] if len(
+                    row) > 2 else should_enable_background_for_filename(name_val)
         except Exception:
             continue
 
@@ -955,7 +972,10 @@ def order_voice_segments(voice_files, order_table) -> List[Tuple[str, bool]]:
             ordered_entries.append((position, path, use_background))
 
     if not ordered_entries:
-        return [(path, True) for path in voice_list]
+        return [
+            (path, should_enable_background_for_filename(os.path.basename(path)))
+            for path in voice_list
+        ]
 
     ordered_entries.sort(key=lambda x: (x[0], voice_list.index(x[1])))
     ordered_segments = [(path, use_background)
@@ -963,7 +983,8 @@ def order_voice_segments(voice_files, order_table) -> List[Tuple[str, bool]]:
 
     for path in voice_list:
         if path not in [p for p, _ in ordered_segments]:
-            ordered_segments.append((path, True))
+            ordered_segments.append(
+                (path, should_enable_background_for_filename(os.path.basename(path))))
 
     return ordered_segments
 
