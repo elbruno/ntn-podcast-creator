@@ -4,6 +4,8 @@ import os
 import shutil
 import datetime
 import re
+import json
+import html
 import urllib.request
 import xml.etree.ElementTree as ET
 import gradio as gr
@@ -606,6 +608,279 @@ def parse_background_enabled_value(value, default: bool = True) -> bool:
     return default
 
 
+def normalize_voice_order_table(order_table, voice_files=None, apply_move_action: bool = True) -> List[List]:
+    """Normalize voice order rows and optionally apply one move action.
+
+    Supports list/array rows, DataFrame-like objects, dict rows, and JSON strings.
+    Output shape is always: [order_number, file_name, use_background_music]
+    """
+    voice_list = voice_files if isinstance(voice_files, list) else [
+        voice_files] if voice_files else []
+    voice_basenames = [os.path.basename(path) for path in voice_list if path]
+
+    if order_table is None or order_table == "":
+        if voice_basenames:
+            return [[idx, name, True] for idx, name in enumerate(voice_basenames, start=1)]
+        return []
+
+    try:
+        if isinstance(order_table, str):
+            parsed = json.loads(order_table.strip() or "[]")
+            order_rows = parsed if isinstance(parsed, list) else []
+        elif hasattr(order_table, "values"):
+            order_rows = order_table.values.tolist()
+        elif hasattr(order_table, "tolist"):
+            order_rows = order_table.tolist()
+        else:
+            order_rows = order_table
+    except Exception:
+        order_rows = order_table
+
+    if not isinstance(order_rows, list):
+        if voice_basenames:
+            return [[idx, name, True] for idx, name in enumerate(voice_basenames, start=1)]
+        return []
+
+    parsed_rows = []
+    for row_idx, row in enumerate(order_rows):
+        if row is None:
+            continue
+
+        try:
+            if isinstance(row, dict):
+                order_val = row.get("Order", row.get("order", row.get(0)))
+                name_val = row.get("File Name", row.get(
+                    "file name", row.get("File", row.get(1))))
+                use_background_val = row.get(
+                    "Use Background Music",
+                    row.get("use background music", row.get(
+                        "Background Music", row.get("background music", row.get(2, True))))
+                )
+                move_up_val = row.get("⬆️ Up", row.get(
+                    "Up", row.get("up", row.get(3, False))))
+                move_down_val = row.get("⬇️ Down", row.get(
+                    "Down", row.get("down", row.get(4, False))))
+            else:
+                if len(row) < 2:
+                    continue
+                order_val, name_val = row[0], row[1]
+                use_background_val = row[2] if len(row) > 2 else True
+                move_up_val = row[3] if len(row) > 3 else False
+                move_down_val = row[4] if len(row) > 4 else False
+        except Exception:
+            continue
+
+        name = str(name_val).strip() if name_val is not None else ""
+        if not name:
+            continue
+
+        try:
+            order_num = float(order_val)
+        except (TypeError, ValueError):
+            order_num = float("inf")
+
+        use_background = parse_background_enabled_value(
+            use_background_val, default=True)
+        move_up = parse_background_enabled_value(move_up_val, default=False)
+        move_down = parse_background_enabled_value(
+            move_down_val, default=False)
+        parsed_rows.append({
+            "order": order_num,
+            "row_idx": row_idx,
+            "name": name,
+            "use_background": use_background,
+            "move_up": move_up,
+            "move_down": move_down,
+        })
+
+    parsed_rows.sort(key=lambda x: (x["order"], x["row_idx"]))
+    normalized_rows = []
+
+    if voice_basenames:
+        # Keep only rows that match uploaded files and preserve duplicate filenames.
+        available = {}
+        for name in voice_basenames:
+            available[name] = available.get(name, 0) + 1
+
+        for row in parsed_rows:
+            name = row["name"]
+            if available.get(name, 0) > 0:
+                normalized_rows.append({
+                    "name": name,
+                    "use_background": row["use_background"],
+                    "move_up": row["move_up"],
+                    "move_down": row["move_down"],
+                })
+                available[name] -= 1
+
+        # Append missing uploaded files with defaults.
+        for name in voice_basenames:
+            if available.get(name, 0) > 0:
+                normalized_rows.append({
+                    "name": name,
+                    "use_background": True,
+                    "move_up": False,
+                    "move_down": False,
+                })
+                available[name] -= 1
+    else:
+        for row in parsed_rows:
+            normalized_rows.append({
+                "name": row["name"],
+                "use_background": row["use_background"],
+                "move_up": row["move_up"],
+                "move_down": row["move_down"],
+            })
+
+    if apply_move_action and len(normalized_rows) > 1:
+        move_index = None
+        move_direction = None
+
+        for idx, row in enumerate(normalized_rows):
+            is_up = bool(row["move_up"])
+            is_down = bool(row["move_down"])
+
+            # If both are selected in the same row, ignore to avoid ambiguity.
+            if is_up and not is_down:
+                move_index = idx
+                move_direction = "up"
+                break
+            if is_down and not is_up:
+                move_index = idx
+                move_direction = "down"
+                break
+
+        if move_index is not None and move_direction == "up" and move_index > 0:
+            normalized_rows[move_index -
+                            1], normalized_rows[move_index] = normalized_rows[move_index], normalized_rows[move_index - 1]
+        elif move_index is not None and move_direction == "down" and move_index < len(normalized_rows) - 1:
+            normalized_rows[move_index +
+                            1], normalized_rows[move_index] = normalized_rows[move_index], normalized_rows[move_index + 1]
+
+    # Re-index order as 1..N and return compact rows.
+    result_rows = []
+    for idx, row in enumerate(normalized_rows, start=1):
+        result_rows.append([idx, row["name"], bool(row["use_background"])])
+
+    return result_rows
+
+
+def render_voice_order_editor(order_rows) -> str:
+    """Render a user-friendly row editor with per-row Up/Down buttons."""
+    normalized = normalize_voice_order_table(
+        order_rows, voice_files=None, apply_move_action=False)
+
+    if not normalized:
+        return """
+        <div style="padding: 10px; border: 1px dashed #c7c7c7; border-radius: 8px; color: #666; background: #fafafa;">
+            Upload voice files to arrange order.
+        </div>
+        """
+
+    rows_html = []
+    for idx, row in enumerate(normalized):
+        order_num = int(row[0])
+        filename = html.escape(str(row[1]))
+        use_bg = bool(row[2])
+        up_disabled = "disabled" if idx == 0 else ""
+        down_disabled = "disabled" if idx == len(normalized) - 1 else ""
+        checked = "checked" if use_bg else ""
+
+        toggle_js = (
+            "(function(){"
+            "const root=document.getElementById('voice-order-state');"
+            "if(!root)return;"
+            "const input=root.querySelector('textarea,input');"
+            "if(!input)return;"
+            "let rows=[];"
+            "try{rows=JSON.parse(input.value||'[]')}catch(e){return;}"
+            f"if(!Array.isArray(rows)||!rows[{idx}])return;"
+            f"rows[{idx}][2]=this.checked===true;"
+            "rows=rows.map((r,n)=>[n+1,String((r&&r[1])||''),!!((r&&r.length>2)?r[2]:true)]);"
+            "input.value=JSON.stringify(rows);"
+            "input.dispatchEvent(new Event('input',{bubbles:true}));"
+            "input.dispatchEvent(new Event('change',{bubbles:true}));"
+            "})();"
+        )
+
+        move_up_js = (
+            "(function(){"
+            "const root=document.getElementById('voice-order-state');"
+            "if(!root)return;"
+            "const input=root.querySelector('textarea,input');"
+            "if(!input)return;"
+            "let rows=[];"
+            "try{rows=JSON.parse(input.value||'[]')}catch(e){return;}"
+            f"const i={idx};"
+            "const t=i-1;"
+            "if(!Array.isArray(rows)||t<0||t>=rows.length)return;"
+            "const tmp=rows[i];rows[i]=rows[t];rows[t]=tmp;"
+            "rows=rows.map((r,n)=>[n+1,String((r&&r[1])||''),!!((r&&r.length>2)?r[2]:true)]);"
+            "input.value=JSON.stringify(rows);"
+            "input.dispatchEvent(new Event('input',{bubbles:true}));"
+            "input.dispatchEvent(new Event('change',{bubbles:true}));"
+            "})();"
+        )
+
+        move_down_js = (
+            "(function(){"
+            "const root=document.getElementById('voice-order-state');"
+            "if(!root)return;"
+            "const input=root.querySelector('textarea,input');"
+            "if(!input)return;"
+            "let rows=[];"
+            "try{rows=JSON.parse(input.value||'[]')}catch(e){return;}"
+            f"const i={idx};"
+            "const t=i+1;"
+            "if(!Array.isArray(rows)||t<0||t>=rows.length)return;"
+            "const tmp=rows[i];rows[i]=rows[t];rows[t]=tmp;"
+            "rows=rows.map((r,n)=>[n+1,String((r&&r[1])||''),!!((r&&r.length>2)?r[2]:true)]);"
+            "input.value=JSON.stringify(rows);"
+            "input.dispatchEvent(new Event('input',{bubbles:true}));"
+            "input.dispatchEvent(new Event('change',{bubbles:true}));"
+            "})();"
+        )
+
+        toggle_js_attr = html.escape(toggle_js, quote=True)
+        move_up_js_attr = html.escape(move_up_js, quote=True)
+        move_down_js_attr = html.escape(move_down_js, quote=True)
+
+        rows_html.append(f"""
+        <tr>
+            <td style=\"padding:8px; text-align:center; width:70px;\"><strong>{order_num}</strong></td>
+            <td style=\"padding:8px;\">{filename}</td>
+            <td style=\"padding:8px; text-align:center; width:140px;\">
+                <label style=\"display:flex; align-items:center; justify-content:center; gap:6px; font-size:13px;\">
+                    <input type=\"checkbox\" {checked} onchange=\"{toggle_js_attr}\" />
+                    <span>Enable</span>
+                </label>
+            </td>
+            <td style=\"padding:8px; text-align:center; width:150px;\">
+                <button type=\"button\" {up_disabled} onclick=\"{move_up_js_attr}\" style=\"padding:4px 8px; margin-right:6px; border:1px solid #bbb; border-radius:6px; background:#fff; cursor:pointer;\">⬆️ Up</button>
+                <button type=\"button\" {down_disabled} onclick=\"{move_down_js_attr}\" style=\"padding:4px 8px; border:1px solid #bbb; border-radius:6px; background:#fff; cursor:pointer;\">⬇️ Down</button>
+            </td>
+        </tr>
+        """)
+
+    return f"""
+    <div style="border: 1px solid #ddd; border-radius: 8px; overflow: hidden; background: var(--bg-primary, #fff);">
+        <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+            <thead>
+                <tr style="background: #f4f4f4;">
+                    <th style="padding: 8px; border-bottom: 1px solid #ddd; width:70px;">Order</th>
+                    <th style="padding: 8px; border-bottom: 1px solid #ddd; text-align:left;">File Name</th>
+                    <th style="padding: 8px; border-bottom: 1px solid #ddd; width:140px;">Background</th>
+                    <th style="padding: 8px; border-bottom: 1px solid #ddd; width:150px;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {''.join(rows_html)}
+            </tbody>
+        </table>
+    </div>
+    """
+
+
 def order_voice_segments(voice_files, order_table) -> List[Tuple[str, bool]]:
     """Apply user-defined order and per-track background toggle.
 
@@ -629,17 +904,10 @@ def order_voice_segments(voice_files, order_table) -> List[Tuple[str, bool]]:
         )
         return [(path, True) for path in prioritized_list]
 
-    try:
-        if hasattr(order_table, "values"):
-            order_rows = order_table.values.tolist()
-        elif hasattr(order_table, "tolist"):
-            order_rows = order_table.tolist()
-        else:
-            order_rows = order_table
-    except Exception:
-        order_rows = order_table
+    order_rows = normalize_voice_order_table(
+        order_table, voice_list, apply_move_action=False)
 
-    if not isinstance(order_rows, list):
+    if not order_rows:
         return [(path, True) for path in voice_list]
 
     basename_to_paths = {}
@@ -2141,6 +2409,9 @@ def create_ui():
             background: var(--card-bg) !important;
             border-color: var(--card-border) !important;
         }
+        #voice-order-state {
+            display: none !important;
+        }
         </style>
         <script>
         // Theme management
@@ -2290,20 +2561,20 @@ def create_ui():
                             *Upload one or more audio files. Multiple files will be concatenated in the order you define below.*
                             """)
 
-                            voice_order_table = gr.Dataframe(
+                            voice_order_editor = gr.HTML(
                                 label="Arrange Voice Recordings Order",
-                                headers=["Order", "File Name",
-                                         "Use Background Music"],
-                                datatype=["number", "str", "bool"],
-                                row_count=(0, "dynamic"),
-                                col_count=3,
-                                type="array",
-                                value=[],
-                                interactive=True
+                                value=render_voice_order_editor([])
+                            )
+
+                            voice_order_state = gr.Textbox(
+                                value="[]",
+                                visible=True,
+                                elem_id="voice-order-state"
                             )
 
                             gr.Markdown("""
-                            Edit the **Order** column to choose playback order (1 = first). Use **Use Background Music** to enable/disable background per uploaded track (default: enabled).
+                            Use **⬆️ Up / ⬇️ Down** buttons on each row to reorder your voice tracks.
+                            Toggle **Background** per track. Top row can't move up, bottom row can't move down.
                             """)
 
                             output_name_input = gr.Textbox(
@@ -3085,37 +3356,42 @@ def create_ui():
             timeline = preview_timeline(
                 ordered_voice_files, intro_override_file, default_bg_flags)
             suggested_name = suggest_podcast_name(voice_file)
-            order_rows = build_voice_order_rows(ordered_voice_files)
-            return timeline, suggested_name, order_rows
+            order_rows = normalize_voice_order_table(
+                build_voice_order_rows(ordered_voice_files), ordered_voice_files, apply_move_action=False)
+            return timeline, suggested_name, json.dumps(order_rows), render_voice_order_editor(order_rows)
 
         voice_input.change(
             fn=update_on_voice_upload,
             inputs=[voice_input, intro_override_input],
-            outputs=[timeline_html, output_name_input, voice_order_table]
+            outputs=[timeline_html, output_name_input,
+                     voice_order_state, voice_order_editor]
         )
 
-        def update_timeline_with_intro_override(voice_file, intro_override_file, order_table):
-            ordered_segments = order_voice_segments(voice_file, order_table)
+        def update_timeline_with_intro_override(voice_file, intro_override_file, order_state):
+            ordered_segments = order_voice_segments(voice_file, order_state)
             ordered_files = [path for path, _ in ordered_segments]
             bg_flags = [use_bg for _, use_bg in ordered_segments]
             return preview_timeline(ordered_files, intro_override_file, bg_flags)
 
         intro_override_input.change(
             fn=update_timeline_with_intro_override,
-            inputs=[voice_input, intro_override_input, voice_order_table],
+            inputs=[voice_input, intro_override_input, voice_order_state],
             outputs=[timeline_html]
         )
 
-        def update_timeline_with_order(voice_file, order_table, intro_override_file):
-            ordered_segments = order_voice_segments(voice_file, order_table)
+        def update_timeline_with_order_state(voice_file, order_state, intro_override_file):
+            normalized_table = normalize_voice_order_table(
+                order_state, voice_file, apply_move_action=False)
+            ordered_segments = order_voice_segments(
+                voice_file, normalized_table)
             ordered_files = [path for path, _ in ordered_segments]
             bg_flags = [use_bg for _, use_bg in ordered_segments]
-            return preview_timeline(ordered_files, intro_override_file, bg_flags)
+            return json.dumps(normalized_table), render_voice_order_editor(normalized_table), preview_timeline(ordered_files, intro_override_file, bg_flags)
 
-        voice_order_table.change(
-            fn=update_timeline_with_order,
-            inputs=[voice_input, voice_order_table, intro_override_input],
-            outputs=[timeline_html]
+        voice_order_state.change(
+            fn=update_timeline_with_order_state,
+            inputs=[voice_input, voice_order_state, intro_override_input],
+            outputs=[voice_order_state, voice_order_editor, timeline_html]
         )
 
         create_button_event = create_button.click(
@@ -3127,7 +3403,7 @@ def create_ui():
                     normalize_lufs_checkbox, target_lufs_slider,
                     intro_voice_overlap_checkbox, voice_outro_overlap_checkbox,
                     generate_transcript_checkbox, whisper_model_dropdown,
-                    voice_order_table, intro_override_input],
+                    voice_order_state, intro_override_input],
             outputs=[status_output, audio_output,
                      denoised_audio_output, transcript_output, realtime_console_output, progress_bar, bottom_console],
             show_progress='full'
