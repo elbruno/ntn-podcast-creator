@@ -4,7 +4,7 @@ import os
 import random
 import math
 import tempfile
-from typing import List, Optional, Callable, Tuple
+from typing import List, Optional, Callable, Tuple, Dict, Any, Union
 from pydub import AudioSegment
 from pydub.silence import detect_leading_silence
 from .audio_denoiser_processor import denoise_audio_file
@@ -296,6 +296,283 @@ class AudioProcessor:
         # Overlay background music on main audio
         return main_audio.overlay(background)
 
+    def apply_ducking(
+        self,
+        voice: AudioSegment,
+        background: AudioSegment,
+        duck_db: float = 4.0,
+        chunk_ms: int = 250,
+        silence_threshold_db: float = -42.0,
+        log_callback: Optional[Callable[[str], None]] = None
+    ) -> AudioSegment:
+        """Dynamically attenuate background music when speech is detected.
+
+        Args:
+            voice: Voice AudioSegment
+            background: Background music AudioSegment
+            duck_db: Amount in dB to attenuate background music during speech
+            chunk_ms: Analysis window in milliseconds (default: 250ms)
+            silence_threshold_db: Absolute dBFS threshold for silence
+            log_callback: Optional logging callback
+
+        Returns:
+            AudioSegment with ducked background music
+        """
+        if len(background) == 0 or len(voice) == 0:
+            return background
+
+        target_len = min(len(voice), len(background))
+        voice_cut = voice[:target_len]
+        bg_cut = background[:target_len]
+
+        # Determine voice baseline activity threshold
+        voice_ref = voice_cut.dBFS if voice_cut.dBFS != -float('inf') else -30.0
+        active_threshold = max(silence_threshold_db, voice_ref - 14.0)
+
+        chunks = []
+        for i in range(0, target_len, chunk_ms):
+            v_chunk = voice_cut[i:i + chunk_ms]
+            b_chunk = bg_cut[i:i + chunk_ms]
+
+            if v_chunk.dBFS > active_threshold:
+                b_chunk = b_chunk - duck_db
+            chunks.append(b_chunk)
+
+        if not chunks:
+            return background
+
+        ducked = chunks[0]
+        for c in chunks[1:]:
+            ducked += c
+
+        if len(background) > target_len:
+            ducked += background[target_len:]
+
+        return ducked
+
+    def auto_balance_audio(
+        self,
+        voice: AudioSegment,
+        background: Optional[AudioSegment] = None,
+        target_voice_dbfs: float = -18.0,
+        min_separation_db: float = 18.0,
+        apply_ducking: bool = True,
+        log_callback: Optional[Callable[[str], None]] = None
+    ) -> Tuple[AudioSegment, Optional[AudioSegment], Dict[str, Any]]:
+        """Automatically pre-normalize voice level and balance background music.
+
+        Ensures that low voice recordings are pre-gained to standard podcast dialogue levels
+        and that background music never masks or overpowers the voice.
+
+        Args:
+            voice: Voice AudioSegment
+            background: Optional background music AudioSegment
+            target_voice_dbfs: Target dialogue level in dBFS (-18.0 dBFS recommended)
+            min_separation_db: Minimum dB separation between voice and music (default: 18.0 dB)
+            apply_ducking: Whether to apply dynamic auto-ducking during speech
+            log_callback: Optional logging callback
+
+        Returns:
+            Tuple of (balanced_voice, balanced_background, balance_info_dict)
+        """
+        def log(message: str):
+            if log_callback:
+                log_callback(message)
+            else:
+                print(message)
+
+        info: Dict[str, Any] = {
+            "voice_initial_dbfs": round(voice.dBFS, 1) if voice.dBFS != -float('inf') else -99.0,
+            "voice_gain_applied_db": 0.0,
+            "bg_attenuation_applied_db": 0.0,
+            "ducking_applied": False
+        }
+
+        # Step 1: Pre-gain voice if it's too quiet
+        if voice.dBFS != -float('inf') and voice.dBFS < (target_voice_dbfs - 1.0):
+            gain_needed = target_voice_dbfs - voice.dBFS
+            # Leave 1.0 dB headroom to prevent peak clipping
+            headroom = -1.0 - voice.max_dBFS if voice.max_dBFS != -float('inf') else gain_needed
+            actual_gain = min(gain_needed, max(0.0, headroom))
+
+            if actual_gain >= 0.5:
+                voice = voice.apply_gain(actual_gain)
+                info["voice_gain_applied_db"] = round(actual_gain, 1)
+                log(f"Auto-balance: Voice recording was low ({info['voice_initial_dbfs']} dBFS). Applied +{actual_gain:.1f} dB pre-gain (New RMS: {voice.dBFS:.1f} dBFS, Peak: {voice.max_dBFS:.1f} dBFS)")
+
+        info["voice_final_dbfs"] = round(voice.dBFS, 1) if voice.dBFS != -float('inf') else -99.0
+
+        # Step 2: Ensure background music sits at least min_separation_db below voice
+        if background is not None and len(background) > 0 and background.dBFS != -float('inf'):
+            info["bg_initial_dbfs"] = round(background.dBFS, 1)
+            vmr = voice.dBFS - background.dBFS
+            info["initial_vmr_db"] = round(vmr, 1)
+
+            if vmr < min_separation_db:
+                needed_attenuation = min_separation_db - vmr
+                background = background - needed_attenuation
+                info["bg_attenuation_applied_db"] = round(needed_attenuation, 1)
+                log(f"Auto-balance: Background music was too prominent relative to voice (separation was {vmr:.1f} dB). Reduced background by -{needed_attenuation:.1f} dB to maintain {min_separation_db:.1f} dB separation.")
+
+            if apply_ducking:
+                background = self.apply_ducking(voice, background, duck_db=4.0, log_callback=log_callback)
+                info["ducking_applied"] = True
+                log("Auto-balance: Applied dynamic auto-ducking to background music (-4.0 dB during speech).")
+
+            info["bg_final_dbfs"] = round(background.dBFS, 1) if background.dBFS != -float('inf') else -99.0
+            info["final_vmr_db"] = round(voice.dBFS - background.dBFS, 1)
+
+        return voice, background, info
+
+    def analyze_levels(
+        self,
+        voice_audio: Any,
+        background_files: Optional[List[str]] = None,
+        background_volume: int = 10,
+        track_volumes: Optional[dict] = None
+    ) -> Dict[str, Any]:
+        """Analyze voice and background music levels to detect low recording volume or masking issues.
+
+        Args:
+            voice_audio: Path to voice file, list of file paths, or AudioSegment object
+            background_files: Optional list of background music file paths
+            background_volume: Background volume percentage (0-100)
+            track_volumes: Optional dict of track path -> volume percentage
+
+        Returns:
+            Dictionary with metrics, status, warnings, recommendations, and diagnosis
+        """
+        try:
+            if isinstance(voice_audio, list):
+                if not voice_audio:
+                    return {"overall_status": "no_voice", "title": "Sin audio de voz", "warnings": ["No se ha subido ningún archivo de voz."], "recommendations": []}
+                voice = self.load_audio(voice_audio[0])
+                for v_path in voice_audio[1:]:
+                    if os.path.exists(v_path):
+                        voice += self.load_audio(v_path)
+            elif isinstance(voice_audio, str):
+                if not os.path.exists(voice_audio):
+                    return {"overall_status": "no_voice", "title": "Archivo no encontrado", "warnings": [f"El archivo {os.path.basename(voice_audio)} no existe."], "recommendations": []}
+                voice = self.load_audio(voice_audio)
+            elif hasattr(voice_audio, "dBFS"):
+                voice = voice_audio
+            elif isinstance(AudioSegment, type) and isinstance(voice_audio, AudioSegment):
+                voice = voice_audio
+            else:
+                return {"overall_status": "no_voice", "title": "Sin audio", "warnings": ["Formato de audio no reconocido."], "recommendations": []}
+        except Exception as e:
+            return {"overall_status": "error", "title": "Error al analizar audio", "warnings": [str(e)], "recommendations": []}
+
+        voice_dbfs = round(voice.dBFS, 1) if voice.dBFS != -float('inf') else -99.0
+        voice_peak = round(voice.max_dBFS, 1) if voice.max_dBFS != -float('inf') else -99.0
+
+        # Voice loudness status
+        if voice_dbfs <= -50.0:
+            voice_status = "silent"
+            voice_status_label = "Silencio / Muy bajo (-50 dBFS o menos)"
+        elif voice_dbfs < -28.0:
+            voice_status = "very_low"
+            voice_status_label = "Voz muy baja (< -28 dBFS)"
+        elif voice_dbfs < -22.0:
+            voice_status = "low"
+            voice_status_label = "Voz baja (-22 a -28 dBFS)"
+        elif voice_dbfs > -10.0:
+            voice_status = "loud"
+            voice_status_label = "Voz muy alta / posible pico (> -10 dBFS)"
+        else:
+            voice_status = "optimal"
+            voice_status_label = "Nivel de voz óptimo (-14 a -22 dBFS)"
+
+        # Background music analysis
+        bg_dbfs = None
+        bg_peak = None
+        vmr = None
+        balance_status = "no_music"
+        balance_status_label = "Sin música de fondo configurada"
+
+        valid_bg = [f for f in (background_files or []) if os.path.exists(f)]
+        if valid_bg and background_volume > 0:
+            try:
+                bg_sample = None
+                sample_duration = min(20000, max(5000, len(voice)))
+                for bg_f in valid_bg[:3]:
+                    t_track = self.load_audio(bg_f)
+                    vol = track_volumes.get(bg_f, background_volume) if track_volumes else background_volume
+                    t_track = self.reduce_volume(t_track, vol)
+                    t_slice = t_track[:sample_duration]
+                    if bg_sample is None:
+                        bg_sample = t_slice
+                    else:
+                        bg_sample += t_slice
+
+                if bg_sample is not None and len(bg_sample) > 0:
+                    bg_dbfs = round(bg_sample.dBFS, 1) if bg_sample.dBFS != -float('inf') else -99.0
+                    bg_peak = round(bg_sample.max_dBFS, 1) if bg_sample.max_dBFS != -float('inf') else -99.0
+                    vmr = round(voice_dbfs - bg_dbfs, 1)
+
+                    if vmr >= 18.0:
+                        balance_status = "optimal"
+                        balance_status_label = f"Excelente (+{vmr} dB sobre la música)"
+                    elif vmr >= 12.0:
+                        balance_status = "warning"
+                        balance_status_label = f"Precaución (+{vmr} dB sobre la música)"
+                    else:
+                        balance_status = "danger"
+                        balance_status_label = f"Crítico ({vmr} dB - La música tapará la voz)"
+            except Exception:
+                pass
+
+        warnings = []
+        recommendations = []
+
+        if voice_status in ["very_low", "low"]:
+            warnings.append(f"El volumen de la grabación de voz ({voice_dbfs} dBFS) es bajo para podcasting (recomendado: ~ -18 dBFS).")
+            recommendations.append("El auto-balance aumentará automáticamente la ganancia de la voz para que se escuche con total claridad.")
+
+        if balance_status == "danger":
+            warnings.append(f"La separación entre voz y música es de sólo {vmr} dB (se requiere mínimo +18 dB). La música de fondo tapará tu voz.")
+            recommendations.append("El auto-balance atenuará la música automáticamente y aplicará auto-ducking durante tus intervenciones.")
+        elif balance_status == "warning":
+            warnings.append(f"La separación voz/música es de {vmr} dB. La música podría competir con tu voz en fragmentos suaves.")
+            recommendations.append("Se recomienda activar Auto-Ducking o reducir el volumen de la música.")
+
+        if voice_status in ["silent", "very_low"] or balance_status == "danger":
+            overall_status = "danger"
+            badge_icon = "🔴"
+            badge_color = "#ef4444"
+            title = "Alerta: Riesgo de audio bajo o enmascarado por música"
+        elif voice_status == "low" or balance_status == "warning":
+            overall_status = "warning"
+            badge_icon = "🟡"
+            badge_color = "#f59e0b"
+            title = "Aviso: Nivel de audio o balance mejorable"
+        else:
+            overall_status = "optimal"
+            badge_icon = "🟢"
+            badge_color = "#10b981"
+            title = "Niveles y Balance de Audio Óptimos"
+
+        suggested_voice_gain = round(max(0.0, -18.0 - voice_dbfs), 1) if voice_dbfs > -60 else 0.0
+
+        return {
+            "overall_status": overall_status,
+            "badge_icon": badge_icon,
+            "badge_color": badge_color,
+            "title": title,
+            "voice_dbfs": voice_dbfs,
+            "voice_peak": voice_peak,
+            "voice_status": voice_status,
+            "voice_status_label": voice_status_label,
+            "bg_dbfs": bg_dbfs,
+            "bg_peak": bg_peak,
+            "voice_to_music_ratio_db": vmr,
+            "balance_status": balance_status,
+            "balance_status_label": balance_status_label,
+            "warnings": warnings,
+            "recommendations": recommendations,
+            "suggested_voice_gain_db": suggested_voice_gain
+        }
+
     def create_podcast(
         self,
         voice_file: str,
@@ -315,6 +592,9 @@ class AudioProcessor:
         target_lufs: float = -16.0,
         intro_voice_overlap: bool = True,
         voice_outro_overlap: bool = False,
+        auto_balance_levels: bool = True,
+        min_voice_music_separation_db: float = 18.0,
+        auto_ducking: bool = True,
         generate_transcript: bool = False,
         whisper_model: str = "base",
         defer_transcription: bool = False,
@@ -435,6 +715,18 @@ class AudioProcessor:
             saved_ms = original_duration - trimmed_duration
             log(f"Trimmed {saved_ms/1000:.2f} seconds of silence")
 
+        # Auto-Balance voice level before mixing
+        if auto_balance_levels:
+            log("Checking voice recording level for optimal dialogue loudness...")
+            voice, _, _ = self.auto_balance_audio(
+                voice=voice,
+                background=None,
+                target_voice_dbfs=-18.0,
+                min_separation_db=min_voice_music_separation_db,
+                apply_ducking=False,
+                log_callback=log
+            )
+
         # Build the podcast sequence with overlaps
         # Overlap duration: 1 second (1000ms)
         overlap_ms = 1000
@@ -474,6 +766,7 @@ class AudioProcessor:
                         f"Creating selective background music for {len(valid_segments)} voice segment(s) (volume: {background_volume}%)")
                     for seg_start, seg_end in valid_segments:
                         segment_duration = seg_end - seg_start
+                        segment_voice = voice[seg_start:seg_end]
                         segment_background = self.create_looped_background(
                             background_files,
                             segment_duration,
@@ -482,6 +775,15 @@ class AudioProcessor:
                             log_callback=log
                         )
                         if segment_background:
+                            if auto_balance_levels:
+                                _, segment_background, _ = self.auto_balance_audio(
+                                    voice=segment_voice,
+                                    background=segment_background,
+                                    target_voice_dbfs=-18.0,
+                                    min_separation_db=min_voice_music_separation_db,
+                                    apply_ducking=auto_ducking,
+                                    log_callback=log
+                                )
                             voice_with_bg = voice_with_bg.overlay(
                                 segment_background, position=seg_start)
                             background_applied = True
@@ -502,6 +804,15 @@ class AudioProcessor:
                     log_callback=log
                 )
                 if background:
+                    if auto_balance_levels:
+                        _, background, _ = self.auto_balance_audio(
+                            voice=voice,
+                            background=background,
+                            target_voice_dbfs=-18.0,
+                            min_separation_db=min_voice_music_separation_db,
+                            apply_ducking=auto_ducking,
+                            log_callback=log
+                        )
                     log("Mixing background music with voice recording")
                     voice_with_bg = self.mix_audio(voice, background)
                     background_applied = True

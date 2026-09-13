@@ -63,6 +63,10 @@ class ConfigManager:
             # Overlap settings
             "intro_voice_overlap": True,  # Enable 1-second overlap between intro and voice
             "voice_outro_overlap": False,  # Enable 1-second overlap between voice and outro
+            # Audio balance & level safety
+            "auto_balance_levels": True,  # Auto-balance voice & music to prevent masking
+            "min_voice_music_separation_db": 18.0,  # Minimum dB separation between voice and background music
+            "auto_ducking": True,  # Dynamically lower background music during speech
             # Whisper transcription feature (disabled by default)
             "generate_transcript": False,
             "whisper_model": "base",  # tiny, base, small, medium, large
@@ -379,6 +383,54 @@ class ConfigManager:
         """
         self.set("voice_outro_overlap", enabled)
 
+    def get_auto_balance_levels(self) -> bool:
+        """Get auto-balance audio levels setting.
+
+        Returns:
+            True if auto-balance is enabled, False otherwise
+        """
+        return self.get("auto_balance_levels", True)
+
+    def set_auto_balance_levels(self, enabled: bool) -> None:
+        """Set auto-balance audio levels setting.
+
+        Args:
+            enabled: True to enable auto-balance, False to disable
+        """
+        self.set("auto_balance_levels", enabled)
+
+    def get_min_voice_music_separation_db(self) -> float:
+        """Get minimum voice-to-music separation in dB.
+
+        Returns:
+            Separation in dB (e.g. 18.0)
+        """
+        return float(self.get("min_voice_music_separation_db", 18.0))
+
+    def set_min_voice_music_separation_db(self, value: float) -> None:
+        """Set minimum voice-to-music separation in dB.
+
+        Args:
+            value: Minimum separation in dB
+        """
+        self.set("min_voice_music_separation_db", float(value))
+
+    def get_auto_ducking(self) -> bool:
+        """Get auto-ducking setting.
+
+        Returns:
+            True if auto-ducking is enabled, False otherwise
+        """
+        return self.get("auto_ducking", True)
+
+    def set_auto_ducking(self, enabled: bool) -> None:
+        """Set auto-ducking setting.
+
+        Args:
+            enabled: True to enable auto-ducking, False to disable
+        """
+        self.set("auto_ducking", enabled)
+
     def get_generate_transcript(self) -> bool:
         """Get transcription generation setting.
 
@@ -489,10 +541,17 @@ class ConfigManager:
             "track_volumes": self.get_all_track_volumes(),
             "denoise_audio": self.get_denoise_audio(),
             "denoise_method": self.get_denoise_method(),
+            "enhance_voice": self.get("enhance_voice", False),
+            "voice_enhancement_preset": self.get("voice_enhancement_preset", "podcast"),
             "normalize_lufs": self.get_normalize_lufs(),
             "target_lufs": self.get_target_lufs(),
             "intro_voice_overlap": self.get_intro_voice_overlap(),
-            "voice_outro_overlap": self.get_voice_outro_overlap()
+            "voice_outro_overlap": self.get_voice_outro_overlap(),
+            "auto_balance_levels": self.get_auto_balance_levels(),
+            "min_voice_music_separation_db": self.get_min_voice_music_separation_db(),
+            "auto_ducking": self.get_auto_ducking(),
+            "generate_transcript": self.get_generate_transcript(),
+            "whisper_model": self.get_whisper_model()
         }
 
     def apply_template_settings(self, settings: Dict[str, Any]) -> None:
@@ -549,3 +608,25 @@ class ConfigManager:
 
         if "voice_outro_overlap" in settings:
             self.set_voice_outro_overlap(settings["voice_outro_overlap"])
+
+        # Audio balance & ducking settings
+        if "auto_balance_levels" in settings:
+            self.set_auto_balance_levels(settings["auto_balance_levels"])
+
+        if "min_voice_music_separation_db" in settings:
+            self.set_min_voice_music_separation_db(settings["min_voice_music_separation_db"])
+
+        if "auto_ducking" in settings:
+            self.set_auto_ducking(settings["auto_ducking"])
+
+        if "enhance_voice" in settings:
+            self.set("enhance_voice", settings["enhance_voice"])
+
+        if "voice_enhancement_preset" in settings:
+            self.set("voice_enhancement_preset", settings["voice_enhancement_preset"])
+
+        if "generate_transcript" in settings:
+            self.set_generate_transcript(settings["generate_transcript"])
+
+        if "whisper_model" in settings:
+            self.set_whisper_model(settings["whisper_model"])

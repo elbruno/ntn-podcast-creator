@@ -9,7 +9,7 @@ import html
 import urllib.request
 import xml.etree.ElementTree as ET
 import gradio as gr
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, Dict, Any
 from features.audio_processor import AudioProcessor
 from features.config_manager import ConfigManager, DEFAULT_RSS_FEED_URL
 from features.audio_denoiser_processor import denoise_audio_file
@@ -891,6 +891,77 @@ def render_voice_order_editor(order_rows) -> str:
     """
 
 
+def render_audio_health_card(analysis: Optional[Dict[str, Any]] = None) -> str:
+    """Render HTML card for audio balance & level health check.
+
+    Args:
+        analysis: Analysis dict from audio_processor.analyze_levels() or None
+
+    Returns:
+        HTML formatted string for display
+    """
+    if not analysis or analysis.get("overall_status") in [None, "no_voice"]:
+        return """
+        <div style="padding: 12px 16px; border-radius: 8px; border: 1px dashed rgba(100,116,139,0.3); background: rgba(100,116,139,0.04); margin-top: 10px; font-size: 13px;">
+            <div style="font-weight: 600; color: #64748b; margin-bottom: 4px;">🎚️ Inspector de Balance de Audio</div>
+            <div style="color: #64748b;">Sube una grabación de voz para analizar automáticamente su volumen y su relación con la música de fondo.</div>
+        </div>
+        """
+
+    status = analysis.get("overall_status", "optimal")
+    badge_icon = analysis.get("badge_icon", "🟢")
+    title = analysis.get("title", "Estado del Audio")
+    voice_dbfs = analysis.get("voice_dbfs", "N/A")
+    voice_label = analysis.get("voice_status_label", "")
+    bg_dbfs = analysis.get("bg_dbfs")
+    vmr = analysis.get("voice_to_music_ratio_db")
+    balance_label = analysis.get("balance_status_label", "")
+    warnings = analysis.get("warnings", [])
+    recommendations = analysis.get("recommendations", [])
+
+    if status == "danger":
+        border_color = "#ef4444"
+        bg_color = "rgba(239, 68, 68, 0.08)"
+        title_color = "#dc2626"
+    elif status == "warning":
+        border_color = "#f59e0b"
+        bg_color = "rgba(245, 158, 11, 0.08)"
+        title_color = "#d97706"
+    else:
+        border_color = "#10b981"
+        bg_color = "rgba(16, 185, 129, 0.08)"
+        title_color = "#059669"
+
+    html_parts = [
+        f'<div style="padding: 14px 16px; border-radius: 8px; border: 1px solid {border_color}; background: {bg_color}; margin-top: 10px; font-size: 13px;">',
+        f'<div style="font-weight: 700; color: {title_color}; font-size: 14px; margin-bottom: 8px;">{badge_icon} {title}</div>',
+        '<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">',
+        f'<div><strong>🎙️ Nivel de Voz:</strong> <code>{voice_dbfs} dBFS</code><br/><span style="font-size: 11px; opacity: 0.8;">({voice_label})</span></div>'
+    ]
+
+    if bg_dbfs is not None:
+        html_parts.append(f'<div><strong>🎵 Música de Fondo:</strong> <code>{bg_dbfs} dBFS</code><br/><span style="font-size: 11px; opacity: 0.8;">({balance_label})</span></div>')
+    else:
+        html_parts.append('<div><strong>🎵 Música de Fondo:</strong> <span style="font-size: 11px; opacity: 0.8;">(Sin música)</span></div>')
+
+    html_parts.append('</div>')
+
+    if warnings:
+        html_parts.append('<div style="margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(100,100,100,0.15);">')
+        for w in warnings:
+            html_parts.append(f'<div style="color: {title_color}; margin-bottom: 2px;">⚠️ {w}</div>')
+        html_parts.append('</div>')
+
+    if recommendations:
+        html_parts.append('<div style="margin-top: 6px; font-size: 12px; opacity: 0.9;">')
+        for r in recommendations:
+            html_parts.append(f'<div style="color: #059669; font-weight: 500;">💡 {r}</div>')
+        html_parts.append('</div>')
+
+    html_parts.append('</div>')
+    return "".join(html_parts)
+
+
 def order_voice_segments(voice_files, order_table) -> List[Tuple[str, bool]]:
     """Apply user-defined order and per-track background toggle.
 
@@ -1404,7 +1475,27 @@ def get_audio_autoplay_script(audio_elem_id: str) -> str:
     """
 
 
-def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, trim_silence, denoise_audio, denoise_method, enhance_voice, voice_enhancement_preset, normalize_lufs, target_lufs, intro_voice_overlap, voice_outro_overlap, generate_transcript, whisper_model, voice_order_table=None, intro_override_file=None, progress=gr.Progress()):
+def create_podcast_handler_with_progress(
+    voice_file,
+    output_name,
+    delete_voice,
+    trim_silence,
+    denoise_audio,
+    denoise_method,
+    enhance_voice,
+    voice_enhancement_preset,
+    normalize_lufs,
+    target_lufs,
+    intro_voice_overlap,
+    voice_outro_overlap,
+    generate_transcript,
+    whisper_model,
+    auto_balance_levels=True,
+    auto_ducking=True,
+    voice_order_table=None,
+    intro_override_file=None,
+    progress=gr.Progress()
+):
     """Handle podcast creation request with progress tracking.
 
     Args:
@@ -1422,7 +1513,10 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
         voice_outro_overlap: Whether to enable voice-outro overlap
         generate_transcript: Whether to generate transcript
         whisper_model: Whisper model size to use
+        auto_balance_levels: Whether to auto-balance voice and music levels
+        auto_ducking: Whether to apply auto-ducking during speech
         voice_order_table: Table for custom voice file ordering
+        intro_override_file: Optional one-time custom intro file
         progress: Gradio progress tracker
     """
     import threading
@@ -1557,6 +1651,8 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
     log_message(f"  Normalize LUFS: {normalize_lufs} (target: {target_lufs})")
     log_message(f"  Intro-voice overlap: {intro_voice_overlap}")
     log_message(f"  Voice-outro overlap: {voice_outro_overlap}")
+    log_message(f"  Auto-balance levels: {auto_balance_levels}")
+    log_message(f"  Auto-ducking: {auto_ducking}")
     log_message(
         f"  Generate transcript: {generate_transcript} (model: {whisper_model})")
 
@@ -1589,6 +1685,10 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
         elif "Enhancing" in message or "enhance" in message.lower():
             pct = 0.5
             msg = "✨ Enhancing audio..."
+            progress(pct, msg)
+        elif "Auto-balance" in message or "balance" in message.lower():
+            pct = 0.65
+            msg = "🎚️ Balancing levels..."
             progress(pct, msg)
         elif "Mixing" in message or "mixing" in message.lower():
             pct = 0.7
@@ -1635,6 +1735,9 @@ def create_podcast_handler_with_progress(voice_file, output_name, delete_voice, 
                 target_lufs=target_lufs,
                 intro_voice_overlap=intro_voice_overlap,
                 voice_outro_overlap=voice_outro_overlap,
+                auto_balance_levels=auto_balance_levels,
+                min_voice_music_separation_db=config_manager.get_min_voice_music_separation_db(),
+                auto_ducking=auto_ducking,
                 generate_transcript=generate_transcript,
                 whisper_model=whisper_model,
                 defer_transcription=True,
@@ -2701,6 +2804,21 @@ def create_ui():
                                 info="-16 for podcasts (recommended), -14 for louder content"
                             )
 
+                            gr.Markdown("### 🛡️ Audio Balance & Voice Protection")
+
+                            with gr.Row(elem_classes=["compact-row"]):
+                                auto_balance_levels_checkbox = gr.Checkbox(
+                                    label="Auto-balance voice & music levels (Recommended)",
+                                    value=config_manager.get_auto_balance_levels(),
+                                    info="Boosts low voice recordings & ensures background music never overpowers speech"
+                                )
+
+                                auto_ducking_checkbox = gr.Checkbox(
+                                    label="Auto-ducking",
+                                    value=config_manager.get_auto_ducking(),
+                                    info="Dynamically lowers background music by 4 dB while speaking"
+                                )
+
                             gr.Markdown("### Transcription")
 
                             generate_transcript_checkbox = gr.Checkbox(
@@ -2732,10 +2850,14 @@ def create_ui():
 
                     with gr.Column():
                         with gr.Group(elem_classes=["clean-card"]):
-                            gr.Markdown("### 📊 Preview")
+                            gr.Markdown("### 📊 Preview & Health Check")
                             timeline_html = gr.HTML(
                                 label="Timeline Preview",
                                 value=preview_timeline(None)
+                            )
+                            audio_health_html = gr.HTML(
+                                label="Audio Balance Health",
+                                value=render_audio_health_card(None)
                             )
 
                         with gr.Group(elem_classes=["clean-card"]):
@@ -3368,7 +3490,7 @@ def create_ui():
 
         # Update timeline when voice file is uploaded
         def update_on_voice_upload(voice_file, intro_override_file):
-            """Update timeline, suggested filename, and order table when voice is uploaded."""
+            """Update timeline, suggested filename, order table, and audio health when voice is uploaded."""
             prefer_recording_first = config_manager.get_prioritize_recording_filename()
             ordered_voice_files = prioritize_recording_files(
                 voice_file, prefer_recording_first)
@@ -3379,13 +3501,28 @@ def create_ui():
             suggested_name = suggest_podcast_name(voice_file)
             order_rows = normalize_voice_order_table(
                 build_voice_order_rows(ordered_voice_files), ordered_voice_files, apply_move_action=False)
-            return timeline, suggested_name, json.dumps(order_rows), render_voice_order_editor(order_rows)
+
+            # Analyze levels for health card
+            analysis = None
+            if ordered_voice_files:
+                try:
+                    analysis = audio_processor.analyze_levels(
+                        ordered_voice_files,
+                        background_files=config_manager.get_background_tracks(),
+                        background_volume=config_manager.get_volume(),
+                        track_volumes=config_manager.get_all_track_volumes()
+                    )
+                except Exception:
+                    analysis = None
+            health_card = render_audio_health_card(analysis)
+
+            return timeline, suggested_name, json.dumps(order_rows), render_voice_order_editor(order_rows), health_card
 
         voice_input.change(
             fn=update_on_voice_upload,
             inputs=[voice_input, intro_override_input],
             outputs=[timeline_html, output_name_input,
-                     voice_order_state, voice_order_editor]
+                     voice_order_state, voice_order_editor, audio_health_html]
         )
 
         def update_timeline_with_intro_override(voice_file, intro_override_file, order_state):
@@ -3407,12 +3544,27 @@ def create_ui():
                 voice_file, normalized_table)
             ordered_files = [path for path, _ in ordered_segments]
             bg_flags = [use_bg for _, use_bg in ordered_segments]
-            return json.dumps(normalized_table), render_voice_order_editor(normalized_table), preview_timeline(ordered_files, intro_override_file, bg_flags)
+
+            # Analyze levels for health card
+            analysis = None
+            if ordered_files:
+                try:
+                    analysis = audio_processor.analyze_levels(
+                        ordered_files,
+                        background_files=config_manager.get_background_tracks(),
+                        background_volume=config_manager.get_volume(),
+                        track_volumes=config_manager.get_all_track_volumes()
+                    )
+                except Exception:
+                    analysis = None
+            health_card = render_audio_health_card(analysis)
+
+            return json.dumps(normalized_table), render_voice_order_editor(normalized_table), preview_timeline(ordered_files, intro_override_file, bg_flags), health_card
 
         voice_order_state.change(
             fn=update_timeline_with_order_state,
             inputs=[voice_input, voice_order_state, intro_override_input],
-            outputs=[voice_order_state, voice_order_editor, timeline_html]
+            outputs=[voice_order_state, voice_order_editor, timeline_html, audio_health_html]
         )
 
         create_button_event = create_button.click(
@@ -3424,6 +3576,7 @@ def create_ui():
                     normalize_lufs_checkbox, target_lufs_slider,
                     intro_voice_overlap_checkbox, voice_outro_overlap_checkbox,
                     generate_transcript_checkbox, whisper_model_dropdown,
+                    auto_balance_levels_checkbox, auto_ducking_checkbox,
                     voice_order_state, intro_override_input],
             outputs=[status_output, audio_output,
                      denoised_audio_output, transcript_output, realtime_console_output, progress_bar, bottom_console],
@@ -3525,6 +3678,19 @@ def create_ui():
         voice_outro_overlap_checkbox.change(
             fn=lambda enabled: config_manager.set_voice_outro_overlap(enabled),
             inputs=[voice_outro_overlap_checkbox],
+            outputs=[]
+        )
+
+        # Save audio balance and ducking settings
+        auto_balance_levels_checkbox.change(
+            fn=lambda enabled: config_manager.set_auto_balance_levels(enabled),
+            inputs=[auto_balance_levels_checkbox],
+            outputs=[]
+        )
+
+        auto_ducking_checkbox.change(
+            fn=lambda enabled: config_manager.set_auto_ducking(enabled),
+            inputs=[auto_ducking_checkbox],
             outputs=[]
         )
 
