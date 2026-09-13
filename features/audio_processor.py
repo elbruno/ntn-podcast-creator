@@ -4,13 +4,120 @@ import os
 import random
 import math
 import tempfile
+import json
+import atexit
+from dataclasses import asdict
 from typing import List, Optional, Callable, Tuple, Dict, Any, Union
+import numpy as np
 from pydub import AudioSegment
 from pydub.silence import detect_leading_silence
 from .audio_denoiser_processor import denoise_audio_file
 from .noise_reducer import reduce_noise
 from .lufs_normalizer import normalize_audio_lufs
 from .voice_enhancer import enhance_voice
+from .audio_quality import (
+    AudioQualityAnalyzer, AudioQualityConfig, AudioQualityReport, create_preview,
+)
+
+
+_quality_previews = {}
+
+
+def _quality_file_identity(path):
+    info = os.stat(path)
+    return {"size": info.st_size, "mtime_ns": info.st_mtime_ns,
+            "ctime_ns": info.st_ctime_ns, "device": info.st_dev, "inode": info.st_ino}
+
+
+def _quality_preview_identity(path):
+    """Recognize only regular, non-symlink QC previews in the temp directory."""
+    if (isinstance(path, str)
+            and os.path.dirname(os.path.abspath(path)) == os.path.realpath(tempfile.gettempdir())
+            and os.path.realpath(path) == os.path.abspath(path)
+            and os.path.basename(path).startswith("audio_quality_preview_")
+            and path.endswith(".wav") and not os.path.islink(path)
+            and os.path.isfile(path)):
+        return _quality_file_identity(path)
+    return None
+
+
+def _register_quality_preview(path, output_path):
+    identity = _quality_preview_identity(path)
+    if identity is not None:
+        _quality_previews[path] = (identity, os.path.realpath(output_path))
+    return identity
+
+
+def _cleanup_quality_preview(path, identity=None):
+    """Delete only an unchanged owned preview; never trust a bare input path."""
+    if not isinstance(path, str):
+        return
+    if identity is None:
+        identity = _quality_previews.get(path, (None, None))[0]
+    try:
+        if identity is not None and _quality_preview_identity(path) == identity:
+            os.unlink(path)
+        _quality_previews.pop(path, None)
+    except OSError:
+        pass  # Retain the registry entry for another attempt at normal exit.
+
+
+def _cleanup_quality_previews():
+    for path, (identity, _) in list(_quality_previews.items()):
+        _cleanup_quality_preview(path, identity)
+
+
+atexit.register(_cleanup_quality_previews)
+
+
+def _read_quality_sidecar(output_path):
+    output_path = os.path.realpath(output_path)
+    sidecar = output_path + ".quality.json"
+    if os.path.islink(sidecar) or os.path.getsize(sidecar) > 32 * 1024 * 1024:
+        raise ValueError("Invalid quality sidecar")
+    with open(sidecar, encoding="utf-8") as source:
+        data = json.load(source)
+    if (not isinstance(data, dict) or data.get("schema") != "ntn-quality-v1"
+            or data.get("output_path") != output_path
+            or data.get("identity") != _quality_file_identity(output_path)):
+        raise ValueError("Stale quality report; render again to refresh it")
+    return data
+
+
+def _write_quality_sidecar(path, data):
+    """Publish complete JSON atomically, replacing rather than following symlinks."""
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", suffix=".json",
+                                         dir=os.path.dirname(
+                                             os.path.abspath(path)),
+                                         delete=False) as output:
+            temporary = output.name
+            json.dump(data, output, indent=2, allow_nan=False)
+        os.replace(temporary, path)
+    finally:
+        if temporary and os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def _invalidate_quality_sidecar(output_path, log):
+    """A new render retires only this output's prior preview and certification."""
+    output_path = os.path.realpath(output_path)
+    for path, (identity, owner) in list(_quality_previews.items()):
+        if owner == output_path:
+            _cleanup_quality_preview(path, identity)
+    try:
+        previous = _read_quality_sidecar(output_path)
+        _cleanup_quality_preview(previous.get("preview_file"),
+                                 previous.get("preview_identity"))
+    except (OSError, ValueError, TypeError):
+        pass  # Missing/legacy/malformed receipts cannot authorize deletion.
+    try:
+        os.unlink(output_path + ".quality.json")
+    except FileNotFoundError:
+        pass
+    except OSError as error:
+        log(f"Warning: Could not invalidate old quality report: {error}")
 
 
 class AudioProcessor:
@@ -18,7 +125,13 @@ class AudioProcessor:
 
     def __init__(self):
         """Initialize audio processor."""
-        pass
+        # Legacy UI convenience only; concurrent callers should use the callback.
+        self.last_quality_report = None
+
+    @staticmethod
+    def _quality_config(config=None) -> AudioQualityConfig:
+        return (config if isinstance(config, AudioQualityConfig)
+                else AudioQualityConfig.from_mapping(config))
 
     def load_audio(self, file_path: str) -> AudioSegment:
         """Load audio file.
@@ -204,7 +317,9 @@ class AudioProcessor:
         target_duration_ms: int,
         volume_percent: int = 10,
         track_volumes: Optional[dict] = None,
-        log_callback: Optional[Callable[[str], None]] = None
+        log_callback: Optional[Callable[[str], None]] = None,
+        rng: Optional[random.Random] = None,
+        selected_tracks: Optional[List[Dict[str, Any]]] = None
     ) -> Optional[AudioSegment]:
         """Create looped background music from randomly selected tracks.
 
@@ -216,6 +331,8 @@ class AudioProcessor:
             volume_percent: Default volume percentage for background (0-100)
             track_volumes: Optional dict mapping track paths to individual volumes
             log_callback: Optional callback function for logging
+            rng: Request-local random generator (never changes global random state)
+            selected_tracks: Optional request-local list populated in playback order
 
         Returns:
             AudioSegment with concatenated background music or None if no files
@@ -226,8 +343,10 @@ class AudioProcessor:
             else:
                 print(message)
 
-        if not background_files:
+        if not background_files or target_duration_ms <= 0:
             return None
+
+        rng = rng if rng is not None else random.Random(0)
 
         # Filter out files that don't exist
         valid_files = [f for f in background_files if os.path.exists(f)]
@@ -242,13 +361,15 @@ class AudioProcessor:
         background = AudioSegment.empty()
         tracks_used = []
 
-        while len(background) < target_duration_ms:
+        while valid_files and len(background) < target_duration_ms:
             # Randomly select a track
-            selected_file = random.choice(valid_files)
+            selected_file = rng.choice(valid_files)
             track_name = os.path.basename(selected_file)
 
             try:
                 track = self.load_audio(selected_file)
+                if len(track) <= 0:
+                    raise ValueError("Track has no audio duration")
 
                 # Use individual track volume if available, otherwise use default
                 if track_volumes and selected_file in track_volumes:
@@ -260,12 +381,25 @@ class AudioProcessor:
                 track = self.reduce_volume(track, track_volume)
 
                 # Append to background
+                if selected_tracks is not None:
+                    selected_tracks.append({
+                        "path": os.fspath(selected_file),
+                        "volume_percent": track_volume,
+                        "start_ms": len(background),
+                        "end_ms": min(len(background) + len(track), target_duration_ms),
+                    })
                 background += track
                 tracks_used.append(f"{track_name} ({track_volume}%)")
 
             except Exception as e:
                 log(f"Error loading background track {track_name}: {e}")
-                continue
+                # Remove every duplicate too: an invalid pool must terminate.
+                valid_files = [
+                    path for path in valid_files if path != selected_file]
+
+        if not len(background):
+            log("Warning: No playable background music tracks; continuing without music")
+            return None
 
         # Trim to exact duration
         background = background[:target_duration_ms]
@@ -300,10 +434,12 @@ class AudioProcessor:
         self,
         voice: AudioSegment,
         background: AudioSegment,
-        duck_db: float = 4.0,
+        duck_db: float = 12.0,
         chunk_ms: int = 250,
         silence_threshold_db: float = -42.0,
-        log_callback: Optional[Callable[[str], None]] = None
+        log_callback: Optional[Callable[[str], None]] = None,
+        attack_ms: int = 100,
+        release_ms: int = 450
     ) -> AudioSegment:
         """Dynamically attenuate background music when speech is detected.
 
@@ -311,44 +447,55 @@ class AudioProcessor:
             voice: Voice AudioSegment
             background: Background music AudioSegment
             duck_db: Amount in dB to attenuate background music during speech
-            chunk_ms: Analysis window in milliseconds (default: 250ms)
+            chunk_ms: Requested activity window, capped at 20ms for speech
             silence_threshold_db: Absolute dBFS threshold for silence
             log_callback: Optional logging callback
+            attack_ms: Attack time constant in milliseconds (default: 100ms)
+            release_ms: Release time constant in milliseconds (default: 450ms)
 
         Returns:
             AudioSegment with ducked background music
         """
-        if len(background) == 0 or len(voice) == 0:
+        if len(background) == 0 or len(voice) == 0 or duck_db <= 0:
             return background
 
-        target_len = min(len(voice), len(background))
-        voice_cut = voice[:target_len]
-        bg_cut = background[:target_len]
-
-        # Determine voice baseline activity threshold
-        voice_ref = voice_cut.dBFS if voice_cut.dBFS != -float('inf') else -30.0
+        voice_cut = voice[:len(background)]
+        voice_ref = voice_cut.dBFS if voice_cut.dBFS != - \
+            float('inf') else -30.0
         active_threshold = max(silence_threshold_db, voice_ref - 14.0)
+        window_ms = max(1, min(20, int(chunk_ms)))
+        frames_per_window = max(
+            1, round(background.frame_rate * window_ms / 1000))
+        dtype = np.dtype("i{}".format(background.sample_width))
+        samples = np.frombuffer(background.raw_data,
+                                dtype=dtype).reshape(-1, background.channels)
+        output = np.empty_like(samples)
+        limits = np.iinfo(dtype)
+        gain = 1.0
+        speech_gain = 10 ** (-duck_db / 20)
 
-        chunks = []
-        for i in range(0, target_len, chunk_ms):
-            v_chunk = voice_cut[i:i + chunk_ms]
-            b_chunk = bg_cut[i:i + chunk_ms]
+        # The envelope's state is carried across windows, channels, and the
+        # voice's end. Float work is bounded to a small window, not an episode.
+        for start in range(0, len(samples), frames_per_window):
+            end = min(start + frames_per_window, len(samples))
+            start_ms = round(start * 1000 / background.frame_rate)
+            end_ms = round(end * 1000 / background.frame_rate)
+            active = voice_cut[start_ms:end_ms].dBFS > active_threshold
+            target = speech_gain if active else 1.0
+            time_ms = attack_ms if target < gain else release_ms
+            if time_ms <= 0:
+                envelope = np.full(end - start, target)
+            else:
+                decay = np.exp(-np.arange(1, end - start + 1) /
+                               (background.frame_rate * time_ms / 1000))
+                envelope = target + (gain - target) * decay
+            gain = float(envelope[-1])
+            block = np.rint(samples[start:end].astype(
+                np.float64) * envelope[:, None])
+            output[start:end] = np.clip(
+                block, limits.min, limits.max).astype(dtype)
 
-            if v_chunk.dBFS > active_threshold:
-                b_chunk = b_chunk - duck_db
-            chunks.append(b_chunk)
-
-        if not chunks:
-            return background
-
-        ducked = chunks[0]
-        for c in chunks[1:]:
-            ducked += c
-
-        if len(background) > target_len:
-            ducked += background[target_len:]
-
-        return ducked
+        return background._spawn(output.tobytes())
 
     def auto_balance_audio(
         self,
@@ -392,15 +539,18 @@ class AudioProcessor:
         if voice.dBFS != -float('inf') and voice.dBFS < (target_voice_dbfs - 1.0):
             gain_needed = target_voice_dbfs - voice.dBFS
             # Leave 1.0 dB headroom to prevent peak clipping
-            headroom = -1.0 - voice.max_dBFS if voice.max_dBFS != -float('inf') else gain_needed
+            headroom = -1.0 - voice.max_dBFS if voice.max_dBFS != - \
+                float('inf') else gain_needed
             actual_gain = min(gain_needed, max(0.0, headroom))
 
             if actual_gain >= 0.5:
                 voice = voice.apply_gain(actual_gain)
                 info["voice_gain_applied_db"] = round(actual_gain, 1)
-                log(f"Auto-balance: Voice recording was low ({info['voice_initial_dbfs']} dBFS). Applied +{actual_gain:.1f} dB pre-gain (New RMS: {voice.dBFS:.1f} dBFS, Peak: {voice.max_dBFS:.1f} dBFS)")
+                log(
+                    f"Auto-balance: Voice recording was low ({info['voice_initial_dbfs']} dBFS). Applied +{actual_gain:.1f} dB pre-gain (New RMS: {voice.dBFS:.1f} dBFS, Peak: {voice.max_dBFS:.1f} dBFS)")
 
-        info["voice_final_dbfs"] = round(voice.dBFS, 1) if voice.dBFS != -float('inf') else -99.0
+        info["voice_final_dbfs"] = round(
+            voice.dBFS, 1) if voice.dBFS != -float('inf') else -99.0
 
         # Step 2: Ensure background music sits at least min_separation_db below voice
         if background is not None and len(background) > 0 and background.dBFS != -float('inf'):
@@ -411,15 +561,19 @@ class AudioProcessor:
             if vmr < min_separation_db:
                 needed_attenuation = min_separation_db - vmr
                 background = background - needed_attenuation
-                info["bg_attenuation_applied_db"] = round(needed_attenuation, 1)
-                log(f"Auto-balance: Background music was too prominent relative to voice (separation was {vmr:.1f} dB). Reduced background by -{needed_attenuation:.1f} dB to maintain {min_separation_db:.1f} dB separation.")
+                info["bg_attenuation_applied_db"] = round(
+                    needed_attenuation, 1)
+                log(
+                    f"Auto-balance: Background music was too prominent relative to voice (separation was {vmr:.1f} dB). Reduced background by -{needed_attenuation:.1f} dB to maintain {min_separation_db:.1f} dB separation.")
 
             if apply_ducking:
-                background = self.apply_ducking(voice, background, duck_db=4.0, log_callback=log_callback)
+                background = self.apply_ducking(
+                    voice, background, log_callback=log_callback)
                 info["ducking_applied"] = True
-                log("Auto-balance: Applied dynamic auto-ducking to background music (-4.0 dB during speech).")
+                log("Auto-balance: Applied smooth auto-ducking to background music (-12.0 dB during speech).")
 
-            info["bg_final_dbfs"] = round(background.dBFS, 1) if background.dBFS != -float('inf') else -99.0
+            info["bg_final_dbfs"] = round(
+                background.dBFS, 1) if background.dBFS != -float('inf') else -99.0
             info["final_vmr_db"] = round(voice.dBFS - background.dBFS, 1)
 
         return voice, background, info
@@ -429,7 +583,8 @@ class AudioProcessor:
         voice_audio: Any,
         background_files: Optional[List[str]] = None,
         background_volume: int = 10,
-        track_volumes: Optional[dict] = None
+        track_volumes: Optional[dict] = None,
+        quality_config: Optional[Union[dict, AudioQualityConfig]] = None
     ) -> Dict[str, Any]:
         """Analyze voice and background music levels to detect low recording volume or masking issues.
 
@@ -438,11 +593,13 @@ class AudioProcessor:
             background_files: Optional list of background music file paths
             background_volume: Background volume percentage (0-100)
             track_volumes: Optional dict of track path -> volume percentage
+            quality_config: Shared voice and VMR thresholds (mapping or config)
 
         Returns:
             Dictionary with metrics, status, warnings, recommendations, and diagnosis
         """
         try:
+            cfg = self._quality_config(quality_config)
             if isinstance(voice_audio, list):
                 if not voice_audio:
                     return {"overall_status": "no_voice", "title": "Sin audio de voz", "warnings": ["No se ha subido ningún archivo de voz."], "recommendations": []}
@@ -463,25 +620,29 @@ class AudioProcessor:
         except Exception as e:
             return {"overall_status": "error", "title": "Error al analizar audio", "warnings": [str(e)], "recommendations": []}
 
-        voice_dbfs = round(voice.dBFS, 1) if voice.dBFS != -float('inf') else -99.0
-        voice_peak = round(voice.max_dBFS, 1) if voice.max_dBFS != -float('inf') else -99.0
+        voice_dbfs = round(voice.dBFS, 1) if voice.dBFS != - \
+            float('inf') else -99.0
+        voice_peak = round(
+            voice.max_dBFS, 1) if voice.max_dBFS != -float('inf') else -99.0
 
+        # Keep legacy severity bands inside the configured low-voice range.
+        very_low_dbfs = min(-28.0, cfg.voice_optimal_min_dbfs)
         # Voice loudness status
         if voice_dbfs <= -50.0:
             voice_status = "silent"
             voice_status_label = "Silencio / Muy bajo (-50 dBFS o menos)"
-        elif voice_dbfs < -28.0:
+        elif voice_dbfs < very_low_dbfs:
             voice_status = "very_low"
-            voice_status_label = "Voz muy baja (< -28 dBFS)"
-        elif voice_dbfs < -22.0:
+            voice_status_label = f"Voz muy baja (< {very_low_dbfs:g} dBFS)"
+        elif voice_dbfs < cfg.voice_optimal_min_dbfs:
             voice_status = "low"
-            voice_status_label = "Voz baja (-22 a -28 dBFS)"
-        elif voice_dbfs > -10.0:
+            voice_status_label = f"Voz baja (< {cfg.voice_optimal_min_dbfs:g} dBFS)"
+        elif voice_dbfs > cfg.voice_optimal_max_dbfs:
             voice_status = "loud"
-            voice_status_label = "Voz muy alta / posible pico (> -10 dBFS)"
+            voice_status_label = f"Voz muy alta / posible pico (> {cfg.voice_optimal_max_dbfs:g} dBFS)"
         else:
             voice_status = "optimal"
-            voice_status_label = "Nivel de voz óptimo (-14 a -22 dBFS)"
+            voice_status_label = f"Nivel de voz óptimo ({cfg.voice_optimal_min_dbfs:g} a {cfg.voice_optimal_max_dbfs:g} dBFS)"
 
         # Background music analysis
         bg_dbfs = None
@@ -497,7 +658,8 @@ class AudioProcessor:
                 sample_duration = min(20000, max(5000, len(voice)))
                 for bg_f in valid_bg[:3]:
                     t_track = self.load_audio(bg_f)
-                    vol = track_volumes.get(bg_f, background_volume) if track_volumes else background_volume
+                    vol = track_volumes.get(
+                        bg_f, background_volume) if track_volumes else background_volume
                     t_track = self.reduce_volume(t_track, vol)
                     t_slice = t_track[:sample_duration]
                     if bg_sample is None:
@@ -506,42 +668,63 @@ class AudioProcessor:
                         bg_sample += t_slice
 
                 if bg_sample is not None and len(bg_sample) > 0:
-                    bg_dbfs = round(bg_sample.dBFS, 1) if bg_sample.dBFS != -float('inf') else -99.0
-                    bg_peak = round(bg_sample.max_dBFS, 1) if bg_sample.max_dBFS != -float('inf') else -99.0
+                    bg_dbfs = round(
+                        bg_sample.dBFS, 1) if bg_sample.dBFS != -float('inf') else -99.0
+                    bg_peak = round(
+                        bg_sample.max_dBFS, 1) if bg_sample.max_dBFS != -float('inf') else -99.0
                     vmr = round(voice_dbfs - bg_dbfs, 1)
 
-                    if vmr >= 18.0:
+                    if vmr >= cfg.vmr_excellent_db:
                         balance_status = "optimal"
                         balance_status_label = f"Excelente (+{vmr} dB sobre la música)"
-                    elif vmr >= 12.0:
+                    elif vmr >= cfg.vmr_warning_db:
+                        balance_status = "optimal"
+                        balance_status_label = f"Bueno (+{vmr} dB sobre la música)"
+                    elif vmr >= cfg.vmr_failure_db and vmr > cfg.vmr_critical_db:
                         balance_status = "warning"
                         balance_status_label = f"Precaución (+{vmr} dB sobre la música)"
                     else:
                         balance_status = "danger"
-                        balance_status_label = f"Crítico ({vmr} dB - La música tapará la voz)"
+                        severity = "Crítico" if vmr <= cfg.vmr_critical_db else "Insuficiente"
+                        balance_status_label = f"{severity} ({vmr} dB - La música tapará la voz)"
             except Exception:
                 pass
 
         warnings = []
         recommendations = []
 
-        if voice_status in ["very_low", "low"]:
-            warnings.append(f"El volumen de la grabación de voz ({voice_dbfs} dBFS) es bajo para podcasting (recomendado: ~ -18 dBFS).")
-            recommendations.append("El auto-balance aumentará automáticamente la ganancia de la voz para que se escuche con total claridad.")
+        if voice_status in ["silent", "very_low", "low"]:
+            warnings.append(
+                f"El volumen de la grabación de voz ({voice_dbfs} dBFS) es bajo para podcasting (recomendado: ~ {cfg.voice_target_dbfs:g} dBFS).")
+            if voice_status == "silent":
+                recommendations.append(
+                    "Comprueba el micrófono y proporciona una grabación de voz audible.")
+            else:
+                recommendations.append(
+                    "Activa auto-balance para aumentar la voz, respetando el margen de los picos.")
+        elif voice_status == "loud":
+            warnings.append(
+                f"La voz supera el máximo recomendado de {cfg.voice_optimal_max_dbfs:g} dBFS.")
+            recommendations.append(
+                f"Reduce la ganancia hacia {cfg.voice_target_dbfs:g} dBFS y comprueba los picos.")
 
         if balance_status == "danger":
-            warnings.append(f"La separación entre voz y música es de sólo {vmr} dB (se requiere mínimo +18 dB). La música de fondo tapará tu voz.")
-            recommendations.append("El auto-balance atenuará la música automáticamente y aplicará auto-ducking durante tus intervenciones.")
+            warnings.append(
+                f"La separación entre voz y música es de sólo {vmr} dB (fallo por debajo de {cfg.vmr_failure_db:g} dB; recomendado +{cfg.vmr_excellent_db:g} dB). La música de fondo tapará tu voz.")
+            recommendations.append(
+                "El auto-balance atenuará la música automáticamente y aplicará auto-ducking durante tus intervenciones.")
         elif balance_status == "warning":
-            warnings.append(f"La separación voz/música es de {vmr} dB. La música podría competir con tu voz en fragmentos suaves.")
-            recommendations.append("Se recomienda activar Auto-Ducking o reducir el volumen de la música.")
+            warnings.append(
+                f"La separación voz/música es de {vmr} dB (aviso por debajo de {cfg.vmr_warning_db:g} dB). La música podría competir con tu voz en fragmentos suaves.")
+            recommendations.append(
+                "Se recomienda activar Auto-Ducking o reducir el volumen de la música.")
 
         if voice_status in ["silent", "very_low"] or balance_status == "danger":
             overall_status = "danger"
             badge_icon = "🔴"
             badge_color = "#ef4444"
             title = "Alerta: Riesgo de audio bajo o enmascarado por música"
-        elif voice_status == "low" or balance_status == "warning":
+        elif voice_status in ["low", "loud"] or balance_status == "warning":
             overall_status = "warning"
             badge_icon = "🟡"
             badge_color = "#f59e0b"
@@ -552,7 +735,8 @@ class AudioProcessor:
             badge_color = "#10b981"
             title = "Niveles y Balance de Audio Óptimos"
 
-        suggested_voice_gain = round(max(0.0, -18.0 - voice_dbfs), 1) if voice_dbfs > -60 else 0.0
+        suggested_voice_gain = round(
+            max(0.0, cfg.voice_target_dbfs - voice_dbfs), 1) if voice_dbfs > -60 else 0.0
 
         return {
             "overall_status": overall_status,
@@ -598,7 +782,12 @@ class AudioProcessor:
         generate_transcript: bool = False,
         whisper_model: str = "base",
         defer_transcription: bool = False,
-        log_callback: Optional[Callable[[str], None]] = None
+        log_callback: Optional[Callable[[str], None]] = None,
+        quality_gate_enabled: bool = False,
+        quality_config: Optional[Union[dict, AudioQualityConfig]] = None,
+        music_seed: int = 0,
+        quality_report_callback: Optional[Callable[[
+            AudioQualityReport], None]] = None
     ) -> Tuple[str, Optional[str], Optional[str]]:
         """Create complete podcast with intro, outro, and background music.
 
@@ -626,6 +815,10 @@ class AudioProcessor:
             whisper_model: Whisper model size ("tiny", "base", "small", "medium", "large")
             defer_transcription: Whether to skip transcription during creation
             log_callback: Optional callback function for logging
+            quality_gate_enabled: Opt-in QC of the exact final exported MP3
+            quality_config: Shared QC/ducking thresholds; explicit targets override target_lufs
+            music_seed: Local seed for reproducible music selection
+            quality_report_callback: Request-local report capture; previews retire on rerender/exit
 
         Returns:
             Tuple of (path to output file, path to denoised audio or None, path to transcript or None)
@@ -638,6 +831,24 @@ class AudioProcessor:
                 log_callback(message)
             else:
                 print(message)
+
+        self.last_quality_report = None
+        _invalidate_quality_sidecar(output_file, log)
+        config_error = None
+        try:
+            settings = quality_config
+            if not isinstance(settings, AudioQualityConfig):
+                settings = dict(settings or {})
+                if settings.get("target_lufs") is None:
+                    settings["target_lufs"] = target_lufs
+            cfg = self._quality_config(settings)
+        except Exception as error:
+            config_error = str(error)
+            cfg = AudioQualityConfig()
+            log(
+                f"Warning: Invalid audio quality settings: {error}. Using defaults; continuing export.")
+        rng = random.Random(music_seed)
+        selected_tracks = []
 
         log("Starting podcast creation...")
 
@@ -721,7 +932,7 @@ class AudioProcessor:
             voice, _, _ = self.auto_balance_audio(
                 voice=voice,
                 background=None,
-                target_voice_dbfs=-18.0,
+                target_voice_dbfs=cfg.voice_target_dbfs,
                 min_separation_db=min_voice_music_separation_db,
                 apply_ducking=False,
                 log_callback=log
@@ -744,8 +955,43 @@ class AudioProcessor:
 
         # Add main voice with background music
         log("Adding main voice recording")
-        voice_with_bg = voice
+        # Retain the actual post-balance, post-duck music, including selective
+        # gaps. Never infer a stem by subtracting from a clipped/encoded mix.
+        music_stem = AudioSegment.silent(
+            duration=len(voice), frame_rate=voice.frame_rate)
         background_applied = False
+
+        def prepare_background(segment_voice, duration, start_ms):
+            tracks = []
+            background = self.create_looped_background(
+                background_files, duration, background_volume,
+                track_volumes=track_volumes, log_callback=log,
+                rng=rng, selected_tracks=tracks)
+            for track in tracks:
+                track["start_ms"] += start_ms
+                track["end_ms"] += start_ms
+            selected_tracks.extend(tracks)
+            if background is None:
+                return None
+            if auto_balance_levels and math.isfinite(segment_voice.dBFS):
+                # Voice was already gained globally. Using its actual level
+                # prevents an ignored second pre-gain on quieter sub-segments.
+                _, background, _ = self.auto_balance_audio(
+                    segment_voice, background,
+                    target_voice_dbfs=segment_voice.dBFS,
+                    min_separation_db=min_voice_music_separation_db,
+                    apply_ducking=False, log_callback=log)
+            if auto_ducking:
+                background = self.apply_ducking(
+                    segment_voice, background,
+                    duck_db=cfg.ducking_reduction_db,
+                    silence_threshold_db=cfg.speech_threshold_dbfs,
+                    log_callback=log,
+                    attack_ms=cfg.ducking_attack_ms,
+                    release_ms=cfg.ducking_release_ms)
+                log(f"Applied smooth music ducking: {cfg.ducking_reduction_db:g} dB, "
+                    f"{cfg.ducking_attack_ms}ms attack / {cfg.ducking_release_ms}ms release")
+            return background
 
         # Add background music only to voice section
         if background_files:
@@ -767,24 +1013,10 @@ class AudioProcessor:
                     for seg_start, seg_end in valid_segments:
                         segment_duration = seg_end - seg_start
                         segment_voice = voice[seg_start:seg_end]
-                        segment_background = self.create_looped_background(
-                            background_files,
-                            segment_duration,
-                            background_volume,
-                            track_volumes=track_volumes,
-                            log_callback=log
-                        )
-                        if segment_background:
-                            if auto_balance_levels:
-                                _, segment_background, _ = self.auto_balance_audio(
-                                    voice=segment_voice,
-                                    background=segment_background,
-                                    target_voice_dbfs=-18.0,
-                                    min_separation_db=min_voice_music_separation_db,
-                                    apply_ducking=auto_ducking,
-                                    log_callback=log
-                                )
-                            voice_with_bg = voice_with_bg.overlay(
+                        segment_background = prepare_background(
+                            segment_voice, segment_duration, seg_start)
+                        if segment_background is not None:
+                            music_stem = music_stem.overlay(
                                 segment_background, position=seg_start)
                             background_applied = True
                     if background_applied:
@@ -796,25 +1028,10 @@ class AudioProcessor:
             else:
                 log(
                     f"Creating background music for voice (volume: {background_volume}%)")
-                background = self.create_looped_background(
-                    background_files,
-                    len(voice),
-                    background_volume,
-                    track_volumes=track_volumes,
-                    log_callback=log
-                )
-                if background:
-                    if auto_balance_levels:
-                        _, background, _ = self.auto_balance_audio(
-                            voice=voice,
-                            background=background,
-                            target_voice_dbfs=-18.0,
-                            min_separation_db=min_voice_music_separation_db,
-                            apply_ducking=auto_ducking,
-                            log_callback=log
-                        )
+                background = prepare_background(voice, len(voice), 0)
+                if background is not None:
                     log("Mixing background music with voice recording")
-                    voice_with_bg = self.mix_audio(voice, background)
+                    music_stem = background
                     background_applied = True
 
         # Add outro if provided (no background music)
@@ -825,111 +1042,160 @@ class AudioProcessor:
         else:
             outro = None
 
-        # Build podcast with overlaps (configurable)
-        podcast = AudioSegment.empty()
-
-        if intro:
-            podcast += intro
-            # Conditional overlap: intro's last second overlaps with voice's first second
-            if intro_voice_overlap and len(podcast) >= overlap_ms:
-                log(f"Applying {overlap_ms}ms overlap between intro and voice")
-                # Remove last second from intro
-                podcast = podcast[:-overlap_ms]
-
-        # Add voice with background (overlays with end of intro if overlap is enabled)
-        if intro and intro_voice_overlap and len(intro) >= overlap_ms:
-            # Extract the last second of intro to mix with first second of voice
-            intro_tail = intro[-overlap_ms:]
-            voice_head = voice_with_bg[:overlap_ms]
-            voice_tail = voice_with_bg[overlap_ms:]
-
-            # Mix the overlapping parts
-            overlapped_section = intro_tail.overlay(voice_head)
-            podcast += overlapped_section + voice_tail
-        else:
-            podcast += voice_with_bg
-
-        # Add outro after voice
-        if outro:
-            if voice_outro_overlap:
-                # Apply overlap between voice and outro
-                log(f"Adding outro with {overlap_ms}ms overlap")
-                # Extract the last second of voice+bg to mix with first second of outro
-                if len(podcast) >= overlap_ms and len(outro) >= overlap_ms:
-                    # Remove last second from current podcast
-                    podcast = podcast[:-overlap_ms]
-                    # Get the last second of original podcast and first second of outro
-                    voice_tail = voice_with_bg[-overlap_ms:
-                                               ] if intro else podcast[-overlap_ms:]
-                    outro_head = outro[:overlap_ms]
-                    outro_tail = outro[overlap_ms:]
-
-                    # Mix the overlapping parts
-                    overlapped_section = voice_tail.overlay(outro_head)
-                    podcast += overlapped_section + outro_tail
-                else:
-                    # Not enough audio for overlap, just append
-                    podcast += outro
-            else:
-                # No overlap - apply fade-in to outro for smooth transition
-                log(f"Adding outro without overlap (with fade-in)")
-                outro_with_fade = self.fade_in(outro, 200)
-
-                # If we have background music, fade it out in the last 500ms before outro
-                if background_applied and not voice_outro_overlap:
-                    fade_duration = 500  # 500ms fade-out
-                    # Apply fade-out to background in final section
-                    if len(podcast) >= fade_duration:
-                        # The voice+background has already been added to podcast
-                        # So we need to fade out the last 500ms of it
-                        fade_start = len(podcast) - fade_duration
-                        if fade_start >= 0:
-                            podcast_before_fade = podcast[:fade_start]
-                            podcast_fade_section = podcast[fade_start:].fade_out(
-                                fade_duration)
-                            podcast = podcast_before_fade + podcast_fade_section
-                            log(f"Applied {fade_duration}ms fade-out to background music before outro")
-
-                podcast += outro_with_fade
+        # Place all stems on one timeline. This also preserves the real last
+        # voice second when overlapping an outro without an intro.
+        intro_overlap = (min(overlap_ms, len(voice))
+                         if intro is not None and intro_voice_overlap
+                         and intro_duration >= overlap_ms else 0)
+        voice_offset_ms = intro_duration - intro_overlap
+        outro_overlap = (overlap_ms if outro is not None and voice_outro_overlap
+                         and min(len(voice), outro_duration) >= overlap_ms else 0)
+        outro_offset_ms = voice_offset_ms + len(voice) - outro_overlap
+        if intro_overlap:
+            log(f"Applying {intro_overlap}ms overlap between intro and voice")
+        if outro is not None:
+            if outro_overlap:
+                log(f"Adding outro with {outro_overlap}ms overlap")
+            elif not voice_outro_overlap:
+                outro = self.fade_in(outro, 200)
+                if background_applied:
+                    music_stem = self.fade_out(music_stem, 500)
+                    log("Applied 500ms fade-out to music only before outro")
         else:
             log("No outro file provided")
 
+        episode_duration = outro_offset_ms + outro_duration
+        episode_music = AudioSegment.silent(
+            duration=episode_duration, frame_rate=voice.frame_rate)
+        episode_music = episode_music.overlay(
+            music_stem, position=voice_offset_ms)
+        if intro is not None:
+            episode_music = episode_music.overlay(intro)
+        if outro is not None:
+            episode_music = episode_music.overlay(
+                outro, position=outro_offset_ms)
+        podcast = episode_music.overlay(voice, position=voice_offset_ms)
+        for track in selected_tracks:
+            track["episode_start_ms"] = voice_offset_ms + track["start_ms"]
+            track["episode_end_ms"] = voice_offset_ms + track["end_ms"]
+
         # Export final podcast
         log(f"Exporting to: {output_file}")
-        podcast.export(output_file, format="mp3")
+        with podcast.export(output_file, format="mp3"):
+            pass
 
-        # Phase 2: LUFS Normalization (after mixing, before final export)
+        # Optional mastering never destroys the successful unnormalized export.
+        # The owned directory cleans partial WAV/MP3 outputs even on failure.
         if normalize_lufs:
-            log(f"Normalizing audio to {target_lufs} LUFS...")
-            # Create temporary WAV for normalization
-            import tempfile
-            temp_wav = tempfile.NamedTemporaryFile(
-                delete=False, suffix=".wav").name
-            podcast.export(temp_wav, format="wav")
+            try:
+                log(f"Normalizing audio to {cfg.target_lufs} LUFS...")
+                with tempfile.TemporaryDirectory(
+                        prefix="podcast_normalize_",
+                        dir=os.path.dirname(os.path.abspath(output_file))) as temp_dir:
+                    temp_wav = os.path.join(temp_dir, "source.wav")
+                    with podcast.export(temp_wav, format="wav"):
+                        pass
+                    normalized_file = normalize_audio_lufs(
+                        temp_wav, output_file=os.path.join(
+                            temp_dir, "normalized.wav"),
+                        target_lufs=cfg.target_lufs, true_peak=cfg.target_true_peak_dbtp,
+                        lra=cfg.lra, log_callback=log)
+                    if normalized_file and normalized_file != temp_wav:
+                        normalized_audio = self.load_audio(normalized_file)
+                        temp_mp3 = os.path.join(temp_dir, "normalized.mp3")
+                        with normalized_audio.export(temp_mp3, format="mp3"):
+                            pass
+                        os.replace(temp_mp3, output_file)
+                        log("✓ Applied LUFS normalization to final output")
+                    else:
+                        log("Warning: LUFS normalization skipped or failed. Using unnormalized export.")
+            except Exception as error:
+                log(
+                    f"Warning: LUFS normalization failed: {error}. Using unnormalized export.")
 
-            # Normalize
-            normalized_file = normalize_audio_lufs(
-                temp_wav,
-                output_file=None,
-                target_lufs=target_lufs,
-                log_callback=log
-            )
+        if quality_gate_enabled:
+            # Mix metrics describe processed stems before master normalization;
+            # final loudness, clipping and silence always measure the exact MP3.
+            try:
+                if config_error is not None:
+                    raise ValueError(config_error)
+                analyzer = AudioQualityAnalyzer(cfg, log_callback=log)
+                mix_report = analyzer.analyze_mix(
+                    voice, episode_music[voice_offset_ms:
+                                         voice_offset_ms + len(voice)],
+                    offset_seconds=voice_offset_ms / 1000)
+                report = analyzer.analyze_file(
+                    output_file, mix_report=mix_report)
+                if not report.analysis_complete:
+                    if "ANALYSIS_UNAVAILABLE" not in report.failures:
+                        report.failures.append("ANALYSIS_UNAVAILABLE")
+                    log("[AudioQC] ANALYSIS_UNAVAILABLE: QC incomplete; keeping exported podcast.")
+            except Exception as error:
+                report = AudioQualityReport(
+                    file_path=os.fspath(output_file), failures=["ANALYSIS_UNAVAILABLE"],
+                    analysis_errors=[str(error)], preview_seconds=cfg.preview_seconds)
+                log(
+                    f"[AudioQC] ANALYSIS_UNAVAILABLE: {error}. Keeping exported podcast.")
+            preview_identity = None
+            try:
+                if create_preview(output_file, report) is None:
+                    log("Warning: Quality preview unavailable; keeping exported podcast.")
+                preview_identity = _register_quality_preview(
+                    report.preview_file, output_file)
+            except Exception as error:
+                report.warnings.append("PREVIEW_UNAVAILABLE")
+                log(
+                    f"Warning: Quality preview failed: {error}. Keeping exported podcast.")
 
-            if normalized_file and normalized_file != temp_wav:
-                # Re-export as MP3
-                normalized_audio = self.load_audio(normalized_file)
-                normalized_audio.export(output_file, format="mp3")
-                log(f"✓ Applied LUFS normalization to final output")
-
-                # Clean up temp files
+            metadata = {
+                "music_seed": music_seed,
+                "selected_tracks": selected_tracks,
+                "voice_offset_ms": voice_offset_ms,
+                "outro_offset_ms": outro_offset_ms,
+                "mix_analysis_stage": "post_gain_post_duck_pre_master",
+                "settings": {
+                    "quality_config": asdict(cfg),
+                    "background_volume": background_volume,
+                    "track_volumes": {os.fspath(k): v for k, v in (track_volumes or {}).items()},
+                    "background_segments": background_segments,
+                    "auto_balance_levels": auto_balance_levels,
+                    "min_voice_music_separation_db": min_voice_music_separation_db,
+                    "auto_ducking": auto_ducking,
+                    "normalize_lufs": normalize_lufs,
+                    "trim_silence": trim_silence,
+                    "denoise_audio": denoise_audio,
+                    "denoise_method": denoise_method,
+                    "enhance_voice_enabled": enhance_voice_enabled,
+                    "voice_enhancement_preset": voice_enhancement_preset,
+                    "intro_file": os.fspath(intro_file) if intro_file else None,
+                    "outro_file": os.fspath(outro_file) if outro_file else None,
+                    "intro_voice_overlap": intro_voice_overlap,
+                    "voice_outro_overlap": voice_outro_overlap,
+                },
+            }
+            try:
+                payload = report.to_dict()
+                payload["metadata"] = metadata
+                payload["schema"] = "ntn-quality-v1"
+                payload["output_path"] = os.path.realpath(output_file)
+                payload["identity"] = _quality_file_identity(output_file)
+                payload["preview_identity"] = preview_identity
+                _write_quality_sidecar(os.path.realpath(
+                    output_file) + ".quality.json", payload)
+            except Exception as error:
+                log(
+                    f"Warning: Could not save quality report: {error}. Keeping exported podcast.")
+            self.last_quality_report = report
+            if quality_report_callback is not None:
                 try:
-                    os.remove(temp_wav)
-                    if os.path.exists(normalized_file):
-                        os.remove(normalized_file)
-                except Exception:
-                    pass
-            else:
-                log("LUFS normalization skipped or failed")
+                    quality_report_callback(report)
+                except Exception as error:
+                    log(
+                        f"Warning: Quality report callback failed: {error}. Keeping exported podcast.")
+            log("[AudioQC] RESULT: {}{}".format(
+                report.status, " - " +
+                ", ".join(report.failures + report.warnings)
+                if report.failures or report.warnings else ""))
 
         # Phase 3: Transcription (after final export)
         transcript_path = None

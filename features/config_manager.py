@@ -3,7 +3,9 @@
 import json
 import os
 import glob
+from dataclasses import asdict
 from typing import Dict, List, Any, Optional
+from .audio_quality import AudioQualityConfig
 
 
 DEFAULT_RSS_FEED_URL = "https://feeds.ivoox.com/feed_fg_f1277993_filtro_1.xml"
@@ -65,8 +67,12 @@ class ConfigManager:
             "voice_outro_overlap": False,  # Enable 1-second overlap between voice and outro
             # Audio balance & level safety
             "auto_balance_levels": True,  # Auto-balance voice & music to prevent masking
-            "min_voice_music_separation_db": 18.0,  # Minimum dB separation between voice and background music
+            # Minimum dB separation between voice and background music
+            "min_voice_music_separation_db": 18.0,
             "auto_ducking": True,  # Dynamically lower background music during speech
+            "quality_gate_enabled": False,  # Opt-in; export is never blocked
+            "audio_quality": asdict(AudioQualityConfig()),
+            "music_seed": 0,  # Reproducible music selection per render
             # Whisper transcription feature (disabled by default)
             "generate_transcript": False,
             "whisper_model": "base",  # tiny, base, small, medium, large
@@ -423,6 +429,19 @@ class ConfigManager:
         """
         return self.get("auto_ducking", True)
 
+    def get_audio_quality_config(self) -> AudioQualityConfig:
+        """Merge legacy configuration with shared defaults; LUFS slider wins.
+
+        Invalid saved thresholds raise ValueError rather than silently certifying
+        an episode with different thresholds. Loading older configs is supported.
+        """
+        settings = self.get("audio_quality", {})
+        if not isinstance(settings, dict):
+            raise ValueError("audio_quality must be a settings object")
+        settings = dict(settings)
+        settings["target_lufs"] = self.get_target_lufs()
+        return AudioQualityConfig.from_mapping(settings)
+
     def set_auto_ducking(self, enabled: bool) -> None:
         """Set auto-ducking setting.
 
@@ -550,6 +569,9 @@ class ConfigManager:
             "auto_balance_levels": self.get_auto_balance_levels(),
             "min_voice_music_separation_db": self.get_min_voice_music_separation_db(),
             "auto_ducking": self.get_auto_ducking(),
+            "quality_gate_enabled": self.get("quality_gate_enabled", False),
+            "audio_quality": asdict(self.get_audio_quality_config()),
+            "music_seed": self.get("music_seed", 0),
             "generate_transcript": self.get_generate_transcript(),
             "whisper_model": self.get_whisper_model()
         }
@@ -560,6 +582,22 @@ class ConfigManager:
         Args:
             settings: Dictionary of settings to apply
         """
+        # Validate QC before applying any part of the template.
+        quality = None
+        if "audio_quality" in settings:
+            values = settings["audio_quality"]
+            if not isinstance(values, dict):
+                raise ValueError("audio_quality must be a settings object")
+            values = dict(values)
+            values["target_lufs"] = settings.get(
+                "target_lufs", self.get_target_lufs())
+            quality = asdict(AudioQualityConfig.from_mapping(values))
+        if "music_seed" in settings and (isinstance(settings["music_seed"], bool)
+                                         or not isinstance(settings["music_seed"], int)):
+            raise ValueError("music_seed must be an integer")
+        if "quality_gate_enabled" in settings and not isinstance(settings["quality_gate_enabled"], bool):
+            raise ValueError("quality_gate_enabled must be boolean")
+
         # Audio files
         if "intro_file" in settings:
             intro = settings["intro_file"]
@@ -614,16 +652,24 @@ class ConfigManager:
             self.set_auto_balance_levels(settings["auto_balance_levels"])
 
         if "min_voice_music_separation_db" in settings:
-            self.set_min_voice_music_separation_db(settings["min_voice_music_separation_db"])
+            self.set_min_voice_music_separation_db(
+                settings["min_voice_music_separation_db"])
 
         if "auto_ducking" in settings:
             self.set_auto_ducking(settings["auto_ducking"])
+
+        if quality is not None:
+            self.set("audio_quality", quality)
+        for key in ("quality_gate_enabled", "music_seed"):
+            if key in settings:
+                self.set(key, settings[key])
 
         if "enhance_voice" in settings:
             self.set("enhance_voice", settings["enhance_voice"])
 
         if "voice_enhancement_preset" in settings:
-            self.set("voice_enhancement_preset", settings["voice_enhancement_preset"])
+            self.set("voice_enhancement_preset",
+                     settings["voice_enhancement_preset"])
 
         if "generate_transcript" in settings:
             self.set_generate_transcript(settings["generate_transcript"])

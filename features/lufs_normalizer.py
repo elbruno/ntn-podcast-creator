@@ -2,9 +2,58 @@
 
 import os
 import json
+import math
+import re
 import subprocess
-import tempfile
 from typing import Optional, Callable, Dict
+
+
+_MEASURED_KEYS = ("input_i", "input_tp", "input_lra",
+                  "input_thresh", "target_offset")
+
+
+def extract_loudnorm_json(stderr: str) -> Optional[Dict]:
+    """Return the last complete loudnorm JSON object embedded in FFmpeg logs.
+
+    All five measured fields must be present. Values are returned unchanged,
+    including nonfinite measurements such as silence's ``"-inf"``, for QC.
+    Suitability for normalization is validated separately before the second pass.
+    Malformed objects and unrelated JSON are ignored.
+    """
+    decoder = json.JSONDecoder()
+    stats = None
+    position = 0
+    while True:
+        start = stderr.find("{", position)
+        if start < 0:
+            return stats
+        try:
+            candidate, end = decoder.raw_decode(stderr, start)
+        except json.JSONDecodeError:
+            position = start + 1
+            continue
+        position = end
+        if isinstance(candidate, dict) and all(key in candidate for key in _MEASURED_KEYS):
+            stats = candidate
+
+
+def _finite_measured_stats(stats: Optional[Dict]) -> Optional[Dict]:
+    """Convert all required measurements to finite numbers, without defaults."""
+    if not isinstance(stats, dict):
+        return None
+    measured = {}
+    for key in _MEASURED_KEYS:
+        value = stats.get(key)
+        if isinstance(value, bool) or not isinstance(value, (str, int, float)):
+            return None
+        try:
+            number = float(value)
+        except (ValueError, OverflowError):
+            return None
+        if not math.isfinite(number):
+            return None
+        measured[key] = number
+    return measured
 
 
 class LUFSNormalizer:
@@ -35,7 +84,9 @@ class LUFSNormalizer:
         self,
         input_file: str,
         target_lufs: float = -16.0,
-        log_callback: Optional[Callable[[str], None]] = None
+        log_callback: Optional[Callable[[str], None]] = None,
+        true_peak: float = -1.5,
+        lra: float = 7.0
     ) -> Optional[Dict]:
         """Measure audio loudness (first pass for two-pass normalization).
 
@@ -43,9 +94,12 @@ class LUFSNormalizer:
             input_file: Path to input audio file
             target_lufs: Target LUFS level
             log_callback: Optional callback for logging
+            true_peak: Maximum true peak in dBTP (same as the second pass)
+            lra: Target loudness range in LU (same as the second pass)
 
         Returns:
-            Dictionary with loudness statistics, or None if failed
+            Raw loudness statistics (possibly nonfinite for silence), or None
+            if FFmpeg failed or no complete loudnorm JSON object was found.
         """
         def log(message: str):
             if log_callback:
@@ -60,7 +114,7 @@ class LUFSNormalizer:
             cmd = [
                 "ffmpeg",
                 "-i", input_file,
-                "-af", f"loudnorm=I={target_lufs}:print_format=json",
+                "-af", f"loudnorm=I={target_lufs}:TP={true_peak}:LRA={lra}:print_format=json",
                 "-f", "null",
                 "-"
             ]
@@ -72,26 +126,13 @@ class LUFSNormalizer:
                 timeout=300
             )
 
-            # Parse JSON output from stderr
-            stderr = result.stderr
+            if result.returncode != 0:
+                log(
+                    f"Warning: FFmpeg loudness analysis failed (exit {result.returncode}): {result.stderr}")
+                return None
 
-            # Find JSON data in output - look for the last complete JSON object
-            # FFmpeg outputs JSON after "Parsed_loudnorm" in its log
-            json_str = None
-            for line in reversed(stderr.split('\n')):
-                line = line.strip()
-                if line.startswith('{') and line.endswith('}'):
-                    try:
-                        # Try to parse as JSON
-                        test_parse = json.loads(line)
-                        if 'input_i' in test_parse:  # Verify it's loudnorm stats
-                            json_str = line
-                            break
-                    except json.JSONDecodeError:
-                        continue
-
-            if json_str:
-                stats = json.loads(json_str)
+            stats = extract_loudnorm_json(result.stderr)
+            if stats is not None:
                 log(f"Measured loudness: {stats.get('input_i', 'N/A')} LUFS")
                 return stats
             else:
@@ -100,9 +141,6 @@ class LUFSNormalizer:
 
         except subprocess.TimeoutExpired:
             log("Error: Loudness analysis timed out")
-            return None
-        except json.JSONDecodeError as e:
-            log(f"Error parsing loudness statistics: {e}")
             return None
         except Exception as e:
             log(f"Error measuring loudness: {e}")
@@ -159,30 +197,35 @@ class LUFSNormalizer:
 
             if two_pass:
                 # Two-pass normalization (recommended)
-                stats = self._get_loudness_stats(input_file, target_lufs, log_callback)
+                stats = self._get_loudness_stats(
+                    input_file, target_lufs, log_callback, true_peak=true_peak, lra=lra
+                )
+                measured = _finite_measured_stats(stats)
 
-                if stats:
+                if measured is not None:
                     # Second pass: apply normalization with measured values
                     log("Applying loudness normalization (pass 2/2)...")
 
-                    measured_i = stats.get("input_i", target_lufs)
-                    measured_tp = stats.get("input_tp", true_peak)
-                    measured_lra = stats.get("input_lra", lra)
-                    measured_thresh = stats.get("input_thresh", "-70.0")
+                    measured_i = measured["input_i"]
+                    measured_tp = measured["input_tp"]
+                    measured_lra = measured["input_lra"]
+                    measured_thresh = measured["input_thresh"]
+                    offset = measured["target_offset"]
 
                     cmd = [
                         "ffmpeg",
                         "-i", input_file,
                         "-af", f"loudnorm=I={target_lufs}:TP={true_peak}:LRA={lra}:"
-                               f"measured_I={measured_i}:measured_TP={measured_tp}:"
-                               f"measured_LRA={measured_lra}:measured_thresh={measured_thresh}:"
-                               f"linear=true:print_format=summary",
+                        f"measured_I={measured_i}:measured_TP={measured_tp}:"
+                        f"measured_LRA={measured_lra}:measured_thresh={measured_thresh}:"
+                        f"offset={offset}:linear=true:print_format=summary",
                         "-ar", "44100",
                         "-y",
                         output_file
                     ]
                 else:
-                    log("Warning: Using single-pass normalization (stats unavailable)")
+                    log("Warning: Using single-pass normalization fallback "
+                        "(measured stats unavailable, missing, nonnumeric, or nonfinite)")
                     two_pass = False
 
             if not two_pass:
@@ -190,7 +233,7 @@ class LUFSNormalizer:
                 cmd = [
                     "ffmpeg",
                     "-i", input_file,
-                    "-af", f"loudnorm=I={target_lufs}:TP={true_peak}:LRA={lra}",
+                    "-af", f"loudnorm=I={target_lufs}:TP={true_peak}:LRA={lra}:print_format=summary",
                     "-ar", "44100",
                     "-y",
                     output_file
@@ -205,11 +248,19 @@ class LUFSNormalizer:
 
             if result.returncode == 0 and os.path.exists(output_file):
                 output_size_mb = os.path.getsize(output_file) / (1024 * 1024)
-                log(f"✓ LUFS normalization complete: {os.path.basename(output_file)} ({output_size_mb:.1f}MB)")
+                # Two passes do not guarantee linear processing: FFmpeg may use
+                # dynamic mode when the LRA or true-peak constraints require it.
+                modes = re.findall(
+                    r"Normalization Type:\s*(linear|dynamic)\b", result.stderr, re.IGNORECASE)
+                mode = f"FFmpeg {modes[-1].lower()} mode" if modes else "FFmpeg mode not reported"
+                passes = "two-pass (measured)" if two_pass else "single-pass"
+                log(f"✓ LUFS normalization complete: {passes}, {mode}: "
+                    f"{os.path.basename(output_file)} ({output_size_mb:.1f}MB)")
                 log(f"Target: {target_lufs} LUFS, True Peak: {true_peak} dBTP")
                 return output_file
             else:
-                log(f"FFmpeg normalization failed: {result.stderr}")
+                log(f"FFmpeg normalization failed (exit {result.returncode} or output missing): "
+                    f"{result.stderr}. Using original audio.")
                 return input_file
 
         except subprocess.TimeoutExpired:
@@ -224,7 +275,9 @@ def normalize_audio_lufs(
     input_file: str,
     output_file: Optional[str] = None,
     target_lufs: float = -16.0,
-    log_callback: Optional[Callable[[str], None]] = None
+    log_callback: Optional[Callable[[str], None]] = None,
+    true_peak: float = -1.5,
+    lra: float = 7.0
 ) -> Optional[str]:
     """Convenience function to normalize audio to target LUFS.
 
@@ -233,6 +286,8 @@ def normalize_audio_lufs(
         output_file: Path for output (auto-generated if None)
         target_lufs: Target LUFS level (-14 or -16 recommended)
         log_callback: Optional callback for logging
+        true_peak: Maximum true peak in dBTP (-1.5 recommended)
+        lra: Target loudness range in LU (7.0 recommended)
 
     Returns:
         Path to normalized audio file, or original if failed
@@ -242,5 +297,7 @@ def normalize_audio_lufs(
         input_file,
         output_file,
         target_lufs=target_lufs,
-        log_callback=log_callback
+        log_callback=log_callback,
+        true_peak=true_peak,
+        lra=lra
     )

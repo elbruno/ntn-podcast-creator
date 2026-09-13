@@ -6,14 +6,22 @@ import datetime
 import re
 import json
 import html
+import time
+import tempfile
+from dataclasses import asdict, fields, replace
 import urllib.request
 import xml.etree.ElementTree as ET
 import gradio as gr
 from typing import Optional, List, Tuple, Dict, Any
-from features.audio_processor import AudioProcessor
+from features.audio_processor import (
+    AudioProcessor, _quality_file_identity, _quality_preview_identity,
+    _register_quality_preview, _cleanup_quality_preview,
+    _read_quality_sidecar, _write_quality_sidecar,
+)
 from features.config_manager import ConfigManager, DEFAULT_RSS_FEED_URL
 from features.audio_denoiser_processor import denoise_audio_file
 from features.template_manager import TemplateManager
+from features.audio_quality import AudioQualityConfig, AudioQualityReport
 
 
 # Initialize components
@@ -940,26 +948,252 @@ def render_audio_health_card(analysis: Optional[Dict[str, Any]] = None) -> str:
     ]
 
     if bg_dbfs is not None:
-        html_parts.append(f'<div><strong>🎵 Música de Fondo:</strong> <code>{bg_dbfs} dBFS</code><br/><span style="font-size: 11px; opacity: 0.8;">({balance_label})</span></div>')
+        html_parts.append(
+            f'<div><strong>🎵 Música de Fondo:</strong> <code>{bg_dbfs} dBFS</code><br/><span style="font-size: 11px; opacity: 0.8;">({balance_label})</span></div>')
     else:
-        html_parts.append('<div><strong>🎵 Música de Fondo:</strong> <span style="font-size: 11px; opacity: 0.8;">(Sin música)</span></div>')
+        html_parts.append(
+            '<div><strong>🎵 Música de Fondo:</strong> <span style="font-size: 11px; opacity: 0.8;">(Sin música)</span></div>')
 
     html_parts.append('</div>')
 
     if warnings:
-        html_parts.append('<div style="margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(100,100,100,0.15);">')
+        html_parts.append(
+            '<div style="margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(100,100,100,0.15);">')
         for w in warnings:
-            html_parts.append(f'<div style="color: {title_color}; margin-bottom: 2px;">⚠️ {w}</div>')
+            html_parts.append(
+                f'<div style="color: {title_color}; margin-bottom: 2px;">⚠️ {w}</div>')
         html_parts.append('</div>')
 
     if recommendations:
-        html_parts.append('<div style="margin-top: 6px; font-size: 12px; opacity: 0.9;">')
+        html_parts.append(
+            '<div style="margin-top: 6px; font-size: 12px; opacity: 0.9;">')
         for r in recommendations:
-            html_parts.append(f'<div style="color: #059669; font-weight: 500;">💡 {r}</div>')
+            html_parts.append(
+                f'<div style="color: #059669; font-weight: 500;">💡 {r}</div>')
         html_parts.append('</div>')
 
     html_parts.append('</div>')
     return "".join(html_parts)
+
+
+def quality_settings_values():
+    """Refresh controls from persisted settings (including after template loads)."""
+    try:
+        thresholds = asdict(config_manager.get_audio_quality_config())
+    except (ValueError, TypeError, AttributeError, OverflowError) as error:
+        thresholds = config_manager.get("audio_quality", {})
+        log_message(f"Invalid saved audio quality settings: {error}. "
+                    "Repair the raw JSON in Advanced quality thresholds; settings were not changed.")
+    return (
+        bool(config_manager.get("quality_gate_enabled", False)),
+        json.dumps(thresholds, indent=2),
+        config_manager.get("music_seed", 0),
+    )
+
+
+def save_quality_settings(enabled, thresholds_json, music_seed):
+    """Validate the complete editor before saving anything; errors stay in the UI."""
+    try:
+        values = json.loads(thresholds_json)
+        if not isinstance(values, dict):
+            raise ValueError("Thresholds must be a JSON object")
+        unknown = set(values) - \
+            {item.name for item in fields(AudioQualityConfig)}
+        if unknown:
+            raise ValueError("Unknown thresholds: " +
+                             ", ".join(sorted(unknown)))
+        # The existing LUFS slider remains the single source of truth.
+        quality = AudioQualityConfig.from_mapping(values)
+        quality = replace(
+            quality, target_lufs=config_manager.get_target_lufs())
+        if isinstance(music_seed, bool) or music_seed is None:
+            raise ValueError("Music seed must be an integer")
+        seed = int(music_seed)
+        if seed != float(music_seed) or abs(seed) > 2**53 - 1:
+            raise ValueError(
+                "Music seed must be an exact integer within ±(2^53 − 1)")
+        config_manager.set("audio_quality", asdict(quality))
+        config_manager.set("music_seed", seed)
+        config_manager.set("quality_gate_enabled", bool(enabled))
+        return "Quality settings saved. Target LUFS follows the LUFS slider. Changes apply on the next render."
+    except (ValueError, TypeError, OverflowError, OSError) as error:
+        return "Quality settings not saved: " + str(error)
+
+
+def set_quality_gate_enabled(enabled):
+    """Keep opt-in independent of any unfinished advanced JSON edits."""
+    try:
+        config_manager.set("quality_gate_enabled", bool(enabled))
+        return "Final quality gate {} for the next render.".format("enabled" if enabled else "disabled")
+    except (ValueError, TypeError, OSError) as error:
+        return "Quality setting not saved: " + str(error)
+
+
+def save_render_quality_report(output_path, enabled, report, started_ns):
+    """Persist only this request's callback report, bound to the exact export.
+
+    The producer's matching metadata survives; metrics never come from disk.
+    Disabled renders get only a receipt, never a copy of previous QC findings.
+    """
+    output_path = os.path.realpath(output_path)
+    if report is not None and os.path.realpath(report.file_path or "") != output_path:
+        raise ValueError("Quality report belongs to a different audio file")
+    identity = _quality_file_identity(output_path)
+    metadata = None
+    try:
+        producer = _read_quality_sidecar(output_path)
+        if producer["identity"] == identity:
+            metadata = producer.get("metadata")
+    except FileNotFoundError:
+        pass
+    except (OSError, ValueError, TypeError) as error:
+        log_message(f"Producer quality metadata unavailable: {error}")
+    preview = report.preview_file if enabled and report is not None else None
+    preview_identity = _register_quality_preview(preview, output_path)
+    data = report.to_dict() if enabled and report is not None else {}
+    if enabled and metadata is not None:
+        data["metadata"] = metadata
+    data.update({
+        "schema": "ntn-quality-v1", "output_path": output_path,
+        "identity": identity, "preview_identity": preview_identity,
+        "ui": {"identity": identity, "started_ns": started_ns,
+               "enabled": bool(enabled), "preview_identity": preview_identity,
+               "override": False},
+    })
+    if _quality_file_identity(output_path) != identity:
+        raise ValueError("Audio changed while saving the quality receipt")
+    _write_quality_sidecar(output_path + ".quality.json", data)
+
+
+def _load_render_quality_report(output_path, started_ns=0):
+    """Reject missing, mismatched, stale or malformed receipts; never infer VMR."""
+    if not output_path:
+        raise ValueError("No exported audio for this render")
+    output_path = os.path.realpath(output_path)
+    output_root = os.path.realpath("outputs")
+    if os.path.commonpath([output_root, output_path]) != output_root:
+        raise ValueError("Audio is not a produced output")
+    sidecar = output_path + ".quality.json"
+    data = _read_quality_sidecar(output_path)
+    receipt = data.get("ui")
+    if (not isinstance(receipt, dict)
+            or receipt.get("identity") != data["identity"]
+            or receipt.get("started_ns", 0) < started_ns):
+        raise ValueError("Stale quality report; render again to refresh it")
+    if not isinstance(receipt.get("enabled"), bool):
+        raise ValueError("Invalid quality gate state")
+    report = None
+    if receipt["enabled"] and "analysis_complete" in data:
+        raw = data
+        if not isinstance(raw, dict) or not isinstance(raw.get("analysis_complete"), bool):
+            raise ValueError("Invalid quality report")
+        for key in ("failures", "warnings", "analysis_errors", "recommendations"):
+            if not isinstance(raw.get(key), list) or not all(isinstance(x, str) for x in raw[key]):
+                raise ValueError("Invalid quality report notes")
+        if os.path.realpath(raw.get("file_path") or "") != output_path:
+            raise ValueError("Report does not describe this export")
+        report = AudioQualityReport(**{item.name: raw[item.name]
+                                       for item in fields(AudioQualityReport) if item.name in raw})
+    return sidecar, data, report
+
+
+def clear_final_quality_inspector(previous_preview=None):
+    """First event in the render chain clears every previous result immediately."""
+    if isinstance(previous_preview, dict):
+        _cleanup_quality_preview(previous_preview.get("path"),
+                                 previous_preview.get("identity"))
+    else:
+        _cleanup_quality_preview(previous_preview)
+    return "", None, None, "", time.time_ns()
+
+
+def remember_quality_preview(output_path, started_ns=0):
+    """Keep the original preview receipt in session state, not a Gradio cache copy."""
+    try:
+        _, data, report = _load_render_quality_report(output_path, started_ns)
+        if report is not None and report.preview_file:
+            identity = data["ui"].get("preview_identity")
+            if identity is not None and _quality_preview_identity(report.preview_file) == identity:
+                return {"path": report.preview_file, "identity": identity}
+    except (OSError, ValueError, TypeError, AttributeError, KeyError):
+        pass
+    return None
+
+
+def render_final_quality_inspector(output_path, started_ns=0):
+    """Load a render-local receipt, not mutable processor state or current config."""
+    if not output_path:
+        return "", None, None
+    try:
+        sidecar, data, report = _load_render_quality_report(
+            output_path, started_ns)
+        if not data["ui"]["enabled"]:
+            return "<p>Final Audio Quality Gate was disabled for this render.</p>", None, None
+        if report is None:
+            return '<p style="color:#dc2626">QC unavailable. Audio exported, but not certified; rerender to check.</p>', None, None
+        color, caption = {
+            "PASS": ("#059669", "Ready to publish"),
+            "WARN": ("#d97706", "Review recommended"),
+            "FAIL": ("#dc2626", "Audio Quality Check Failed — publishing is not recommended"),
+        }[report.status]
+        acknowledgement = ("<p>Override acknowledged. Original QC result is unchanged; export remains available.</p>"
+                           if data["ui"].get("override") else "")
+        card = (f'<div style="border:2px solid {color};padding:16px;border-radius:8px">'
+                f'<h3 style="color:{color}">{caption}</h3>' + report.to_html()
+                + acknowledgement + "<p>VMR comes from the render's separate stems, not recovered from stereo.</p></div>")
+        preview = report.preview_file
+        if preview:
+            # Only expose the analyzer's produced temporary preview, never an
+            # arbitrary path injected into a sidecar or a stale replaced file.
+            identity = data["ui"].get("preview_identity")
+            valid_preview = (identity is not None
+                             and identity == _quality_preview_identity(preview))
+            if not valid_preview:
+                preview = None
+        return card, preview, sidecar
+    except (OSError, ValueError, TypeError, AttributeError, KeyError) as error:
+        return '<p style="color:#dc2626">QC unavailable: ' + html.escape(str(error)) + "</p>", None, None
+
+
+def acknowledge_quality_override(output_path, started_ns=0):
+    """Record a deliberate acknowledgement without changing any QC findings."""
+    try:
+        sidecar, data, report = _load_render_quality_report(
+            output_path, started_ns)
+        if report is None or report.status == "PASS":
+            return render_final_quality_inspector(output_path, started_ns)[0], "No QC warning or failure to override."
+        data["ui"]["override"] = True
+        _write_quality_sidecar(sidecar, data)
+        return render_final_quality_inspector(output_path, started_ns)[0], "Override acknowledged; QC remains " + report.status + ". Export is still available."
+    except (OSError, ValueError, TypeError, AttributeError, KeyError) as error:
+        return render_final_quality_inspector(output_path, started_ns)[0], "Cannot acknowledge QC: " + str(error)
+
+
+def apply_quality_suggested_settings(output_path, started_ns=0):
+    """Apply only allowlisted safe settings for a future render, never edit audio."""
+    message = ""
+    try:
+        _, _, report = _load_render_quality_report(output_path, started_ns)
+        if report is None:
+            raise ValueError("No quality report is available")
+        codes = set(report.failures + report.warnings)
+        settings = {}
+        if codes & {"VOICE_TOO_QUIET", "MUSIC_MASKING_VOICE", "MUSIC_DOMINATES_VOICE"}:
+            settings["auto_balance_levels"] = True
+        if codes & {"MUSIC_MASKING_VOICE", "MUSIC_DOMINATES_VOICE"}:
+            settings["auto_ducking"] = True
+        if codes & {"LOUDNESS_TOO_LOW", "LOUDNESS_TOO_HIGH", "TRUE_PEAK_TOO_HIGH"}:
+            settings["normalize_lufs"] = True
+        for key, value in settings.items():
+            config_manager.set(key, value)
+        message = ("Saved suggested settings: " + ", ".join(settings) + ". " if settings
+                   else "No automatic safe setting change applies; follow the report recommendations. ")
+        message += ("Rerender required using the original voice source and music. Re-upload the source if deleted. "
+                    "Existing audio and QC result are unchanged; normalization cannot repair clipping.")
+    except (OSError, ValueError, TypeError, AttributeError, KeyError) as error:
+        message = "Suggested settings not applied: " + str(error)
+    return (message, config_manager.get_auto_balance_levels(),
+            config_manager.get_auto_ducking(), config_manager.get_normalize_lufs())
 
 
 def order_voice_segments(voice_files, order_table) -> List[Tuple[str, bool]]:
@@ -1527,6 +1761,21 @@ def create_podcast_handler_with_progress(
     global console_log
     console_log.clear()
 
+    # Snapshot once before yielding: changing settings during a render must not
+    # change its thresholds, seed, or final QC status.
+    quality_started_ns = time.time_ns()
+    quality_enabled = bool(config_manager.get("quality_gate_enabled", False))
+    quality_config = None
+    quality_config_error = None
+    music_seed = config_manager.get("music_seed", 0)
+    try:
+        quality_config = replace(config_manager.get_audio_quality_config(),
+                                 target_lufs=float(target_lufs))
+    except (ValueError, TypeError, AttributeError) as error:
+        quality_config_error = str(error)
+        log_message(
+            f"Quality configuration unavailable: {error}. Using processor defaults.")
+
     progress(0.0, "🚀 Starting podcast creation...")
     log_message("=" * 50)
     log_message("🎬 Starting new podcast creation")
@@ -1712,6 +1961,12 @@ def create_podcast_handler_with_progress(
     # Container for result from thread
     result_container = {}
 
+    def capture_quality_report(report):
+        # Never read audio_processor.last_quality_report: another request can
+        # overwrite it. Snapshot the callback before the worker returns.
+        import copy
+        result_container['quality_report'] = copy.deepcopy(report)
+
     def run_process():
         try:
             result_path, denoised_path, transcript_path = audio_processor.create_podcast(
@@ -1741,7 +1996,11 @@ def create_podcast_handler_with_progress(
                 generate_transcript=generate_transcript,
                 whisper_model=whisper_model,
                 defer_transcription=True,
-                log_callback=threaded_log_callback
+                log_callback=threaded_log_callback,
+                quality_gate_enabled=quality_enabled,
+                quality_config=quality_config,
+                music_seed=music_seed,
+                quality_report_callback=capture_quality_report
             )
             result_container['result'] = (
                 result_path, denoised_path, transcript_path)
@@ -1791,6 +2050,29 @@ def create_podcast_handler_with_progress(
     else:
         result_path, denoised_path, transcript_path = result_container['result']
 
+        report = result_container.get(
+            'quality_report') if quality_enabled else None
+        if quality_enabled and quality_config_error:
+            if report is None:
+                report = AudioQualityReport(file_path=result_path)
+            report.analysis_complete = False
+            report.failures.append("INVALID_QUALITY_CONFIG")
+            report.analysis_errors.append(quality_config_error)
+        qc_status = report.status if report is not None else "UNAVAILABLE"
+        try:
+            save_render_quality_report(
+                result_path, quality_enabled, report, quality_started_ns)
+        except (OSError, ValueError, TypeError, AttributeError) as error:
+            log_message(
+                f"Quality report could not be saved: {error}. Audio export is still available.")
+            qc_status = "UNAVAILABLE (report could not be saved)"
+        export_status = f"✓ Exported: {output_name}.mp3"
+        if quality_enabled:
+            export_status += f" — QC: {qc_status}"
+            log_message("[AudioQC] RESULT: {}{}".format(
+                qc_status, " - " + ", ".join(report.failures + report.warnings)
+                if report is not None and (report.failures or report.warnings) else ""))
+
         # Delete voice recordings if requested
         if delete_voice:
             # Delete all original voice files
@@ -1814,15 +2096,15 @@ def create_podcast_handler_with_progress(
                     log_message(
                         f"Warning: Could not delete concatenated file: {e}")
 
-        log_message(f"✓ Podcast created successfully: {output_name}.mp3")
+        log_message(export_status)
         log_message("=" * 50)
 
         autoplay_script = get_audio_autoplay_script("podcast-audio-player")
 
         if generate_transcript:
-            log_message("🎧 Episode audio ready. Auto-playing in browser...")
+            log_message(export_status + ". Auto-playing in browser...")
             current_console = get_console_log()
-            yield "🎧 Playing episode audio...", result_path, denoised_path, None, current_console, get_progress_html(0.9, "🎧 Playing episode audio...") + autoplay_script, get_bottom_console_html(current_console)
+            yield export_status + " — Playing episode audio...", result_path, denoised_path, None, current_console, get_progress_html(0.9, "🎧 Playing episode audio...") + autoplay_script, get_bottom_console_html(current_console)
 
             log_message("📝 Starting transcription in background...")
             progress(0.95, "📝 Transcribing (background)...")
@@ -1846,12 +2128,12 @@ def create_podcast_handler_with_progress(
             bg_thread.start()
 
             final_console_log = get_console_log()
-            yield f"✓ Podcast created successfully: {output_name}.mp3", result_path, denoised_path, None, final_console_log, get_progress_html(1.0, "✅ Complete!"), get_bottom_console_html(final_console_log, visible=True, show_close=True, download_path=result_path)
+            yield export_status, result_path, denoised_path, None, final_console_log, get_progress_html(1.0, "✅ Export complete"), get_bottom_console_html(final_console_log, visible=True, show_close=True, download_path=result_path)
         else:
             final_transcript = transcript_path if transcript_path and os.path.exists(
                 transcript_path) else None
             final_console_log = get_console_log()
-            yield f"✓ Podcast created successfully: {output_name}.mp3", result_path, denoised_path, final_transcript, final_console_log, get_progress_html(1.0, "✅ Complete!") + autoplay_script, get_bottom_console_html(final_console_log, visible=True, show_close=True, download_path=result_path)
+            yield export_status, result_path, denoised_path, final_transcript, final_console_log, get_progress_html(1.0, "✅ Export complete") + autoplay_script, get_bottom_console_html(final_console_log, visible=True, show_close=True, download_path=result_path)
 
 
 def create_podcast_handler(voice_file, output_name, delete_voice, trim_silence, denoise_audio, denoise_method, normalize_lufs, target_lufs):
@@ -2804,7 +3086,8 @@ def create_ui():
                                 info="-16 for podcasts (recommended), -14 for louder content"
                             )
 
-                            gr.Markdown("### 🛡️ Audio Balance & Voice Protection")
+                            gr.Markdown(
+                                "### 🛡️ Audio Balance & Voice Protection")
 
                             with gr.Row(elem_classes=["compact-row"]):
                                 auto_balance_levels_checkbox = gr.Checkbox(
@@ -2816,8 +3099,31 @@ def create_ui():
                                 auto_ducking_checkbox = gr.Checkbox(
                                     label="Auto-ducking",
                                     value=config_manager.get_auto_ducking(),
-                                    info="Dynamically lowers background music by 4 dB while speaking"
+                                    info="Smoothly lowers music during speech using the shared quality settings"
                                 )
+
+                            gr.Markdown("### Final Audio Quality")
+                            quality_enabled_value, quality_json_value, quality_seed_value = quality_settings_values()
+                            quality_gate_checkbox = gr.Checkbox(
+                                label="Final Audio Quality Gate",
+                                value=quality_enabled_value,
+                                info="Opt-in check of the exact exported audio. Failed QC does not block download."
+                            )
+                            with gr.Accordion("Advanced quality thresholds", open=False):
+                                quality_thresholds_editor = gr.Textbox(
+                                    label="Audio quality thresholds (JSON)",
+                                    value=quality_json_value, lines=14
+                                )
+                                music_seed_input = gr.Number(
+                                    label="Music seed", value=quality_seed_value, precision=0
+                                )
+                                gr.Markdown(
+                                    "Save edited thresholds and seed before rendering. Target LUFS follows the existing LUFS slider.")
+                                save_quality_button = gr.Button(
+                                    "Save quality settings")
+                            quality_settings_status = gr.Textbox(
+                                label="Quality settings status", interactive=False
+                            )
 
                             gr.Markdown("### Transcription")
 
@@ -2889,6 +3195,23 @@ def create_ui():
                                     visible=True,
                                     scale=1
                                 )
+
+                            final_quality_html = gr.HTML(
+                                label="Final Audio Quality Inspector", value="")
+                            quality_preview = gr.Audio(
+                                label="Preview worst section", type="filepath")
+                            quality_report_download = gr.File(
+                                label="Download quality report (JSON)")
+                            quality_override_button = gr.Button(
+                                "Override — I acknowledge the QC warning/failure")
+                            quality_fix_button = gr.Button(
+                                "Apply suggested settings for next render")
+                            quality_action_status = gr.Textbox(
+                                label="Quality action status", interactive=False)
+                            quality_render_started = gr.State(0)
+                            quality_preview_state = gr.State(None)
+                            gr.Markdown(
+                                "Settings fixes require a rerender with the original voice source and music. Keep or re-upload sources if deleted; the current export is never rewritten.")
 
                         with gr.Accordion("📥 Download & Import Settings", open=False):
                             gr.Markdown("**Podcast RSS Feed**")
@@ -3510,7 +3833,8 @@ def create_ui():
                         ordered_voice_files,
                         background_files=config_manager.get_background_tracks(),
                         background_volume=config_manager.get_volume(),
-                        track_volumes=config_manager.get_all_track_volumes()
+                        track_volumes=config_manager.get_all_track_volumes(),
+                        quality_config=config_manager.get_audio_quality_config()
                     )
                 except Exception:
                     analysis = None
@@ -3553,7 +3877,8 @@ def create_ui():
                         ordered_files,
                         background_files=config_manager.get_background_tracks(),
                         background_volume=config_manager.get_volume(),
-                        track_volumes=config_manager.get_all_track_volumes()
+                        track_volumes=config_manager.get_all_track_volumes(),
+                        quality_config=config_manager.get_audio_quality_config()
                     )
                 except Exception:
                     analysis = None
@@ -3564,10 +3889,18 @@ def create_ui():
         voice_order_state.change(
             fn=update_timeline_with_order_state,
             inputs=[voice_input, voice_order_state, intro_override_input],
-            outputs=[voice_order_state, voice_order_editor, timeline_html, audio_health_html]
+            outputs=[voice_order_state, voice_order_editor,
+                     timeline_html, audio_health_html]
         )
 
-        create_button_event = create_button.click(
+        clear_quality_event = create_button.click(
+            fn=clear_final_quality_inspector,
+            inputs=[quality_preview_state],
+            outputs=[final_quality_html, quality_preview, quality_report_download,
+                     quality_action_status, quality_render_started],
+            queue=False
+        )
+        create_button_event = clear_quality_event.then(
             fn=create_podcast_handler_with_progress,
             inputs=[voice_input, output_name_input,
                     delete_voice_checkbox, trim_silence_checkbox,
@@ -3581,6 +3914,38 @@ def create_ui():
             outputs=[status_output, audio_output,
                      denoised_audio_output, transcript_output, realtime_console_output, progress_bar, bottom_console],
             show_progress='full'
+        )
+
+        create_button_event.then(
+            fn=render_final_quality_inspector,
+            inputs=[audio_output, quality_render_started],
+            outputs=[final_quality_html,
+                     quality_preview, quality_report_download]
+        ).then(
+            fn=remember_quality_preview,
+            inputs=[audio_output, quality_render_started],
+            outputs=[quality_preview_state]
+        )
+        quality_gate_checkbox.change(
+            fn=set_quality_gate_enabled,
+            inputs=[quality_gate_checkbox], outputs=[quality_settings_status]
+        )
+        save_quality_button.click(
+            fn=save_quality_settings,
+            inputs=[quality_gate_checkbox,
+                    quality_thresholds_editor, music_seed_input],
+            outputs=[quality_settings_status]
+        )
+        quality_override_button.click(
+            fn=acknowledge_quality_override,
+            inputs=[audio_output, quality_render_started],
+            outputs=[final_quality_html, quality_action_status]
+        )
+        quality_fix_button.click(
+            fn=apply_quality_suggested_settings,
+            inputs=[audio_output, quality_render_started],
+            outputs=[quality_action_status, auto_balance_levels_checkbox,
+                     auto_ducking_checkbox, normalize_lufs_checkbox]
         )
 
         # Update the console log tab and other logs whenever processing completes
@@ -3772,6 +4137,10 @@ def create_ui():
             fn=load_template_handler,
             inputs=[template_dropdown],
             outputs=[template_status]
+        ).then(
+            fn=quality_settings_values, inputs=[],
+            outputs=[quality_gate_checkbox,
+                     quality_thresholds_editor, music_seed_input]
         )
 
         delete_template_button.click(

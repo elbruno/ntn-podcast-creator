@@ -15,6 +15,9 @@ Instructions for building and publishing Docker images.
 
 ## 🛠️ Technical Documentation
 
+### [Audio Quality Gate](AUDIO_QUALITY_GATE.md)
+Final-file QC, windowed voice/music analysis, shared thresholds, and original-recording regression setup.
+
 ### [Technical Implementation](TECHNICAL_IMPLEMENTATION.md)
 Detailed architecture, API reference, and technical specifications.
 
