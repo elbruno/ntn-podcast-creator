@@ -444,14 +444,11 @@ def test_positional_api_and_all_yield_expressions(ui):
         item.value.elts) == 7 for item in yields)
 
 
-def test_invalid_saved_config_cannot_certify_export(ui, monkeypatch):
+@pytest.mark.parametrize("raw", [{"window_ms": 0}, {"vmr_failure_db": 30},
+                                 {"window_ms": True}, ["broken"], "bad config", None])
+def test_invalid_saved_config_cannot_certify_export(ui, monkeypatch, raw):
     ui.config_manager.set("quality_gate_enabled", True)
-
-    def invalid_config():
-        raise ValueError("broken thresholds")
-
-    monkeypatch.setattr(ui.config_manager,
-                        "get_audio_quality_config", invalid_config)
+    ui.config_manager.set("audio_quality", raw)
     monkeypatch.setattr(ui, "get_audio_duration_seconds", lambda path: 1)
     source = Path("source.wav")
     source.write_bytes(b"source")
@@ -527,25 +524,29 @@ def test_real_gradio_ui_construction_and_event_chains(ui):
             "Download quality report (JSON)"} <= labels
     functions = {entry.fn: entry for entry in blocks.fns.values()
                  if entry.fn is not None}
-    render = functions[ui.create_podcast_handler_with_progress]
-    assert len(render.outputs) == 7 and len(render.inputs) == 18
-    assert len(functions[ui.clear_final_quality_inspector].outputs) == 5
-    assert len(functions[ui.clear_final_quality_inspector].inputs) == 1
-    assert functions[ui.clear_final_quality_inspector].inputs == functions[ui.remember_quality_preview].outputs
-    assert len(functions[ui.render_final_quality_inspector].outputs) == 3
+    render = functions[ui.create_episode_from_saved]
+    assert len(render.outputs) == 7 and len(render.inputs) == 4
+    named = {entry.fn.__name__: entry for entry in blocks.fns.values()
+             if entry.fn}
+    clear_dep = named["prepare_episode"]
+    assert clear_dep.inputs[0] == functions[ui.remember_quality_preview].outputs[0]
+    # The receipt timestamp and original export are session state, not Gradio's
+    # cached player path. A real export gates the entire result panel.
+    assert render.outputs[1].__class__.__name__ == "State"
     dependencies = blocks.config["dependencies"]
     render_dep = next(
         item for item in dependencies if item["id"] == render._id)
-    clear_dep = functions[ui.clear_final_quality_inspector]
     assert render_dep["trigger_after"] == clear_dep._id
-    inspector = functions[ui.render_final_quality_inspector]
+    assert render_dep["trigger_only_on_success"] is True
+    inspector = named["finish_episode"]
     inspect_dep = next(
         item for item in dependencies if item["id"] == inspector._id)
     assert inspect_dep["trigger_after"] == render._id
-    assert functions[ui.apply_quality_suggested_settings].outputs[1:] == [
-        component for label in ["Auto-balance voice & music levels (Recommended)", "Auto-ducking",
-                                "Normalize audio to professional LUFS level"]
-        for component in blocks.blocks.values() if getattr(component, "label", None) == label]
+    fix_outputs = named["suggested_episode_settings"].outputs
+    assert {"Auto-balance voice & music levels (Recommended)", "Auto-ducking",
+            "Normalize audio to professional LUFS level"} <= {
+                getattr(component, "label", None) for component in fix_outputs}
+    assert len(fix_outputs) == len(ui.SETTINGS_FIELDS) + 3
     blocks.close()
 
 
@@ -563,7 +564,9 @@ def test_prior_inspectors_receive_shared_thresholds(ui, monkeypatch):
     blocks = ui.create_ui()
     handlers = {entry.fn.__name__: entry.fn for entry in blocks.fns.values()
                 if entry.fn is not None}
-    handlers["update_on_voice_upload"](["voice.wav"], None)
+    rows, *_ = handlers["update_on_voice_upload"](["voice.wav"], None)
+    # Upload stages episode state; the state-change listener runs premix once.
+    handlers["update_timeline_with_order_state"](["voice.wav"], rows, None)
     handlers["update_timeline_with_order_state"](["voice.wav"], "[]", None)
     assert len(observed) == 2
     assert all(cfg.voice_optimal_max_dbfs == -12 for cfg in observed)

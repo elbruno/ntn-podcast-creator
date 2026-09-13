@@ -2,13 +2,13 @@
 
 **Transform your voice recordings into professional podcasts in minutes!**
 
-A simple, powerful desktop app that combines your recordings with intro/outro music and applies professional audio processing—all with just a few clicks.
+A local, browser-based app that combines your recordings with intro/outro music and optional audio processing. The upload-first interface has two tabs: **Create Episode** and **Settings**.
 
 ---
 
 ## 🎯 What Does It Do?
 
-**In short**: Upload your voice recording, click "Create Podcast", and get a professional-quality podcast episode with intro music, outro music, noise reduction, and perfect volume levels.
+**In short**: Upload your recordings, review the saved defaults, click **Create Episode**, then listen and **Download episode**. Optional quality checks help identify issues; they do not guarantee production-ready audio.
 
 **Perfect for**:
 - 🎙️ Podcasters who want studio-quality sound without expensive equipment
@@ -82,7 +82,8 @@ Open your browser to **http://localhost:7860** and you're ready!
     - Timestamp-preserving segment stitching
     - Graceful backend fallback (`faster-whisper` → `openai-whisper`)
 - **Template Management**: Save and load your favorite settings
-- **Theme Selector**: Light, dark, or system theme
+- **Final Audio Quality Gate**: Opt-in checks, with reports and worst-section previews when available; QC failures never block an existing audio export
+- **Tools & Help**: Standalone audio cleaning in **Settings → Tools**; theme selection in **Help & appearance**
 
 ---
 
@@ -90,9 +91,25 @@ Open your browser to **http://localhost:7860** and you're ready!
 
 ### Basic Workflow
 
-```
-1. Upload Voice Recording → 2. (Optional) Apply Audio Processing → 3. Click "Create Podcast" → 4. Download Final Episode!
-```
+1. In **Create Episode**, use **Upload recordings**. For multiple files, review **Recording order**; use **Edit** to change the suggested episode name.
+2. Review the **Saved settings** summary. **Episode options** provides per-recording background music switches and a custom intro for this episode only.
+3. To change defaults, open **Settings** (or **Change settings**), edit, then choose **Save settings** or **Discard changes**. Each render uses a snapshot of saved settings, not unsaved drafts.
+4. Click **Create Episode**. Follow inline progress and expand **Processing log** if needed.
+5. Listen, review any QC findings, then **Download episode**. **Technical details** shows report, cleaned-voice, and transcript downloads only when available. Use **Create another** to reset episode inputs/results without deleting the export.
+
+Settings controls are organized into five accordions:
+
+- **Podcast sound**: default intro/outro, background volume, and overlap transitions.
+- **Voice processing**: auto-balance, auto-ducking, silence trimming, noise reduction, and voice enhancement toggles.
+- **Output & quality**: normalization, target LUFS, final quality gate, transcription toggle, and uploaded-recording deletion.
+- **Naming & RSS**: recording-order preference and RSS feed URL.
+- **Advanced**: denoise method, enhancement preset, Whisper model, minimum voice/music separation, audio quality thresholds (`audio_quality`), and music seed.
+
+**Per-track volume drafts** is a separate Settings accordion. Startup audio discovery fills only missing configuration keys; saved file choices, explicit **None** intro/outro selections, and an empty background pool (`[]`) survive restart.
+
+**Explicit exceptions to Save/Discard:** **Audio library — actions apply immediately** adds/removes library entries now (intro/outro default selection still needs saving). **Load and apply template** and **Import and apply settings** immediately apply saved defaults and refresh the form, replacing drafts. Template saving and JSON export use saved values, not drafts.
+
+**QC is advisory, not a download lock:** A successful export remains downloadable when QC is disabled, unavailable, or fails. For warning/failure results, **Download anyway — acknowledge warning** records a deliberate acknowledgement without changing the findings. **Apply suggested settings for next render** saves suggested defaults immediately; it does not repair the current file. Keep originals for rerendering. NTN567/NTN568 originals remain unavailable in this container, so production regression verification is still pending; see the [quality guide](docs/AUDIO_QUALITY_GATE.md#required-production-evidence).
 
 ### Audio Processing Pipeline
 
@@ -157,9 +174,9 @@ We've added **professional voice enhancement** to make your podcasts sound even 
 - ✅ **Aggressive preset**: For noisy environments or challenging recordings
 
 ### How to Use:
-1. In the "Audio Processing" tab, check **"Enable professional voice enhancement"**
-2. Choose your preset (Podcast recommended)
-3. Create your podcast as normal
+1. In **Settings → Voice processing**, check **Enable professional voice enhancement**.
+2. In **Advanced**, choose your **Enhancement Preset** (`podcast`, `light`, or `aggressive`).
+3. Click **Save settings**, then return to **Create Episode**.
 
 **Pro tip**: Use noise reduction first, then voice enhancement for best results!
 
@@ -167,10 +184,11 @@ We've added **professional voice enhancement** to make your podcasts sound even 
 
 ## 📚 Documentation
 
-- **[User Manual](docs/USER_MANUAL.md)** - Complete step-by-step guide with screenshots
+- **[User Manual](docs/USER_MANUAL.md)** - Upload-first workflow, saved defaults, library actions, and downloads
+- **[Audio Quality Gate](docs/AUDIO_QUALITY_GATE.md)** - QC results, acknowledgement, rerendering, and validation limits
 - **[Technical Docs](docs/TECHNICAL_IMPLEMENTATION.md)** - Architecture and API details
 - **[Docker Guide](docs/DOCKER.md)** - Containerized deployment
-- **[Audio Denoising Guide](docs/AUDIO_DENOISING_IMPLEMENTATION.md)** - Deep dive into AI noise reduction
+- **[Audio Denoising Guide](docs/implementation/AUDIO_DENOISING_IMPLEMENTATION.md)** - Deep dive into AI noise reduction
 
 ---
 
@@ -231,7 +249,7 @@ Found a bug? Have a feature idea? Open an issue or submit a pull request!
 ## ❓ FAQ
 
 **Q: Do I need to know anything about audio engineering?**
-A: Nope! The defaults work great. Just upload and click "Create Podcast".
+A: No audio-engineering expertise is required. Review the saved defaults, upload, click **Create Episode**, and listen before publishing.
 
 **Q: Which noise reduction method should I use?**
 A: Start with "AI Denoiser" (recommended). It's the most advanced.
@@ -240,10 +258,10 @@ A: Start with "AI Denoiser" (recommended). It's the most advanced.
 A: Noise reduction removes unwanted sounds. Voice enhancement makes your voice clearer and more pleasant to listen to. Use both for best results!
 
 **Q: My podcast sounds too quiet/loud. What do I do?**
-A: Enable "LUFS Normalization" in Audio Processing. It ensures professional loudness levels.
+A: In **Settings**, enable **Normalize audio to professional LUFS level**, choose the target, and click **Save settings**. Rerender and listen; normalization cannot repair clipping already in the source.
 
 **Q: Can I use my own intro/outro music?**
-A: Yes! Go to "Audio Files" tab and upload your own audio files.
+A: Yes! Open **Settings → Audio library — actions apply immediately**, add an asset, then select **Default intro** or **Default outro** and **Save settings**. For a one-time intro, use **Create Episode → Episode options**.
 
 **Q: Do I need a powerful computer?**
 A: Not really. AI Denoiser works faster with a GPU but runs fine on CPU. Processing a 20-minute podcast takes about 5-15 minutes on most computers.

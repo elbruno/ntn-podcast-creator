@@ -3,7 +3,11 @@
 import json
 import os
 import glob
+import math
+import tempfile
+from copy import deepcopy
 from dataclasses import asdict
+from threading import RLock
 from typing import Dict, List, Any, Optional
 from .audio_quality import AudioQualityConfig
 
@@ -21,6 +25,7 @@ class ConfigManager:
             config_file: Path to the configuration JSON file
         """
         self.config_file = config_file
+        self._lock = RLock()
         self.config = self._load_config()
 
     def _load_config(self) -> Dict[str, Any]:
@@ -35,8 +40,13 @@ class ConfigManager:
                     return json.load(f)
             except (json.JSONDecodeError, IOError) as e:
                 print(f"Error loading config: {e}. Using defaults.")
-                return self._default_config()
-        return self._default_config()
+        defaults = self._default_config()
+        # Missing audio keys mean discovery is allowed; None/[] mean an
+        # explicit selection. Keep fallback defaults out of that distinction.
+        # Legacy getters and snapshot() still supply the same audio defaults.
+        for key in ("intro_file", "outro_file", "background_tracks"):
+            defaults.pop(key)
+        return defaults
 
     def _default_config(self) -> Dict[str, Any]:
         """Create default configuration.
@@ -53,6 +63,8 @@ class ConfigManager:
             "last_output_name": "podcast_output",
             "rss_feed_url": DEFAULT_RSS_FEED_URL,
             "prioritize_recording_filename": True,
+            "delete_voice": True,
+            "trim_silence": True,
             # Audio denoising feature (enabled by default)
             "denoise_audio": True,
             "denoise_method": "audio_denoiser",  # audio_denoiser, spectral, rnnoise
@@ -80,13 +92,158 @@ class ConfigManager:
             "active_template": None  # Currently active template name
         }
 
+    def snapshot(self) -> Dict[str, Any]:
+        """Return detached defaults merged with saved values, without writing.
+
+        Only missing fields (including audio_quality fields) receive defaults.
+        Invalid saved values and unknown keys remain visible for UI repair.
+        Unlike a save, this does not override the saved quality LUFS target.
+        """
+        with self._lock:
+            result = self._default_config()
+            result.update(deepcopy(self.config))
+            if isinstance(result["audio_quality"], dict):
+                quality = asdict(AudioQualityConfig())
+                quality.update(result["audio_quality"])
+                result["audio_quality"] = quality
+            return result
+
+    @staticmethod
+    def _validate_number(key: str, value: Any) -> None:
+        """Reject coercion, booleans, nonfinite values and oversized numbers."""
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError(f"{key} must be numeric")
+        try:
+            finite = math.isfinite(value)
+        except OverflowError:
+            finite = False
+        if not finite:
+            raise ValueError(f"{key} must be finite")
+
+    def _validate_setting(self, key: str, value: Any, defaults: Dict[str, Any]) -> None:
+        """Validate a known recurring setting without changing its value."""
+        if isinstance(defaults[key], bool):
+            if not isinstance(value, bool):
+                raise ValueError(f"{key} must be boolean")
+        elif key in ("intro_file", "outro_file", "active_template"):
+            if value is not None and not isinstance(value, str):
+                raise ValueError(f"{key} must be a string or None")
+        elif key in ("last_output_name", "rss_feed_url"):
+            if not isinstance(value, str):
+                raise ValueError(f"{key} must be a string")
+        elif key in ("denoise_method", "voice_enhancement_preset", "whisper_model"):
+            choices = {
+                "denoise_method": ("audio_denoiser", "spectral", "rnnoise"),
+                "voice_enhancement_preset": ("podcast", "light", "aggressive"),
+                "whisper_model": ("tiny", "base", "small", "medium", "large"),
+            }
+            if not isinstance(value, str) or value not in choices[key]:
+                raise ValueError(f"Invalid {key}: {value!r}")
+        elif key == "background_tracks":
+            if not isinstance(value, list) or any(not isinstance(path, str) for path in value):
+                raise ValueError("background_tracks must be a list of strings")
+        elif key == "track_volumes":
+            if not isinstance(value, dict):
+                raise ValueError("track_volumes must be a settings object")
+            for path, volume in value.items():
+                if not isinstance(path, str):
+                    raise ValueError("track_volumes keys must be strings")
+                self._validate_setting("background_volume", volume, defaults)
+        elif key == "music_seed":
+            if type(value) is not int or abs(value) > 2**53 - 1:
+                raise ValueError(
+                    "music_seed must be an integer within +/- (2**53 - 1)")
+        elif key in ("target_lufs", "background_volume", "min_voice_music_separation_db"):
+            self._validate_number(key, value)
+            if key == "target_lufs" and not -70 <= value <= -5:
+                raise ValueError("target_lufs must be between -70 and -5")
+            if key == "background_volume" and not 0 <= value <= 50:
+                raise ValueError("background_volume must be between 0 and 50")
+            if key == "min_voice_music_separation_db" and value < 0:
+                raise ValueError(
+                    "min_voice_music_separation_db must be nonnegative")
+        elif key == "audio_quality":
+            if not isinstance(value, dict):
+                raise ValueError("audio_quality must be a settings object")
+            for name, number in value.items():
+                if name in defaults["audio_quality"]:
+                    self._validate_number(f"audio_quality.{name}", number)
+        else:
+            raise ValueError(f"No validation defined for {key!r}")
+
+    def update_settings(self, settings: dict) -> None:
+        """Validate and atomically persist one batch for the explicit Save UI.
+
+        Accept only default configuration keys and known, flat audio_quality
+        fields. Merge partial quality updates; retain unknown *stored* keys.
+        Validate the complete candidate, so invalid legacy settings must be
+        repaired before saving. The main target_lufs explicitly overrides the
+        quality target. Audio paths need not exist on this machine.
+
+        Raise ValueError for invalid settings and propagate write errors. Neither
+        memory nor the existing file changes unless replacement succeeds.
+        """
+        with self._lock:
+            if not isinstance(settings, dict):
+                raise ValueError("settings must be a settings object")
+            settings = deepcopy(settings)
+            defaults = self._default_config()
+            for key, value in settings.items():
+                if key not in defaults:
+                    raise ValueError(f"Unknown setting: {key!r}")
+                self._validate_setting(key, value, defaults)
+                if key == "audio_quality":
+                    for name in value:
+                        if name not in defaults["audio_quality"]:
+                            raise ValueError(
+                                f"Unknown audio_quality setting: {name!r}")
+
+            candidate = self.snapshot()
+            for key, value in settings.items():
+                if key == "audio_quality":
+                    quality = candidate[key]
+                    if not isinstance(quality, dict):
+                        quality = deepcopy(defaults[key])
+                    quality.update(value)
+                    candidate[key] = quality
+                else:
+                    candidate[key] = value
+            if isinstance(candidate["audio_quality"], dict):
+                candidate["audio_quality"]["target_lufs"] = candidate["target_lufs"]
+            for key in defaults:
+                self._validate_setting(key, candidate[key], defaults)
+            # Use the strict constructor, not from_mapping's string coercion or
+            # null-as-default behavior. Preserve unknown legacy quality fields.
+            AudioQualityConfig(**{key: candidate["audio_quality"][key]
+                                  for key in defaults["audio_quality"]})
+            self._write_settings(candidate)
+            self.config = candidate
+
+    def _write_settings(self, settings: Dict[str, Any]) -> None:
+        """Stage next to the destination so os.replace is an atomic commit."""
+        temporary_path = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                    mode='w', encoding='utf-8', delete=False,
+                    dir=os.path.dirname(os.path.abspath(self.config_file)),
+                    prefix='.config-', suffix='.tmp') as temporary:
+                temporary_path = temporary.name
+                json.dump(settings, temporary, indent=2, allow_nan=False)
+                temporary.flush()
+                os.fsync(temporary.fileno())
+            os.replace(temporary_path, self.config_file)
+        finally:
+            if temporary_path is not None and os.path.exists(temporary_path):
+                os.unlink(temporary_path)
+
     def save_config(self) -> None:
         """Save current configuration to file."""
-        try:
-            with open(self.config_file, 'w', encoding='utf-8') as f:
-                json.dump(self.config, f, indent=2)
-        except IOError as e:
-            print(f"Error saving config: {e}")
+        with self._lock:
+            try:
+                with open(self.config_file, 'w', encoding='utf-8') as f:
+                    json.dump(self.config, f, indent=2)
+            except IOError as e:
+                print(f"Error saving config: {e}")
 
     def get(self, key: str, default: Any = None) -> Any:
         """Get configuration value.
@@ -107,8 +264,9 @@ class ConfigManager:
             key: Configuration key
             value: Value to set
         """
-        self.config[key] = value
-        self.save_config()
+        with self._lock:
+            self.config[key] = value
+            self.save_config()
 
     def update_intro(self, file_path: Optional[str]) -> None:
         """Update intro file path.
@@ -483,52 +641,38 @@ class ConfigManager:
         self.set("whisper_model", model)
 
     def load_default_audio_files(self) -> None:
-        """Load default audio files from dedicated directories.
+        """Discover audio files only for keys absent from the configuration.
 
-        Scans audios/intro_audio/, audios/outro_audio/, and audios/background_music/ directories
-        for audio files and automatically populates the configuration.
-
-        For intro and outro: Uses the first audio file found in each directory.
-        For background music: Loads all audio files found in the directory.
+        Saved selections, including None and empty lists, always win. New or
+        incomplete configurations use the first intro/outro and all background
+        tracks found in their dedicated directories.
         """
-        # Supported audio extensions
         audio_extensions = ['*.mp3', '*.wav', '*.m4a', '*.ogg', '*.flac']
-
-        # Load intro audio (first file found)
-        intro_files = []
-        for ext in audio_extensions:
-            intro_files.extend(
-                glob.glob(os.path.join('audios', 'intro_audio', ext)))
-        if intro_files:
-            intro_file = intro_files[0]
-            if os.path.exists(intro_file):
-                self.update_intro(intro_file)
-                print(f"Loaded default intro: {os.path.basename(intro_file)}")
-
-        # Load outro audio (first file found)
-        outro_files = []
-        for ext in audio_extensions:
-            outro_files.extend(
-                glob.glob(os.path.join('audios', 'outro_audio', ext)))
-        if outro_files:
-            outro_file = outro_files[0]
-            if os.path.exists(outro_file):
-                self.update_outro(outro_file)
-                print(f"Loaded default outro: {os.path.basename(outro_file)}")
-
-        # Load all background music files
-        background_files = []
-        for ext in audio_extensions:
-            background_files.extend(
-                glob.glob(os.path.join('audios', 'background_music', ext)))
-
-        if background_files:
-            # Validate files exist and update config
-            valid_files = [f for f in background_files if os.path.exists(f)]
-            if valid_files:
-                self.update_background_tracks(valid_files)
-                print(
-                    f"Loaded {len(valid_files)} default background music track(s)")
+        with self._lock:
+            for key, directory in (("intro_file", "intro_audio"),
+                                   ("outro_file", "outro_audio"),
+                                   ("background_tracks", "background_music")):
+                if key in self.config:
+                    continue
+                files = []
+                for ext in audio_extensions:
+                    files.extend(
+                        glob.glob(os.path.join('audios', directory, ext)))
+                valid_files = [path for path in files if os.path.exists(path)]
+                if not valid_files:
+                    continue
+                if key == "background_tracks":
+                    self.update_background_tracks(valid_files)
+                    print(
+                        f"Loaded {len(valid_files)} default background music track(s)")
+                elif key == "intro_file":
+                    self.update_intro(valid_files[0])
+                    print(
+                        f"Loaded default intro: {os.path.basename(valid_files[0])}")
+                else:
+                    self.update_outro(valid_files[0])
+                    print(
+                        f"Loaded default outro: {os.path.basename(valid_files[0])}")
 
     def get_active_template(self) -> Optional[str]:
         """Get the currently active template name.
@@ -558,6 +702,8 @@ class ConfigManager:
             "background_tracks": self.get_background_tracks(),
             "background_volume": self.get_volume(),
             "track_volumes": self.get_all_track_volumes(),
+            "delete_voice": self.get("delete_voice", True),
+            "trim_silence": self.get("trim_silence", True),
             "denoise_audio": self.get_denoise_audio(),
             "denoise_method": self.get_denoise_method(),
             "enhance_voice": self.get("enhance_voice", False),
@@ -597,6 +743,9 @@ class ConfigManager:
             raise ValueError("music_seed must be an integer")
         if "quality_gate_enabled" in settings and not isinstance(settings["quality_gate_enabled"], bool):
             raise ValueError("quality_gate_enabled must be boolean")
+        for key in ("delete_voice", "trim_silence"):
+            if key in settings and not isinstance(settings[key], bool):
+                raise ValueError(f"{key} must be boolean")
 
         # Audio files
         if "intro_file" in settings:
@@ -628,6 +777,10 @@ class ConfigManager:
             self.set("track_volumes", settings["track_volumes"])
 
         # Processing options
+        for key in ("delete_voice", "trim_silence"):
+            if key in settings:
+                self.set(key, settings[key])
+
         if "denoise_audio" in settings:
             self.set_denoise_audio(settings["denoise_audio"])
 

@@ -5,33 +5,40 @@ This script tests the template management functionality without requiring
 the full Gradio UI or audio processing dependencies.
 """
 
-import sys
-import os
+import importlib
 import json
+from pathlib import Path
+import sys
+from tempfile import TemporaryDirectory
+from types import ModuleType
 
-# Add project to path
-sys.path.insert(0, '/home/runner/work/ntn-podcast-creator/ntn-podcast-creator')
-
-# Import template manager directly
-import importlib.util
-spec = importlib.util.spec_from_file_location('template_manager', 'features/template_manager.py')
-template_manager_module = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(template_manager_module)
-
-spec2 = importlib.util.spec_from_file_location('config_manager', 'features/config_manager.py')
-config_manager_module = importlib.util.module_from_spec(spec2)
-spec2.loader.exec_module(config_manager_module)
+# Resolve relative imports without running the heavyweight features/__init__.py.
+# Keep this namespace private so other tests' normal features imports are intact.
+_PACKAGE_NAME = '_template_feature_test_features'
+_package = ModuleType(_PACKAGE_NAME)
+_package.__path__ = [str(Path(__file__).resolve().parents[1] / 'features')]
+sys.modules.setdefault(_PACKAGE_NAME, _package)
+template_manager_module = importlib.import_module(
+    f'{_PACKAGE_NAME}.template_manager')
+config_manager_module = importlib.import_module(
+    f'{_PACKAGE_NAME}.config_manager')
 
 
 def test_template_manager():
     """Test template manager functionality."""
+    with TemporaryDirectory() as directory:
+        tm = template_manager_module.TemplateManager(templates_dir=directory)
+        _check_template_manager(tm)
+
+
+def _check_template_manager(tm):
+    """Exercise template operations within the caller's temporary directory."""
     print("=" * 60)
     print("Testing Template Manager")
     print("=" * 60)
-    
-    tm = template_manager_module.TemplateManager()
+
     print("✓ TemplateManager initialized")
-    
+
     # Test 1: Save template
     print("\n--- Test 1: Save Template ---")
     test_settings = {
@@ -53,14 +60,14 @@ def test_template_manager():
     print(f"Message: {msg}")
     assert success, "Failed to save template"
     print("✓ Template saved successfully")
-    
+
     # Test 2: List templates
     print("\n--- Test 2: List Templates ---")
     templates = tm.list_templates()
     print(f"Available templates: {templates}")
     assert 'My Weekly Podcast' in templates, "Template not in list"
     print("✓ Template appears in list")
-    
+
     # Test 3: Get template info
     print("\n--- Test 3: Get Template Info ---")
     info = tm.get_template_info('My Weekly Podcast')
@@ -68,7 +75,7 @@ def test_template_manager():
     assert info is not None, "Failed to get template info"
     assert info['name'] == 'My Weekly Podcast', "Template name mismatch"
     print("✓ Template info retrieved")
-    
+
     # Test 4: Load template
     print("\n--- Test 4: Load Template ---")
     settings, msg = tm.load_template('My Weekly Podcast')
@@ -78,7 +85,7 @@ def test_template_manager():
     assert settings['background_volume'] == 15, "Settings not restored correctly"
     assert settings['denoise_audio'] == True, "Denoise setting not restored"
     print("✓ Template loaded successfully")
-    
+
     # Test 5: Save another template
     print("\n--- Test 5: Save Second Template ---")
     test_settings2 = {
@@ -92,7 +99,7 @@ def test_template_manager():
     print(f"Save result: {success}")
     assert success, "Failed to save second template"
     print("✓ Second template saved")
-    
+
     # Test 6: List multiple templates
     print("\n--- Test 6: List Multiple Templates ---")
     templates = tm.list_templates()
@@ -101,7 +108,7 @@ def test_template_manager():
     assert 'My Weekly Podcast' in templates, "First template missing"
     assert 'Simple Template' in templates, "Second template missing"
     print("✓ Multiple templates listed")
-    
+
     # Test 7: Delete template
     print("\n--- Test 7: Delete Template ---")
     success, msg = tm.delete_template('Simple Template')
@@ -111,12 +118,12 @@ def test_template_manager():
     templates = tm.list_templates()
     assert 'Simple Template' not in templates, "Template still in list after deletion"
     print("✓ Template deleted successfully")
-    
+
     # Cleanup
     print("\n--- Cleanup ---")
     tm.delete_template('My Weekly Podcast')
     print("✓ Cleanup complete")
-    
+
     print("\n" + "=" * 60)
     print("All tests passed! ✓")
     print("=" * 60)
@@ -124,13 +131,20 @@ def test_template_manager():
 
 def test_config_manager_integration():
     """Test config manager template integration."""
+    with TemporaryDirectory() as directory:
+        cm = config_manager_module.ConfigManager(
+            str(Path(directory) / 'config.json'))
+        _check_config_manager_integration(cm)
+
+
+def _check_config_manager_integration(cm):
+    """Exercise settings without reading or writing repository configuration."""
     print("\n" + "=" * 60)
     print("Testing Config Manager Integration")
     print("=" * 60)
-    
-    cm = config_manager_module.ConfigManager("core/test_config.json")
+
     print("✓ ConfigManager initialized")
-    
+
     # Test 1: Get template settings
     print("\n--- Test 1: Get Template Settings ---")
     settings = cm.get_template_settings()
@@ -139,7 +153,7 @@ def test_config_manager_integration():
     assert 'denoise_audio' in settings, "denoise_audio missing"
     assert 'whisper_model' in settings, "whisper_model missing"
     print("✓ Template settings retrieved")
-    
+
     # Test 2: Active template
     print("\n--- Test 2: Active Template ---")
     cm.set_active_template('Test Template')
@@ -147,7 +161,7 @@ def test_config_manager_integration():
     print(f"Active template: {active}")
     assert active == 'Test Template', "Active template not set"
     print("✓ Active template works")
-    
+
     # Test 3: Apply template settings
     print("\n--- Test 3: Apply Template Settings ---")
     test_settings = {
@@ -164,11 +178,7 @@ def test_config_manager_integration():
     assert cm.get_normalize_lufs() == True, "Normalize not applied"
     assert cm.get_target_lufs() == -14.0, "Target LUFS not applied"
     print("✓ Template settings applied")
-    
-    # Cleanup
-    if os.path.exists("core/test_config.json"):
-        os.remove("core/test_config.json")
-    
+
     print("\n" + "=" * 60)
     print("Integration tests passed! ✓")
     print("=" * 60)

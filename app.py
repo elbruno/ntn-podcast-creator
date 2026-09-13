@@ -8,6 +8,7 @@ import json
 import html
 import time
 import tempfile
+from copy import deepcopy
 from dataclasses import asdict, fields, replace
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -374,7 +375,7 @@ def get_console_log() -> str:
     return "\n".join(console_log) if console_log else "No logs yet"
 
 
-def get_bottom_console_html(console_text: str, visible: bool = True, show_close: bool = False, download_path: Optional[str] = None) -> str:
+def _legacy_bottom_console_html(console_text: str, visible: bool = True, show_close: bool = False, download_path: Optional[str] = None) -> str:
     """Generate bottom console HTML.
 
     Args:
@@ -1012,9 +1013,8 @@ def save_quality_settings(enabled, thresholds_json, music_seed):
         if seed != float(music_seed) or abs(seed) > 2**53 - 1:
             raise ValueError(
                 "Music seed must be an exact integer within ±(2^53 − 1)")
-        config_manager.set("audio_quality", asdict(quality))
-        config_manager.set("music_seed", seed)
-        config_manager.set("quality_gate_enabled", bool(enabled))
+        config_manager.update_settings({"audio_quality": asdict(quality),
+                                        "music_seed": seed, "quality_gate_enabled": enabled})
         return "Quality settings saved. Target LUFS follows the LUFS slider. Changes apply on the next render."
     except (ValueError, TypeError, OverflowError, OSError) as error:
         return "Quality settings not saved: " + str(error)
@@ -1184,8 +1184,8 @@ def apply_quality_suggested_settings(output_path, started_ns=0):
             settings["auto_ducking"] = True
         if codes & {"LOUDNESS_TOO_LOW", "LOUDNESS_TOO_HIGH", "TRUE_PEAK_TOO_HIGH"}:
             settings["normalize_lufs"] = True
-        for key, value in settings.items():
-            config_manager.set(key, value)
+        if settings:
+            config_manager.update_settings(settings)
         message = ("Saved suggested settings: " + ", ".join(settings) + ". " if settings
                    else "No automatic safe setting change applies; follow the report recommendations. ")
         message += ("Rerender required using the original voice source and music. Re-upload the source if deleted. "
@@ -1664,7 +1664,7 @@ def get_current_settings():
     return "\\n".join(settings)
 
 
-def get_progress_html(pct, msg):
+def _legacy_progress_html(pct, msg):
     """Generate progress bar HTML with inline display control."""
     return f"""
     <div style="position: fixed; top: 0; left: 0; right: 0; z-index: 9999; background: #2196F3; color: white; padding: 10px 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.2); display: block !important; width: 100%;">
@@ -1709,7 +1709,7 @@ def get_audio_autoplay_script(audio_elem_id: str) -> str:
     """
 
 
-def create_podcast_handler_with_progress(
+def _render_episode(
     voice_file,
     output_name,
     delete_voice,
@@ -1728,7 +1728,8 @@ def create_podcast_handler_with_progress(
     auto_ducking=True,
     voice_order_table=None,
     intro_override_file=None,
-    progress=gr.Progress()
+    progress=gr.Progress(),
+    *, snapshot
 ):
     """Handle podcast creation request with progress tracking.
 
@@ -1764,12 +1765,14 @@ def create_podcast_handler_with_progress(
     # Snapshot once before yielding: changing settings during a render must not
     # change its thresholds, seed, or final QC status.
     quality_started_ns = time.time_ns()
-    quality_enabled = bool(config_manager.get("quality_gate_enabled", False))
+    quality_enabled = bool(snapshot.get("quality_gate_enabled", False))
     quality_config = None
     quality_config_error = None
-    music_seed = config_manager.get("music_seed", 0)
+    music_seed = snapshot.get("music_seed", 0)
     try:
-        quality_config = replace(config_manager.get_audio_quality_config(),
+        if snapshot.get("quality_config_error"):
+            raise ValueError(snapshot["quality_config_error"])
+        quality_config = replace(snapshot["quality_config"],
                                  target_lufs=float(target_lufs))
     except (ValueError, TypeError, AttributeError) as error:
         quality_config_error = str(error)
@@ -1810,6 +1813,9 @@ def create_podcast_handler_with_progress(
         return
 
     # Apply custom ordering/background toggles if provided
+    if not voice_order_table:
+        voice_order_table = build_voice_order_rows(prioritize_recording_files(
+            voice_paths, snapshot.get("prioritize_recording_filename", True)))
     ordered_voice_segments = order_voice_segments(
         voice_paths, voice_order_table)
     voice_background_flags = [use_bg for _, use_bg in ordered_voice_segments]
@@ -1879,11 +1885,11 @@ def create_podcast_handler_with_progress(
             log_message(
                 "⚠️ One-time intro override failed to save. Falling back to default intro.")
 
-    intro_path = intro_override_path or config_manager.get_intro()
-    outro_path = config_manager.get_outro()
-    background_tracks = config_manager.get_background_tracks()
-    volume = config_manager.get_volume()
-    track_volumes = config_manager.get_all_track_volumes()
+    intro_path = intro_override_path or snapshot.get("intro_file")
+    outro_path = snapshot.get("outro_file")
+    background_tracks = snapshot.get("background_tracks", [])
+    volume = snapshot.get("background_volume", 10)
+    track_volumes = snapshot.get("track_volumes", {})
 
     log_message(f"Configuration loaded:")
     if intro_override_path:
@@ -1975,7 +1981,7 @@ def create_podcast_handler_with_progress(
                 outro_file=outro_path,
                 background_files=background_tracks if (
                     background_tracks and (
-                        len(voice_paths) <= 1 or len(background_segments) > 0)
+                        any(voice_background_flags))
                 ) else None,
                 background_segments=selective_background_segments,
                 background_volume=volume,
@@ -1991,7 +1997,8 @@ def create_podcast_handler_with_progress(
                 intro_voice_overlap=intro_voice_overlap,
                 voice_outro_overlap=voice_outro_overlap,
                 auto_balance_levels=auto_balance_levels,
-                min_voice_music_separation_db=config_manager.get_min_voice_music_separation_db(),
+                min_voice_music_separation_db=snapshot.get(
+                    "min_voice_music_separation_db", 18.0),
                 auto_ducking=auto_ducking,
                 generate_transcript=generate_transcript,
                 whisper_model=whisper_model,
@@ -2099,12 +2106,12 @@ def create_podcast_handler_with_progress(
         log_message(export_status)
         log_message("=" * 50)
 
-        autoplay_script = get_audio_autoplay_script("podcast-audio-player")
+        autoplay_script = ""
 
         if generate_transcript:
-            log_message(export_status + ". Auto-playing in browser...")
+            log_message(export_status)
             current_console = get_console_log()
-            yield export_status + " — Playing episode audio...", result_path, denoised_path, None, current_console, get_progress_html(0.9, "🎧 Playing episode audio...") + autoplay_script, get_bottom_console_html(current_console)
+            yield export_status, result_path, denoised_path, None, current_console, get_progress_html(0.9, "Preparing transcript..."), get_bottom_console_html(current_console)
 
             log_message("📝 Starting transcription in background...")
             progress(0.95, "📝 Transcribing (background)...")
@@ -2307,19 +2314,10 @@ def export_settings() -> str:
 
     try:
         # Get current configuration
-        settings = {
-            "intro_file": config_manager.get_intro(),
-            "outro_file": config_manager.get_outro(),
-            "background_tracks": config_manager.get_background_tracks(),
-            "background_volume": config_manager.get_volume(),
-            "track_volumes": config_manager.get_all_track_volumes(),
-            "last_output_name": config_manager.get_last_output_name(),
-            "rss_feed_url": config_manager.get_rss_feed_url(),
-            "prioritize_recording_filename": config_manager.get_prioritize_recording_filename(),
-            "intro_voice_overlap": config_manager.get_intro_voice_overlap(),
-            "voice_outro_overlap": config_manager.get_voice_outro_overlap(),
-            "export_date": datetime.datetime.now().isoformat()
-        }
+        cfg = saved_settings_snapshot()
+        settings = {key: cfg[key] for key in (
+            *SETTINGS_FIELDS, "track_volumes", "background_tracks", "last_output_name")}
+        settings["export_date"] = datetime.datetime.now().isoformat()
 
         with open(filepath, 'w', encoding='utf-8') as f:
             json.dump(settings, f, indent=2)
@@ -2455,7 +2453,9 @@ def save_template_handler(template_name: str) -> tuple[str, str]:
 
     try:
         # Get current settings from config manager
-        settings = config_manager.get_template_settings()
+        cfg = saved_settings_snapshot()
+        settings = {key: cfg[key] for key in (
+            *SETTINGS_FIELDS, "track_volumes", "background_tracks")}
 
         # Save template
         success, message = template_manager.save_template(
@@ -2494,8 +2494,8 @@ def load_template_handler(template_name: str) -> str:
 
         if settings:
             # Apply settings to config manager
-            config_manager.apply_template_settings(settings)
-            config_manager.set_active_template(template_name)
+            config_manager.update_settings(
+                dict(settings, active_template=template_name))
             log_message(f"Template loaded: {template_name}")
             return f"✅ {message}"
         else:
@@ -2664,7 +2664,726 @@ def refresh_rss_feed_settings(feed_url: Optional[str], current_output_name: Opti
     return status_html, suggested_name
 
 
+def get_bottom_console_html(console_text: str, visible: bool = True,
+                            show_close: bool = False, download_path=None) -> str:
+    """Inline, keyboard-accessible log; exports live in the result DownloadButton."""
+    display = "block" if visible and console_text else "none"
+    return (f'<details class="episode-log" style="display: {display}">'
+            '<summary>Processing log</summary>'
+            f'<pre>{html.escape(console_text)}</pre></details>')
+
+
+def get_progress_html(pct, msg):
+    """Compact inline progress, never a floating overlay."""
+    percent = max(0, min(100, int(pct * 100)))
+    return (f'<div class="episode-progress" role="status" aria-live="polite">'
+            f'<span>{html.escape(str(msg))} · {percent}%</span>'
+            f'<progress aria-label="Episode progress" max="100" value="{percent}"></progress></div>')
+
+
+def saved_settings_snapshot():
+    """Detached, default-merged values from the atomic configuration API."""
+    return config_manager.snapshot()
+
+
+def _render_snapshot():
+    snapshot = saved_settings_snapshot()
+    try:
+        # Validate the same generation, never a second read of mutable config.
+        settings = snapshot["audio_quality"]
+        if not isinstance(settings, dict):
+            raise ValueError("audio_quality must be a settings object")
+        snapshot["quality_config"] = AudioQualityConfig.from_mapping(
+            dict(settings, target_lufs=snapshot["target_lufs"]))
+    except (ValueError, TypeError, AttributeError, OverflowError) as error:
+        snapshot["quality_config_error"] = str(error)
+    return snapshot
+
+
+def create_podcast_handler_with_progress(
+    voice_file, output_name, delete_voice, trim_silence, denoise_audio,
+    denoise_method, enhance_voice, voice_enhancement_preset, normalize_lufs,
+    target_lufs, intro_voice_overlap, voice_outro_overlap, generate_transcript,
+    whisper_model, auto_balance_levels=True, auto_ducking=True,
+    voice_order_table=None, intro_override_file=None, progress=gr.Progress()
+):
+    """Legacy positional API: explicit processing choices win over saved values."""
+    snapshot = _render_snapshot()
+    for status, audio, cleaned, transcript, console, bar, log in _render_episode(
+        voice_file, output_name, delete_voice, trim_silence, denoise_audio,
+        denoise_method, enhance_voice, voice_enhancement_preset, normalize_lufs,
+        target_lufs, intro_voice_overlap, voice_outro_overlap, generate_transcript,
+        whisper_model, auto_balance_levels, auto_ducking, deepcopy(
+            voice_order_table),
+        intro_override_file, progress, snapshot=snapshot
+    ):
+        yield status, audio, cleaned, transcript, console, bar, log
+
+
+def create_episode_from_saved(voice, name, order, intro_override, progress=gr.Progress()):
+    """The main screen accepts episode inputs ONLY, never draft settings controls."""
+    snapshot = _render_snapshot()
+    yield from _render_episode(
+        deepcopy(
+            voice), name, snapshot["delete_voice"], snapshot["trim_silence"],
+        snapshot["denoise_audio"], snapshot["denoise_method"], snapshot["enhance_voice"],
+        snapshot["voice_enhancement_preset"], snapshot["normalize_lufs"], snapshot["target_lufs"],
+        snapshot["intro_voice_overlap"], snapshot["voice_outro_overlap"],
+        snapshot["generate_transcript"], snapshot["whisper_model"],
+        snapshot["auto_balance_levels"], snapshot["auto_ducking"], deepcopy(
+            order),
+        intro_override, progress, snapshot=snapshot
+    )
+
+
+# One ordered mapping is shared by Save, Discard, template/import refresh, and tests.
+SETTINGS_FIELDS = (
+    "intro_file", "outro_file", "background_volume", "delete_voice", "trim_silence",
+    "prioritize_recording_filename", "rss_feed_url", "intro_voice_overlap",
+    "voice_outro_overlap", "denoise_audio", "denoise_method", "enhance_voice",
+    "voice_enhancement_preset", "normalize_lufs", "target_lufs", "auto_balance_levels",
+    "min_voice_music_separation_db", "auto_ducking", "generate_transcript", "whisper_model",
+    "quality_gate_enabled", "audio_quality", "music_seed",
+)
+
+
+def saved_settings_summary():
+    cfg = saved_settings_snapshot()
+    parts = [
+        f'{len(cfg["background_tracks"])} music tracks · {cfg["background_volume"]}%']
+    parts.append("intro " + ("on" if cfg["intro_file"] else "off"))
+    parts.append("outro " + ("on" if cfg["outro_file"] else "off"))
+    parts.append(
+        f'{cfg["target_lufs"]} LUFS' if cfg["normalize_lufs"] else "normalization off")
+    parts.append("quality check " +
+                 ("on" if cfg["quality_gate_enabled"] else "off"))
+    return '<p class="saved-summary"><strong>Saved settings</strong> · ' + html.escape(" · ".join(parts)) + '</p>'
+
+
+def settings_form_values():
+    cfg = saved_settings_snapshot()
+    _, raw, _ = quality_settings_values()
+    cfg["audio_quality"] = raw
+    return tuple(deepcopy(cfg[key]) for key in SETTINGS_FIELDS) + (deepcopy(cfg["track_volumes"]),)
+
+
+def save_episode_settings(*values):
+    """One validated atomic save, with no partial mutation on errors."""
+    try:
+        if len(values) != len(SETTINGS_FIELDS) + 1:
+            raise ValueError("Incomplete settings form")
+        settings = dict(zip(SETTINGS_FIELDS, values[:-1]))
+        settings["audio_quality"] = json.loads(settings["audio_quality"])
+        settings["track_volumes"] = deepcopy(values[-1])
+        config_manager.update_settings(settings)
+        return "Settings saved. The next episode will use these settings.", saved_settings_summary()
+    except (ValueError, TypeError, OverflowError, OSError) as error:
+        return "Settings not saved: " + str(error), saved_settings_summary()
+
+
+def discard_episode_settings():
+    return ("Draft discarded; showing saved settings.", saved_settings_summary(), *settings_form_values())
+
+
+def stage_track_volume(track, volume, draft):
+    """Session-local draft only; selecting a track must not overwrite another."""
+    staged = deepcopy(draft or {})
+    if track:
+        staged[track] = volume
+    return staged
+
+
+def load_episode_template(name):
+    status = load_template_handler(name)
+    return status, saved_settings_summary(), *settings_form_values()
+
+
+def import_episode_settings(path):
+    try:
+        if not path or not str(path).lower().endswith(".json"):
+            raise ValueError("Choose a JSON settings file")
+        if os.path.getsize(path) > 1024 * 1024:
+            raise ValueError("Settings file too large (max 1MB)")
+        with open(path, encoding="utf-8") as stream:
+            settings = json.load(stream)
+        if not isinstance(settings, dict):
+            raise ValueError("Settings must be a JSON object")
+        # Older exports included this metadata.
+        settings.pop("export_date", None)
+        config_manager.update_settings(settings)
+        status = "Imported settings applied. Draft discarded."
+    except (ValueError, TypeError, OSError) as error:
+        status = "Settings not imported: " + str(error)
+    return status, saved_settings_summary(), *settings_form_values()
+
+
+def export_episode_settings():
+    cfg = saved_settings_snapshot()
+    settings = {key: cfg[key] for key in (
+        *SETTINGS_FIELDS, "track_volumes", "background_tracks")}
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", prefix="podcast_settings_",
+                                     dir="outputs", delete=False, encoding="utf-8") as stream:
+        json.dump(settings, stream, indent=2)
+        return stream.name
+
+
+def episode_marker(state):
+    return f'<span data-state="{html.escape(state, quote=True)}" aria-hidden="true"></span>'
+
+
+def episode_upload_details(voice):
+    files = prioritize_recording_files(voice, saved_settings_snapshot()[
+                                       "prioritize_recording_filename"])
+    rows = build_voice_order_rows(files)
+    listing = ''.join(
+        f'<li>{html.escape(os.path.basename(path))} · {get_audio_duration(path)}</li>' for path in files)
+    return (rows, [row[:2] for row in rows], [[row[1], row[2]] for row in rows],
+            f'<ul class="recording-list">{listing}</ul>' if files else "",
+            episode_marker("multiple" if len(files) > 1 else "single" if files else "empty"))
+
+
+def stage_episode_order(table, rows, voice):
+    flags = {}
+    for _, name, enabled in rows or []:
+        flags.setdefault(name, []).append(enabled)
+    merged = []
+    for position, name in table or []:
+        available = flags.get(name, [])
+        merged.append([position, name, available.pop(
+            0) if available else should_enable_background_for_filename(name)])
+    normalized = normalize_voice_order_table(
+        merged, voice, apply_move_action=False)
+    return normalized, [row[:2] for row in normalized], [[row[1], row[2]] for row in normalized]
+
+
+def stage_episode_background(table, rows):
+    updated = deepcopy(rows or [])
+    for index, row in enumerate(updated):
+        if table and index < len(table):
+            row[2] = parse_background_enabled_value(
+                table[index][1], default=row[2])
+    return updated
+
+
+def episode_premix(voice, order, intro_override):
+    if not voice:
+        return "", "", ""
+    ordered = order_voice_segments(voice, order)
+    paths, flags = [p for p, _ in ordered], [enabled for _, enabled in ordered]
+    cfg = saved_settings_snapshot()
+    try:
+        analysis = audio_processor.analyze_levels(
+            paths, background_files=cfg["background_tracks"], background_volume=cfg["background_volume"],
+            track_volumes=cfg["track_volumes"], quality_config=config_manager.get_audio_quality_config())
+    except Exception as error:
+        analysis = None
+        log_message(f"Premix analysis unavailable: {error}")
+    alert = ""
+    if analysis and analysis.get("overall_status") in {"warning", "danger"}:
+        alert = '<p role="status">Review audio balance before creating. See Timeline & premix details.</p>'
+    return preview_timeline(paths, intro_override, flags), render_audio_health_card(analysis), alert
+
+
+def episode_quality_summary(path, started=0):
+    if not path:
+        return "", episode_marker("empty")
+    try:
+        _, data, report = _load_render_quality_report(path, started)
+        if not data["ui"]["enabled"]:
+            return '<p class="qc-neutral">Quality check disabled for this render.</p>', episode_marker("disabled")
+        if report is None:
+            raise ValueError("No report")
+        state = report.status.lower()
+        label = {"pass": "Ready to publish", "warn": "Review recommended",
+                 "fail": "Quality check failed — review before publishing"}[state]
+        override = " · Download override acknowledged" if data["ui"].get(
+            "override") else ""
+        return f'<p class="qc-{state}" role="status">{label}{override}</p>', episode_marker(state)
+    except (OSError, ValueError, TypeError, AttributeError, KeyError):
+        return '<p class="qc-neutral">Quality check unavailable — export is not certified.</p>', episode_marker("unavailable")
+
+
+def reset_episode_values(previous_preview=None):
+    """Retire only owned temporary previews; never remove an actual export."""
+    clear_final_quality_inspector(previous_preview)
+    return {"voice": None, "order": [], "intro_override": None,
+            "name": suggest_podcast_name(None), "started": 0,
+            "preview_receipt": None, "export": None, "cleaned": None,
+            "transcript": None, "status": "", "progress": "", "log": "",
+            "quality": "", "report": None, "preview": None}
+
+
+EPISODE_CSS = """
+<style>
+.gradio-container {max-width: 1080px !important; margin: auto;}
+#episode-create {max-width: 800px; margin: auto;}
+#episode-hero {border: 2px dashed var(--border-color-primary); border-radius: 16px;}
+#episode-summary-row {align-items: center;}
+.episode-primary {background: #4f46e5 !important; color: #fff !important; border-color: #4f46e5 !important;}
+.saved-summary {font-size: .9rem; color: var(--body-text-color-subdued);}
+.recording-list {padding-inline-start: 1.3rem; overflow-wrap: anywhere;}
+.episode-log pre {max-height: 240px; overflow: auto; white-space: pre-wrap; font-size: .85rem;}
+.episode-log summary {cursor: pointer; padding: .5rem 0;}
+.episode-progress {display: grid; gap: .35rem; font-size: .9rem;}
+.episode-progress progress {width: 100%; accent-color: #6366f1;}
+#episode-results:not(:has([data-state="ready"])) {display: none !important;}
+#episode-create:not(:has(#upload-state [data-state="multiple"])) #episode-order {display: none !important;}
+#episode-create:has(#upload-state [data-state="empty"]) #episode-options,
+#episode-create:has(#upload-state [data-state="empty"]) #episode-premix {display: none !important;}
+.available-only:not(:has([data-state="available"])) {display: none !important;}
+#episode-qc-actions:not(:has([data-state="warn"], [data-state="fail"])) {display: none !important;}
+.state-marker {display: none !important;}
+.qc-pass,.qc-warn,.qc-fail,.qc-neutral {padding: .65rem .9rem; border-radius: .6rem; border-inline-start: 4px solid;}
+.qc-pass {color: #065f46; background: #d1fae5;}
+.qc-warn {color: #78350f; background: #fef3c7;}
+.qc-fail {color: #991b1b; background: #fee2e2;}
+.qc-neutral {color: var(--body-text-color); background: var(--background-fill-secondary);}
+.dark .qc-pass {color: #a7f3d0; background: #064e3b;}
+.dark .qc-warn {color: #fde68a; background: #451a03;}
+.dark .qc-fail {color: #fecaca; background: #450a0a;}
+button:focus-visible,summary:focus-visible {outline: 3px solid #818cf8; outline-offset: 3px;}
+@media(max-width: 640px) {
+    .gradio-container {padding: 12px !important;}
+    .saved-summary {line-height: 1.6;}
+    #episode-summary-row {flex-direction: column; align-items: stretch;}
+    #episode-summary-row > * {width: 100%;}
+}
+</style>
+"""
+
+
 def create_ui():
+    """Two destinations: make an episode, or deliberately change saved defaults."""
+    cfg = saved_settings_snapshot()
+    form_values = dict(zip(SETTINGS_FIELDS, settings_form_values()))
+
+    def audio_choices(folder=None, configured=()):
+        """Offer audio files only, including configured files outside the library."""
+        paths = {path for path in configured if path}
+        if folder:
+            directory = os.path.join("audios", folder)
+            paths.update(os.path.join(directory, name)
+                         for name in os.listdir(directory))
+        extensions = {".mp3", ".wav", ".m4a",
+                      ".ogg", ".flac", ".aac", ".aiff", ".wma"}
+        return [(os.path.basename(path), path) for path in sorted(paths)
+                if os.path.splitext(path)[1].lower() in extensions and os.path.isfile(path)]
+
+    with gr.Blocks(title="NTN Podcast Creator") as app:
+        gr.HTML(EPISODE_CSS)
+        gr.Markdown("# NTN Podcast Creator")
+        order = gr.State([])
+        exported = gr.State(None)
+        cleaned = gr.State(None)
+        transcript = gr.State(None)
+        console = gr.State("")
+        started = gr.State(0)
+        preview_receipt = gr.State(None)
+        busy = gr.State(False)
+        track_draft = gr.State(deepcopy(cfg["track_volumes"]))
+        with gr.Tabs(selected="create") as tabs:
+            with gr.Tab("Create Episode", id="create"):
+                with gr.Column(elem_id="episode-create"):
+                    gr.Markdown("### Your next episode starts here")
+                    voice = gr.File(label="Upload recordings", file_count="multiple", file_types=["audio"],
+                                    type="filepath", elem_id="episode-hero")
+                    upload_state = gr.HTML(episode_marker(
+                        "empty"), elem_id="upload-state", elem_classes=["state-marker"])
+                    recordings = gr.HTML("")
+                    with gr.Column(elem_id="episode-order"):
+                        order_table = gr.Dataframe(headers=["Order", "Recording"], datatype=["number", "str"],
+                                                   value=[], type="array", interactive=True, static_columns=[1], label="Recording order")
+                    with gr.Row():
+                        name = gr.Textbox(label="Episode name", value=suggest_podcast_name(
+                            None), interactive=False, scale=5, min_width=180)
+                        edit_name = gr.Button(
+                            "Edit", size="sm", scale=0, min_width=64)
+                    create = gr.Button("Create Episode", variant="primary", size="lg", elem_classes=[
+                                       "episode-primary"])
+                    with gr.Row(elem_id="episode-summary-row"):
+                        summary = gr.HTML(
+                            saved_settings_summary(), min_width=240)
+                        change = gr.Button(
+                            "Change settings", size="sm", min_width=130)
+                    with gr.Accordion("Episode options", open=False, elem_id="episode-options"):
+                        background = gr.Dataframe(headers=["Recording", "Background music"], datatype=["str", "bool"],
+                                                  value=[], type="array", interactive=True, static_columns=[0], label="Per-recording background")
+                        intro_override = gr.File(label="Custom intro for this episode only", file_types=[
+                                                 "audio"], type="filepath")
+                    alert = gr.HTML("")
+                    with gr.Accordion("Timeline & premix details", open=False, elem_id="episode-premix"):
+                        timeline = gr.HTML("")
+                        health = gr.HTML("")
+                    status = gr.Markdown("")
+                    progress_html = gr.HTML("")
+                    log = gr.HTML("")
+                    with gr.Column(elem_id="episode-results"):
+                        result_state = gr.HTML(episode_marker(
+                            "empty"), elem_classes=["state-marker"])
+                        audio = gr.Audio(label="Your episode",
+                                         type="filepath", interactive=False)
+                        with gr.Row():
+                            download = gr.DownloadButton(
+                                "Download episode", variant="primary", value=None, elem_classes=["episode-primary"])
+                            another = gr.Button("Create another")
+                        qc_summary = gr.HTML("")
+                        with gr.Column(elem_id="episode-qc-actions"):
+                            qc_state = gr.HTML(episode_marker(
+                                "empty"), elem_classes=["state-marker"])
+                            with gr.Row():
+                                override = gr.Button(
+                                    "Download anyway — acknowledge warning")
+                                fix = gr.Button(
+                                    "Apply suggested settings for next render")
+                        action_status = gr.Markdown("")
+                        with gr.Column(elem_classes=["available-only"]):
+                            preview_state = gr.HTML(episode_marker(
+                                "empty"), elem_classes=["state-marker"])
+                            preview = gr.Audio(
+                                label="Preview worst section", type="filepath", interactive=False)
+                        with gr.Accordion("Technical details", open=False):
+                            raw = gr.HTML(
+                                label="Final Audio Quality Inspector", value="")
+                            with gr.Column(elem_classes=["available-only"]):
+                                report_state = gr.HTML(episode_marker(
+                                    "empty"), elem_classes=["state-marker"])
+                                report_download = gr.File(
+                                    label="Download quality report (JSON)", interactive=False)
+                            with gr.Column(elem_classes=["available-only"]):
+                                cleaned_state = gr.HTML(episode_marker(
+                                    "empty"), elem_classes=["state-marker"])
+                                cleaned_download = gr.File(
+                                    label="Cleaned voice", interactive=False)
+                            with gr.Column(elem_classes=["available-only"]):
+                                transcript_state = gr.HTML(episode_marker(
+                                    "empty"), elem_classes=["state-marker"])
+                                transcript_download = gr.File(
+                                    label="Transcript", interactive=False)
+                            refresh_transcript = gr.Button(
+                                "Check for background transcript", size="sm")
+            with gr.Tab("Settings", id="settings"):
+                gr.Markdown(
+                    "### Saved defaults\nChanges here are drafts until **Save settings**. Episodes always use saved defaults.")
+                with gr.Row():
+                    save = gr.Button("Save settings", variant="primary")
+                    discard = gr.Button("Discard changes")
+                settings_status = gr.Markdown("")
+                controls = {}
+                labels = {
+                    "intro_file": "Default intro", "outro_file": "Default outro",
+                    "background_volume": "Default Background Music Volume (%)", "delete_voice": "Delete voice recording after creation",
+                    "trim_silence": "Trim silence from voice recording", "prioritize_recording_filename": "Prefer Recording.m4a first",
+                    "rss_feed_url": "RSS Feed URL", "intro_voice_overlap": "Intro-voice overlap (1 second)",
+                    "voice_outro_overlap": "Voice-outro overlap (1 second)", "denoise_audio": "Enable noise reduction",
+                    "denoise_method": "Noise Reduction Method", "enhance_voice": "Enable professional voice enhancement",
+                    "voice_enhancement_preset": "Enhancement Preset", "normalize_lufs": "Normalize audio to professional LUFS level",
+                    "target_lufs": "Target LUFS Level", "auto_balance_levels": "Auto-balance voice & music levels (Recommended)",
+                    "min_voice_music_separation_db": "Minimum voice/music separation (dB)", "auto_ducking": "Auto-ducking",
+                    "generate_transcript": "Generate transcript with Whisper AI", "whisper_model": "Whisper Model",
+                    "quality_gate_enabled": "Final Audio Quality Gate", "audio_quality": "Audio quality thresholds (JSON)",
+                    "music_seed": "Music seed",
+                }
+                enums = {"denoise_method": ["audio_denoiser", "spectral", "rnnoise"],
+                         "voice_enhancement_preset": ["podcast", "light", "aggressive"],
+                         "whisper_model": ["tiny", "base", "small", "medium", "large"]}
+                ranges = {"background_volume": (
+                    0, 50), "target_lufs": (-30, -10), "min_voice_music_separation_db": (0, 40)}
+
+                def build_setting(key):
+                    value = form_values[key]
+                    if key in {"intro_file", "outro_file"}:
+                        folder = "intro_audio" if key == "intro_file" else "outro_audio"
+                        return gr.Dropdown(choices=[("None", None)] + audio_choices(folder, [value]),
+                                           label=labels[key], value=value)
+                    elif key in enums:
+                        return gr.Dropdown(
+                            enums[key], value=value, label=labels[key])
+                    elif key in ranges:
+                        low, high = ranges[key]
+                        return gr.Slider(
+                            low, high, value=value, step=1, label=labels[key])
+                    elif key == "audio_quality":
+                        return gr.Textbox(
+                            value=value, label=labels[key], lines=14)
+                    elif key == "music_seed":
+                        return gr.Number(
+                            value=value, label=labels[key])
+                    elif key == "rss_feed_url":
+                        return gr.Textbox(
+                            value=value, label=labels[key])
+                    else:
+                        return gr.Checkbox(
+                            value=value, label=labels[key])
+
+                for title, keys in (
+                    ("Podcast sound", ("intro_file", "outro_file", "background_volume",
+                                       "intro_voice_overlap", "voice_outro_overlap")),
+                    ("Voice processing", ("trim_silence", "denoise_audio", "enhance_voice",
+                                          "auto_balance_levels", "auto_ducking")),
+                    ("Output & quality", ("normalize_lufs", "target_lufs", "quality_gate_enabled",
+                                          "generate_transcript", "delete_voice")),
+                    ("Naming & RSS", ("prioritize_recording_filename", "rss_feed_url")),
+                    ("Advanced", ("denoise_method", "voice_enhancement_preset", "whisper_model",
+                                  "min_voice_music_separation_db", "audio_quality", "music_seed")),
+                ):
+                    with gr.Accordion(title, open=False):
+                        for key in keys:
+                            controls[key] = build_setting(key)
+                with gr.Accordion("Per-track volume drafts", open=False):
+                    track = gr.Dropdown(choices=audio_choices(
+                        configured=cfg["background_tracks"]), label="Background track")
+                    track_volume = gr.Slider(
+                        0, 50, value=cfg["background_volume"], step=1, label="Selected Track Volume (%)")
+                    stage_all = gr.Button("Stage global volume for all tracks")
+                with gr.Accordion("Audio library — actions apply immediately", open=False):
+                    gr.Markdown(
+                        "Adding an asset updates the library immediately. Select default intro/outro above, then Save settings.")
+                    asset_kind = gr.Dropdown(
+                        ["intro", "outro", "background"], value="background", label="Asset type")
+                    asset_file = gr.File(label="Audio asset", file_types=[
+                                         "audio"], type="filepath")
+                    add_asset = gr.Button("Add to library now")
+                    remove_track = gr.Button(
+                        "Remove selected background track now")
+                    asset_status = gr.Markdown("")
+                with gr.Accordion("Templates & settings files", open=False):
+                    template = gr.Dropdown(
+                        get_template_choices(), label="Template")
+                    with gr.Row():
+                        load_template = gr.Button("Load and apply template")
+                        delete_template = gr.Button("Delete template")
+                    template_name = gr.Textbox(label="Template name")
+                    save_template = gr.Button(
+                        "Save saved settings as template")
+                    import_file = gr.File(label="Settings JSON", file_types=[
+                                          ".json"], type="filepath")
+                    import_button = gr.Button("Import and apply settings")
+                    export_button = gr.Button("Export saved settings")
+                    settings_download = gr.File(
+                        label="Saved settings download", interactive=False)
+                with gr.Accordion("Tools", open=False):
+                    tool_voice = gr.File(label="Recording to clean", file_types=[
+                                         "audio"], type="filepath")
+                    clean_button = gr.Button("Clean audio")
+                    tool_status = gr.Markdown("")
+                    tool_output = gr.File(
+                        label="Cleaned audio download", interactive=False)
+                    tool_log = gr.Textbox(label="Tool log", interactive=False)
+                with gr.Accordion("Help & appearance", open=False):
+                    gr.Markdown("Upload → Create Episode → Download. Review yellow/red quality results before publishing. "
+                                "Suggested settings affect the next render only. Keep source recordings if you plan to rerender.")
+                    theme = gr.Dropdown(
+                        ["System", "Light", "Dark"], value="System", label="Theme")
+
+        form = [controls[key] for key in SETTINGS_FIELDS] + [track_draft]
+        refresh_form = [settings_status, summary] + form
+
+        def refresh_asset_controls():
+            saved = saved_settings_snapshot()
+            updates = []
+            for key, folder in (("intro_file", "intro_audio"), ("outro_file", "outro_audio")):
+                updates.append(gr.Dropdown(choices=[("None", None)] + audio_choices(folder, [saved[key]]),
+                                           value=saved[key]))
+            return (*updates, gr.Dropdown(choices=audio_choices(configured=saved["background_tracks"]), value=None),
+                    saved["background_volume"])
+
+        asset_controls = [controls["intro_file"],
+                          controls["outro_file"], track, track_volume]
+        save.click(save_episode_settings, form, [settings_status, summary])
+        discard.click(discard_episode_settings, [], refresh_form).then(
+            refresh_asset_controls, [], asset_controls)
+        load_template.click(load_episode_template, [template], refresh_form).then(
+            refresh_asset_controls, [], asset_controls)
+        import_button.click(import_episode_settings, [import_file], refresh_form).then(
+            refresh_asset_controls, [], asset_controls)
+        export_button.click(export_episode_settings, [], [settings_download])
+        change.click(lambda: gr.Tabs(selected="settings"),
+                     [], [tabs], queue=False)
+        edit_name.click(lambda: gr.Textbox(
+            interactive=True), [], [name], queue=False)
+        theme.change(None, [theme], [], js="""(theme) => {
+            const dark = theme === 'Dark' || (theme === 'System' && matchMedia('(prefers-color-scheme: dark)').matches);
+            document.documentElement.classList.toggle('dark', dark);
+            document.body.classList.toggle('dark', dark);
+        }""")
+        track.change(lambda path, draft, global_volume: (draft or {}).get(path, global_volume),
+                     [track, track_draft, controls["background_volume"]], [track_volume])
+        track_volume.input(stage_track_volume, [
+                           track, track_volume, track_draft], [track_draft])
+        stage_all.click(lambda volume: {path: volume for path in saved_settings_snapshot()["background_tracks"]},
+                        [controls["background_volume"]], [track_draft])
+
+        def library_action(kind, path, selected, remove=False):
+            try:
+                if remove:
+                    tracks = saved_settings_snapshot()["background_tracks"]
+                    config_manager.update_settings(
+                        {"background_tracks": [p for p in tracks if p != selected]})
+                    message = "Background track removed from library. File preserved."
+                else:
+                    if not path:
+                        raise ValueError("Choose an audio asset")
+                    folder = {"intro": "intro_audio", "outro": "outro_audio",
+                              "background": "background_music"}[kind]
+                    destination = os.path.join(
+                        "audios", folder, os.path.basename(path))
+                    if os.path.realpath(path) != os.path.realpath(destination):
+                        shutil.copy2(path, destination)
+                    if kind == "background":
+                        tracks = saved_settings_snapshot()["background_tracks"]
+                        config_manager.update_settings(
+                            {"background_tracks": list(dict.fromkeys(tracks + [destination]))})
+                    message = "Asset added. Intro/outro default selection still requires Save settings."
+            except (OSError, ValueError, TypeError) as error:
+                message = "Library action failed: " + str(error)
+            saved = saved_settings_snapshot()
+            # Choice-only updates preserve unsaved selections (including None).
+            return (message, saved_settings_summary(),
+                    gr.Dropdown(
+                        choices=[("None", None)] + audio_choices("intro_audio", [saved["intro_file"]])),
+                    gr.Dropdown(
+                        choices=[("None", None)] + audio_choices("outro_audio", [saved["outro_file"]])),
+                    gr.Dropdown(choices=audio_choices(configured=saved["background_tracks"])))
+
+        library_outputs = [asset_status, summary,
+                           controls["intro_file"], controls["outro_file"], track]
+        add_asset.click(library_action, [
+                        asset_kind, asset_file, track], library_outputs)
+        remove_track.click(lambda kind, path, selected: library_action(kind, path, selected, True),
+                           [asset_kind, asset_file, track], library_outputs)
+
+        def save_template_ui(value):
+            choices, message = save_template_handler(value)
+            return gr.Dropdown(choices=json.loads(choices)), message
+
+        def delete_template_ui(value):
+            choices, message = delete_template_handler(value)
+            return gr.Dropdown(choices=json.loads(choices), value=None), message
+
+        save_template.click(save_template_ui, [template_name], [
+                            template, settings_status])
+        delete_template.click(delete_template_ui, [template], [
+                              template, settings_status])
+        clean_button.click(lambda path: denoise_audio_only_handler(path, saved_settings_snapshot()["delete_voice"]),
+                           [tool_voice], [tool_status, tool_output, tool_log], concurrency_id="episode-render", concurrency_limit=1)
+
+        result_components = [result_state, audio, download, qc_summary, raw, preview, preview_state,
+                             report_download, report_state, cleaned_download, cleaned_state,
+                             transcript_download, transcript_state, qc_state, action_status]
+
+        def empty_results():
+            empty = episode_marker("empty")
+            return [empty, None, None, "", "", None, empty, None, empty, None, empty, None, empty, empty, ""]
+
+        def update_on_voice_upload(files, custom_intro):
+            return episode_upload_details(files)
+
+        def update_timeline_with_order_state(files, rows, custom_intro):
+            return episode_premix(files, rows, custom_intro)
+
+        voice.change(update_on_voice_upload, [voice, intro_override],
+                     [order, order_table, background, recordings, upload_state]).then(
+            empty_results, [], result_components)
+        order_table.input(stage_episode_order, [order_table, order, voice], [
+                          order, order_table, background])
+        background.input(stage_episode_background, [
+                         background, order], [order])
+        order.change(update_timeline_with_order_state, [
+                     voice, order, intro_override], [timeline, health, alert])
+        intro_override.change(update_timeline_with_order_state, [
+                              voice, order, intro_override], [timeline, health, alert])
+
+        def prepare_episode(receipt, is_busy):
+            if is_busy:
+                raise gr.Error("An episode is already rendering.")
+            stamp = clear_final_quality_inspector(receipt)[-1]
+            return (*empty_results(), stamp, None, None, None, None, "", "", "", True,
+                    gr.Button(interactive=False), gr.Button(
+                        interactive=False), gr.File(interactive=False),
+                    gr.Button(interactive=False), gr.Dataframe(
+                        interactive=False),
+                    gr.Dataframe(interactive=False), gr.File(interactive=False), gr.Textbox(interactive=False))
+
+        guard_outputs = [create, another, voice, edit_name,
+                         order_table, background, intro_override, name]
+        prepare = create.click(prepare_episode, [preview_receipt, busy],
+                               result_components + [started, preview_receipt, exported, cleaned, transcript,
+                                                    status, progress_html, log, busy] + guard_outputs,
+                               queue=False, trigger_mode="once")
+        render = prepare.success(create_episode_from_saved, [voice, name, order, intro_override],
+                                 [status, exported, cleaned, transcript,
+                                     console, progress_html, log],
+                                 show_progress="hidden", concurrency_id="episode-render", concurrency_limit=1)
+
+        def finish_episode(path, clean, text, stamp):
+            if not path or not os.path.isfile(path):
+                return empty_results()
+            card, clip, report = render_final_quality_inspector(path, stamp)
+            short, state = episode_quality_summary(path, stamp)
+            def available(value): return episode_marker(
+                "available" if value else "empty")
+            clean = clean if clean and os.path.isfile(clean) else None
+            text = text if text and os.path.isfile(text) else None
+            return [episode_marker("ready"), path, path, short, card, clip, available(clip),
+                    report, available(report), clean, available(clean), text, available(text), state, ""]
+
+        finished = render.then(finish_episode, [exported, cleaned, transcript, started], result_components).then(
+            remember_quality_preview, [exported, started], [preview_receipt])
+
+        def release_episode():
+            return (False, gr.Button(interactive=True), gr.Button(interactive=True), gr.File(interactive=True),
+                    gr.Button(interactive=True), gr.Dataframe(
+                        interactive=True), gr.Dataframe(interactive=True),
+                    gr.File(interactive=True), gr.Textbox(interactive=False))
+
+        finished.then(release_episode, [], [busy] + guard_outputs)
+
+        def reset_episode(receipt):
+            values = reset_episode_values(receipt)
+            return (*empty_results(), values["voice"], [], [], [], None,
+                    gr.Textbox(value=values["name"], interactive=False), "", episode_marker(
+                        "empty"),
+                    "", "", "", 0, None, None, None, None, "", "", "", "", False)
+
+        another.click(reset_episode, [preview_receipt], result_components +
+                      [voice, order, order_table, background, intro_override, name, recordings, upload_state,
+                       timeline, health, alert, started, preview_receipt, exported, cleaned, transcript,
+                       status, progress_html, log, console, busy], concurrency_id="episode-render", concurrency_limit=1,
+                      show_progress="hidden").then(None, [], [], js="""() => {
+                          const hero = document.getElementById('episode-hero');
+                          hero?.scrollIntoView({block: 'start'});
+                          hero?.querySelector('button')?.focus({preventScroll: true});
+                      }""")
+
+        def acknowledge_episode(path, stamp):
+            card, message = acknowledge_quality_override(path, stamp)
+            short, state = episode_quality_summary(path, stamp)
+            return card, message, short, state
+
+        override.click(acknowledge_episode, [exported, started], [
+                       raw, action_status, qc_summary, qc_state])
+
+        def suggested_episode_settings(path, stamp):
+            message, *_ = apply_quality_suggested_settings(path, stamp)
+            return message, saved_settings_summary(), *settings_form_values()
+
+        fix.click(suggested_episode_settings, [exported, started], [action_status, summary] + form).then(
+            refresh_asset_controls, [], asset_controls)
+
+        def find_transcript(path):
+            candidate = os.path.splitext(
+                path)[0] + "_transcript.txt" if path else None
+            candidate = candidate if candidate and os.path.isfile(
+                candidate) else None
+            return candidate, episode_marker("available" if candidate else "empty")
+
+        refresh_transcript.click(find_transcript, [exported], [
+                                 transcript_download, transcript_state])
+    app.queue(default_concurrency_limit=1)
+    return app
+
+
+def _legacy_create_ui():
     """Create Gradio user interface."""
 
     # Load saved settings

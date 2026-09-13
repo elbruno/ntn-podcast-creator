@@ -2,32 +2,66 @@
 
 ## Use
 
-Open **Create Podcast → Processing Options → Final Audio Quality Gate** and
-enable it before rendering. It is disabled by default for compatibility.
+Open **Settings → Output & quality**, enable **Final Audio Quality Gate**, and click **Save settings**
+before returning to **Create Episode**. It is disabled by default for compatibility.
+Unsaved drafts do not enable QC: the render
+uses a detached snapshot of saved defaults, including thresholds and music seed.
 The existing pre-mix inspector remains advisory; final QC analyzes the exact
 exported MP3 after mastering and encoding.
 
-- **Green:** Ready to publish.
-- **Yellow:** Review recommended.
-- **Red:** Audio Quality Check Failed; publication is not recommended.
+- **Green / PASS:** “Ready to publish” — the measured checks passed, not a guarantee of production quality.
+- **Yellow / WARN:** “Review recommended.”
+- **Red / FAIL:** “Quality check failed — review before publishing.”
+- **Disabled:** No final QC was requested for this render; this is not a PASS.
+- **Unavailable:** The export is not certified; a missing, stale, or unreadable report is not a PASS.
 
-Export is always available. **Override** records acknowledgement without erasing
-failures. **Apply suggested settings** enables appropriate balance, ducking, or
-normalization settings for the **next render**, never rewrites current audio.
+Once audio is successfully exported, **Download episode** remains available in
+all these states. QC does not block export or require an override to unlock it.
+For WARN/FAIL, **Download anyway — acknowledge warning** records a deliberate
+acknowledgement without erasing findings or converting the result to PASS. This
+action records the decision; use **Download episode** to retrieve the audio.
+
+For WARN/FAIL, **Apply suggested settings for next render** immediately saves
+appropriate balance, ducking, or normalization defaults and refreshes the Settings
+form, replacing its draft values. Unlike ordinary Settings edits, no additional
+**Save settings** click is required. It never rewrites current audio or automatically
+rerenders it; the current QC result remains unchanged.
 Keep the original recordings available for rerendering. Clipping already baked
 into a source cannot be repaired by normalization.
 
-The inspector includes actionable reason codes, a readable worst-section time
-range, a short preview from the final render, and a downloadable JSON report.
+Results appear after a successful export. Open **Technical details** for the
+final inspector and **Download quality report (JSON)** when a valid report is
+available. Disabled/unavailable QC does not display a report download. A **Preview
+worst section** player appears only when a preview exists; not every render has
+one. Reports can include reason codes and a readable worst-section time range.
+Cleaned voice and transcript downloads are also conditional on their files being
+available. **Check for background transcript** can reveal a transcript that finishes
+later. **Create another** resets episode inputs/results without deleting the export.
 Preview files are cleaned on replacement/session reset and normal process exit;
 abrupt process termination can leave temporary files for OS cleanup.
 
 ## Shared configuration
 
-Advanced thresholds are edited as validated JSON under Processing Options.
-They persist under `audio_quality` in `core/config.json` and in templates.
-`target_lufs` follows the existing LUFS slider. An empty object uses defaults.
+In **Settings → Advanced**, edit **Audio quality thresholds (JSON)** and set
+**Music seed** as needed, then click **Save settings**. The thresholds editor is
+directly in **Advanced**, not in a nested accordion. This group also contains
+denoise method, enhancement preset, Whisper model, and minimum voice/music
+separation. Auto-balance and auto-ducking are in **Voice processing** alongside
+trim, denoise, and enhancement toggles. The gate toggle, normalization, target
+LUFS, transcript toggle, and uploaded-recording deletion are in **Output & quality**.
+**Discard changes** restores the saved form; it does not undo already applied
+library, template, import, or suggested-settings actions.
+
+Thresholds persist under `audio_quality` in `core/config.json` and in templates.
+**Load and apply template** and **Import and apply settings** apply saved values
+immediately and replace drafts; template saving and JSON export use saved settings.
+`target_lufs` follows **Target LUFS Level**. An empty object uses defaults.
 Invalid saved thresholds remain editable and cannot produce a certified PASS.
+
+Startup audio discovery fills only missing `intro_file`, `outro_file`, or
+`background_tracks` configuration keys. Saved file choices, explicit **None**
+intro/outro selections (`null` in JSON), and an empty background pool (`[]`)
+survive restart; discovery does not overwrite them.
 
 | Check | Default |
 |---|---|
@@ -88,6 +122,8 @@ Run the new suites together with `python -m pytest` on:
 - `tests/test_smooth_ducking.py`
 - `tests/test_quality_config.py`
 - `tests/test_quality_ui.py`
+- `tests/test_episode_ui.py` (upload-first UI, saved settings, and result states)
+- `tests/test_saved_settings.py` (saved configuration behavior)
 - `tests/test_ntn_regression_manifest.py`
 - `tests/test_ntn_quality_regression.py`
 
