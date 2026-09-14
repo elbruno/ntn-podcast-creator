@@ -6,6 +6,7 @@ import datetime
 import re
 import json
 import html
+import math
 import time
 import tempfile
 from copy import deepcopy
@@ -1888,7 +1889,7 @@ def _render_episode(
     intro_path = intro_override_path or snapshot.get("intro_file")
     outro_path = snapshot.get("outro_file")
     background_tracks = snapshot.get("background_tracks", [])
-    volume = snapshot.get("background_volume", 10)
+    volume = snapshot.get("background_volume", 5)
     track_volumes = snapshot.get("track_volumes", {})
 
     log_message(f"Configuration loaded:")
@@ -2316,7 +2317,7 @@ def export_settings() -> str:
         # Get current configuration
         cfg = saved_settings_snapshot()
         settings = {key: cfg[key] for key in (
-            *SETTINGS_FIELDS, "track_volumes", "background_tracks", "last_output_name")}
+            *SETTINGS_FIELDS, "track_volumes", "last_output_name")}
         settings["export_date"] = datetime.datetime.now().isoformat()
 
         with open(filepath, 'w', encoding='utf-8') as f:
@@ -2455,7 +2456,7 @@ def save_template_handler(template_name: str) -> tuple[str, str]:
         # Get current settings from config manager
         cfg = saved_settings_snapshot()
         settings = {key: cfg[key] for key in (
-            *SETTINGS_FIELDS, "track_volumes", "background_tracks")}
+            *SETTINGS_FIELDS, "track_volumes")}
 
         # Save template
         success, message = template_manager.save_template(
@@ -2738,13 +2739,31 @@ def create_episode_from_saved(voice, name, order, intro_override, progress=gr.Pr
 
 # One ordered mapping is shared by Save, Discard, template/import refresh, and tests.
 SETTINGS_FIELDS = (
-    "intro_file", "outro_file", "background_volume", "delete_voice", "trim_silence",
+    "intro_file", "outro_file", "background_tracks", "background_volume", "delete_voice", "trim_silence",
     "prioritize_recording_filename", "rss_feed_url", "intro_voice_overlap",
     "voice_outro_overlap", "denoise_audio", "denoise_method", "enhance_voice",
     "voice_enhancement_preset", "normalize_lufs", "target_lufs", "auto_balance_levels",
     "min_voice_music_separation_db", "auto_ducking", "generate_transcript", "whisper_model",
     "quality_gate_enabled", "audio_quality", "music_seed",
 )
+
+
+def background_level_description(volume) -> str:
+    """Explain the master music percentage using an audible dB reference."""
+    try:
+        value = float(volume)
+    except (TypeError, ValueError, OverflowError):
+        return "Choose a background level. Chill (5%) is recommended."
+    if not math.isfinite(value) or value <= 0:
+        return "**Off** — no background music will be audible."
+    gain = 20 * math.log10(value / 100)
+    if value <= 3:
+        name = "Barely audible"
+    elif value <= 7:
+        name = "Chill"
+    else:
+        name = "Present"
+    return f"**{name}** — {value:g}% (approximately {gain:.0f} dB below the source track)."
 
 
 def saved_settings_summary():
@@ -2774,7 +2793,11 @@ def save_episode_settings(*values):
             raise ValueError("Incomplete settings form")
         settings = dict(zip(SETTINGS_FIELDS, values[:-1]))
         settings["audio_quality"] = json.loads(settings["audio_quality"])
-        settings["track_volumes"] = deepcopy(values[-1])
+        selected = set(settings["background_tracks"] or [])
+        settings["track_volumes"] = {
+            path: volume for path, volume in deepcopy(values[-1] or {}).items()
+            if path in selected
+        }
         config_manager.update_settings(settings)
         return "Settings saved. The next episode will use these settings.", saved_settings_summary()
     except (ValueError, TypeError, OverflowError, OSError) as error:
@@ -2820,7 +2843,7 @@ def import_episode_settings(path):
 def export_episode_settings():
     cfg = saved_settings_snapshot()
     settings = {key: cfg[key] for key in (
-        *SETTINGS_FIELDS, "track_volumes", "background_tracks")}
+        *SETTINGS_FIELDS, "track_volumes")}
     with tempfile.NamedTemporaryFile(mode="w", suffix=".json", prefix="podcast_settings_",
                                      dir="outputs", delete=False, encoding="utf-8") as stream:
         json.dump(settings, stream, indent=2)
@@ -2921,6 +2944,9 @@ EPISODE_CSS = """
 #episode-summary-row {align-items: center;}
 .episode-primary {background: #4f46e5 !important; color: #fff !important; border-color: #4f46e5 !important;}
 .saved-summary {font-size: .9rem; color: var(--body-text-color-subdued);}
+.sound-card {padding: 1rem; border: 1px solid var(--border-color-primary); border-radius: .75rem; margin-bottom: .75rem;}
+.sound-card h3 {margin-top: 0;}
+.sound-note {font-size: .9rem; color: var(--body-text-color-subdued);}
 .recording-list {padding-inline-start: 1.3rem; overflow-wrap: anywhere;}
 .episode-log pre {max-height: 240px; overflow: auto; white-space: pre-wrap; font-size: .85rem;}
 .episode-log summary {cursor: pointer; padding: .5rem 0;}
@@ -3071,7 +3097,7 @@ def create_ui():
                 controls = {}
                 labels = {
                     "intro_file": "Default intro", "outro_file": "Default outro",
-                    "background_volume": "Default Background Music Volume (%)", "delete_voice": "Delete voice recording after creation",
+                    "background_tracks": "Background tracks", "background_volume": "Master background level (%)", "delete_voice": "Delete voice recording after creation",
                     "trim_silence": "Trim silence from voice recording", "prioritize_recording_filename": "Prefer Recording.m4a first",
                     "rss_feed_url": "RSS Feed URL", "intro_voice_overlap": "Intro-voice overlap (1 second)",
                     "voice_outro_overlap": "Voice-outro overlap (1 second)", "denoise_audio": "Enable noise reduction",
@@ -3093,15 +3119,28 @@ def create_ui():
                     value = form_values[key]
                     if key in {"intro_file", "outro_file"}:
                         folder = "intro_audio" if key == "intro_file" else "outro_audio"
-                        return gr.Dropdown(choices=[("None", None)] + audio_choices(folder, [value]),
-                                           label=labels[key], value=value)
+                        choices = [("None", None)] + \
+                            audio_choices(folder, [value])
+                        available = {path for _, path in choices}
+                        return gr.Dropdown(choices=choices, label=labels[key],
+                                           value=value if value in available else None)
+                    elif key == "background_tracks":
+                        choices = audio_choices("background_music", value)
+                        available = {path for _, path in choices}
+                        return gr.Dropdown(
+                            choices=choices,
+                            value=[path for path in value if path in available],
+                            multiselect=True, label=labels[key],
+                            info="Select any number of tracks. They share the master level below.")
                     elif key in enums:
                         return gr.Dropdown(
                             enums[key], value=value, label=labels[key])
                     elif key in ranges:
                         low, high = ranges[key]
                         return gr.Slider(
-                            low, high, value=value, step=1, label=labels[key])
+                            low, high, value=value,
+                            step=0.5 if key == "background_volume" else 1,
+                            label=labels[key])
                     elif key == "audio_quality":
                         return gr.Textbox(
                             value=value, label=labels[key], lines=14)
@@ -3115,9 +3154,46 @@ def create_ui():
                         return gr.Checkbox(
                             value=value, label=labels[key])
 
+                with gr.Accordion("Podcast sound", open=True):
+                    gr.Markdown(
+                        "Choose one intro, one outro, and any number of background tracks.")
+                    with gr.Column(elem_classes=["sound-card"]):
+                        gr.Markdown(
+                            "### Intro\n<span class='sound-note'>One file · original volume (100%) · never treated as background music.</span>")
+                        controls["intro_file"] = build_setting("intro_file")
+                        intro_preview = gr.Audio(
+                            label="Preview intro", value=form_values["intro_file"]
+                            if form_values["intro_file"] and os.path.isfile(form_values["intro_file"]) else None,
+                            type="filepath", interactive=False)
+                        controls["intro_voice_overlap"] = build_setting(
+                            "intro_voice_overlap")
+                    with gr.Column(elem_classes=["sound-card"]):
+                        gr.Markdown(
+                            "### Outro\n<span class='sound-note'>One file · original volume (100%) · never treated as background music.</span>")
+                        controls["outro_file"] = build_setting("outro_file")
+                        outro_preview = gr.Audio(
+                            label="Preview outro", value=form_values["outro_file"]
+                            if form_values["outro_file"] and os.path.isfile(form_values["outro_file"]) else None,
+                            type="filepath", interactive=False)
+                        controls["voice_outro_overlap"] = build_setting(
+                            "voice_outro_overlap")
+                    with gr.Column(elem_classes=["sound-card"]):
+                        gr.Markdown(
+                            "### Background music\n<span class='sound-note'>Multiple tracks · one intentionally quiet master level · ducked under speech.</span>")
+                        controls["background_tracks"] = build_setting(
+                            "background_tracks")
+                        with gr.Row():
+                            barely = gr.Button(
+                                "Barely audible · 2.5%", size="sm")
+                            chill = gr.Button(
+                                "Chill · 5%", size="sm", variant="primary")
+                            present = gr.Button("Present · 10%", size="sm")
+                        controls["background_volume"] = build_setting(
+                            "background_volume")
+                        background_level = gr.Markdown(background_level_description(
+                            form_values["background_volume"]))
+
                 for title, keys in (
-                    ("Podcast sound", ("intro_file", "outro_file", "background_volume",
-                                       "intro_voice_overlap", "voice_outro_overlap")),
                     ("Voice processing", ("trim_silence", "denoise_audio", "enhance_voice",
                                           "auto_balance_levels", "auto_ducking")),
                     ("Output & quality", ("normalize_lufs", "target_lufs", "quality_gate_enabled",
@@ -3129,12 +3205,17 @@ def create_ui():
                     with gr.Accordion(title, open=False):
                         for key in keys:
                             controls[key] = build_setting(key)
-                with gr.Accordion("Per-track volume drafts", open=False):
+                with gr.Accordion("Advanced per-track volumes", open=False):
+                    gr.Markdown(
+                        "Optional: override the master level for one selected background track.")
                     track = gr.Dropdown(choices=audio_choices(
-                        configured=cfg["background_tracks"]), label="Background track")
+                        configured=cfg["background_tracks"]), label="Fine-tune selected track")
                     track_volume = gr.Slider(
-                        0, 50, value=cfg["background_volume"], step=1, label="Selected Track Volume (%)")
-                    stage_all = gr.Button("Stage global volume for all tracks")
+                        0, 50, value=cfg["background_volume"], step=0.5, label="Per-track override (%)")
+                    track_preview = gr.Audio(
+                        label="Preview track at this level", type="filepath", interactive=False)
+                    stage_all = gr.Button(
+                        "Reset every selected track to the master level")
                 with gr.Accordion("Audio library — actions apply immediately", open=False):
                     gr.Markdown(
                         "Adding an asset updates the library immediately. Select default intro/outro above, then Save settings.")
@@ -3180,15 +3261,27 @@ def create_ui():
 
         def refresh_asset_controls():
             saved = saved_settings_snapshot()
-            updates = []
-            for key, folder in (("intro_file", "intro_audio"), ("outro_file", "outro_audio")):
-                updates.append(gr.Dropdown(choices=[("None", None)] + audio_choices(folder, [saved[key]]),
-                                           value=saved[key]))
-            return (*updates, gr.Dropdown(choices=audio_choices(configured=saved["background_tracks"]), value=None),
-                    saved["background_volume"])
+            return (
+                gr.Dropdown(choices=[("None", None)] + audio_choices(
+                    "intro_audio", [saved["intro_file"]]), value=saved["intro_file"]),
+                saved["intro_file"] if saved["intro_file"] and os.path.isfile(
+                    saved["intro_file"]) else None,
+                gr.Dropdown(choices=[("None", None)] + audio_choices(
+                    "outro_audio", [saved["outro_file"]]), value=saved["outro_file"]),
+                saved["outro_file"] if saved["outro_file"] and os.path.isfile(
+                    saved["outro_file"]) else None,
+                gr.Dropdown(choices=audio_choices("background_music", saved["background_tracks"]),
+                            value=saved["background_tracks"], multiselect=True),
+                gr.Dropdown(choices=audio_choices(
+                    configured=saved["background_tracks"]), value=None),
+                saved["background_volume"],
+                background_level_description(saved["background_volume"]),
+            )
 
-        asset_controls = [controls["intro_file"],
-                          controls["outro_file"], track, track_volume]
+        asset_controls = [controls["intro_file"], intro_preview,
+                          controls["outro_file"], outro_preview,
+                          controls["background_tracks"], track, track_volume,
+                          background_level]
         save.click(save_episode_settings, form, [settings_status, summary])
         discard.click(discard_episode_settings, [], refresh_form).then(
             refresh_asset_controls, [], asset_controls)
@@ -3206,12 +3299,46 @@ def create_ui():
             document.documentElement.classList.toggle('dark', dark);
             document.body.classList.toggle('dark', dark);
         }""")
-        track.change(lambda path, draft, global_volume: (draft or {}).get(path, global_volume),
-                     [track, track_draft, controls["background_volume"]], [track_volume])
-        track_volume.input(stage_track_volume, [
-                           track, track_volume, track_draft], [track_draft])
-        stage_all.click(lambda volume: {path: volume for path in saved_settings_snapshot()["background_tracks"]},
-                        [controls["background_volume"]], [track_draft])
+        controls["intro_file"].change(
+            lambda path: path if path and os.path.isfile(path) else None,
+            [controls["intro_file"]], [intro_preview])
+        controls["outro_file"].change(
+            lambda path: path if path and os.path.isfile(path) else None,
+            [controls["outro_file"]], [outro_preview])
+        controls["background_volume"].input(
+            background_level_description, [controls["background_volume"]], [background_level])
+        for button, value in ((barely, 2.5), (chill, 5), (present, 10)):
+            button.click(lambda selected=value: (
+                selected, background_level_description(selected)), [],
+                [controls["background_volume"], background_level])
+
+        def stage_background_selection(paths, draft):
+            selected = set(paths or [])
+            staged = {path: volume for path, volume in (draft or {}).items()
+                      if path in selected}
+            return gr.Dropdown(choices=audio_choices(
+                configured=paths or []), value=None), staged
+
+        controls["background_tracks"].change(
+            stage_background_selection,
+            [controls["background_tracks"], track_draft], [track, track_draft])
+
+        def select_track_for_preview(path, draft, global_volume):
+            volume = (draft or {}).get(path, global_volume)
+            return volume, generate_volume_preview(path, volume) if path else None
+
+        track.change(select_track_for_preview,
+                     [track, track_draft, controls["background_volume"]],
+                     [track_volume, track_preview])
+
+        def stage_track_preview(path, volume, draft):
+            return stage_track_volume(path, volume, draft), (
+                generate_volume_preview(path, volume) if path else None)
+
+        track_volume.change(stage_track_preview, [
+                            track, track_volume, track_draft], [track_draft, track_preview])
+        stage_all.click(lambda volume, paths: {path: volume for path in (paths or [])},
+                        [controls["background_volume"], controls["background_tracks"]], [track_draft])
 
         def library_action(kind, path, selected, remove=False):
             try:
@@ -3219,7 +3346,7 @@ def create_ui():
                     tracks = saved_settings_snapshot()["background_tracks"]
                     config_manager.update_settings(
                         {"background_tracks": [p for p in tracks if p != selected]})
-                    message = "Background track removed from library. File preserved."
+                    message = "Background track removed from saved defaults. Library file preserved."
                 else:
                     if not path:
                         raise ValueError("Choose an audio asset")
@@ -3229,11 +3356,7 @@ def create_ui():
                         "audios", folder, os.path.basename(path))
                     if os.path.realpath(path) != os.path.realpath(destination):
                         shutil.copy2(path, destination)
-                    if kind == "background":
-                        tracks = saved_settings_snapshot()["background_tracks"]
-                        config_manager.update_settings(
-                            {"background_tracks": list(dict.fromkeys(tracks + [destination]))})
-                    message = "Asset added. Intro/outro default selection still requires Save settings."
+                    message = "Asset added to the library. Select it above, then Save settings."
             except (OSError, ValueError, TypeError) as error:
                 message = "Library action failed: " + str(error)
             saved = saved_settings_snapshot()
@@ -3243,10 +3366,13 @@ def create_ui():
                         choices=[("None", None)] + audio_choices("intro_audio", [saved["intro_file"]])),
                     gr.Dropdown(
                         choices=[("None", None)] + audio_choices("outro_audio", [saved["outro_file"]])),
+                    gr.Dropdown(choices=audio_choices(
+                        "background_music", saved["background_tracks"]), multiselect=True),
                     gr.Dropdown(choices=audio_choices(configured=saved["background_tracks"])))
 
         library_outputs = [asset_status, summary,
-                           controls["intro_file"], controls["outro_file"], track]
+                           controls["intro_file"], controls["outro_file"],
+                           controls["background_tracks"], track]
         add_asset.click(library_action, [
                         asset_kind, asset_file, track], library_outputs)
         remove_track.click(lambda kind, path, selected: library_action(kind, path, selected, True),

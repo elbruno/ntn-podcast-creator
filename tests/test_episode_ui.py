@@ -92,7 +92,7 @@ def test_idle_sentinels_empty_results_and_css_contract(ui, screen):
 
 def test_settings_accordion_membership_and_form_order(ui, screen):
     groups = {
-        "Podcast sound": ("intro_file", "outro_file", "background_volume",
+        "Podcast sound": ("intro_file", "outro_file", "background_tracks", "background_volume",
                           "intro_voice_overlap", "voice_outro_overlap"),
         "Voice processing": ("trim_silence", "denoise_audio", "enhance_voice",
                              "auto_balance_levels", "auto_ducking"),
@@ -112,10 +112,10 @@ def test_settings_accordion_membership_and_form_order(ui, screen):
     for key, component in zip(ui.SETTINGS_FIELDS, form):
         group = next(name for name, keys in groups.items() if key in keys)
         assert accordions[group]["id"] in parents[component._id]
-        assert accordions[group]["props"]["open"] is False
+        assert accordions[group]["props"]["open"] is (group == "Podcast sound")
     # The visual order differs, but all event arrays still use SETTINGS_FIELDS.
     assert [component.label for component in form] == [
-        "Default intro", "Default outro", "Default Background Music Volume (%)",
+        "Default intro", "Default outro", "Background tracks", "Master background level (%)",
         "Delete voice recording after creation", "Trim silence from voice recording",
         "Prefer Recording.m4a first", "RSS Feed URL", "Intro-voice overlap (1 second)",
         "Voice-outro overlap (1 second)", "Enable noise reduction", "Noise Reduction Method",
@@ -153,14 +153,15 @@ def test_library_choices_filter_files_and_keep_external_selections(ui):
     try:
         components = {c.label: c for c in blocks.blocks.values()
                       if hasattr(c, "label")}
-        for label, expected in zip(("Default intro", "Default outro", "Background track"), libraries):
+        for label, expected in zip(("Default intro", "Default outro", "Fine-tune selected track"), libraries):
             assert {value for _,
                     value in components[label].choices if value} == expected
         refreshed = handlers(blocks)["refresh_asset_controls"].fn()
-        for update, expected in zip(refreshed, libraries):
+        for update, expected in zip((refreshed[0], refreshed[2], refreshed[5]), libraries):
             assert {value for _, value in update.choices if value} == expected
-        assert [update.value for update in refreshed[:2]] == [
+        assert [refreshed[0].value, refreshed[2].value] == [
             before["intro_file"], before["outro_file"]]
+        assert refreshed[4].value == before["background_tracks"]
         assert ui.config_manager.snapshot() == before
     finally:
         blocks.close()
@@ -216,6 +217,8 @@ def test_library_updates_preserve_default_drafts(ui, kind, remove):
             if kind == "background" and remove is False:
                 expected_music.add("audios/background_music/new.wav")
             assert {value for _, value in wire[4]["choices"]} == expected_music
+            assert {value for _, value in wire[5]["choices"]} == (
+                set() if remove else {str(music)})
             # Removing a library entry never deletes its file.
             assert music.is_file()
         assert [ui.config_manager.get(key) for key in (
@@ -228,8 +231,10 @@ def test_no_scalar_autosave_and_wrapper_has_only_episode_inputs(ui, screen):
     functions = handlers(screen)
     form_ids = {c._id for c in functions["save_episode_settings"].inputs[:-1]}
     for dependency in screen.config["dependencies"]:
-        assert not any(target[0] in form_ids and target[1] in {"change", "input"}
-                       for target in dependency["targets"])
+        if any(target[0] in form_ids and target[1] in {"change", "input"}
+               for target in dependency["targets"]):
+            assert screen.fns[dependency["id"]].fn.__name__ in {
+                "<lambda>", "background_level_description", "stage_background_selection"}
     render = functions["create_episode_from_saved"]
     assert [c.label for c in render.inputs if hasattr(c, "label")] == [
         "Upload recordings", "Episode name", None, "Custom intro for this episode only"]
@@ -377,6 +382,7 @@ def test_save_discard_and_session_track_drafts(ui, screen):
     two = ui.stage_track_volume("music.wav", 7, {})
     assert one != two and ui.config_manager.snapshot() == before
     values = form_with(ui, trim_silence=False, delete_voice=False, target_lufs=-14,
+                       background_tracks=["music.wav"],
                        rss_feed_url="https://example.test/feed", prioritize_recording_filename=False,
                        audio_quality='{"window_ms":750}', music_seed=7)
     values[-1] = one
@@ -390,6 +396,21 @@ def test_save_discard_and_session_track_drafts(ui, screen):
     assert len(discarded) == len(handlers(screen)[
         "discard_episode_settings"].outputs)
     assert persisted == ui.config_manager.snapshot()
+
+
+def test_sound_controls_are_simple_previewable_and_use_chill_presets(ui, screen):
+    components = {c["props"].get("label"): c["props"]
+                  for c in screen.config["components"]}
+    assert components["Background tracks"]["multiselect"] is True
+    assert components["Preview intro"]["interactive"] is False
+    assert components["Preview outro"]["interactive"] is False
+    assert components["Preview track at this level"]["interactive"] is False
+    assert components["Master background level (%)"]["step"] == 0.5
+    assert "Chill" in ui.background_level_description(5)
+    assert "-26 dB" in ui.background_level_description(5)
+    labels = {c["props"].get("value") for c in screen.config["components"]
+              if c["type"] == "button"}
+    assert {"Barely audible · 2.5%", "Chill · 5%", "Present · 10%"} <= labels
 
 
 @pytest.mark.parametrize("key,value", [

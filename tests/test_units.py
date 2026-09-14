@@ -43,7 +43,7 @@ class TestConfigManager(unittest.TestCase):
         config = self.config_manager._default_config()
         self.assertIsNone(config['intro_file'])
         self.assertIsNone(config['outro_file'])
-        self.assertEqual(config['background_volume'], 10)
+        self.assertEqual(config['background_volume'], 5)
         self.assertEqual(config['background_tracks'], [])
         self.assertTrue(config['denoise_audio'])
         self.assertEqual(config['denoise_method'], 'audio_denoiser')
@@ -246,8 +246,8 @@ class TestAppFunctions(unittest.TestCase):
         log_text = get_console_log()
         self.assertEqual(log_text, "No logs yet")
 
-    def test_build_voice_order_rows_defaults_background_enabled(self):
-        """Uploaded voice rows should default to background enabled."""
+    def test_build_voice_order_rows_uses_recording_filename_policy(self):
+        """Only the main Recording file should default to background enabled."""
         from app import build_voice_order_rows
 
         voice_files = [
@@ -260,8 +260,8 @@ class TestAppFunctions(unittest.TestCase):
         self.assertEqual(len(rows), 2)
         self.assertEqual(rows[0][0], 1)
         self.assertEqual(rows[0][1], "segment_1.mp3")
-        self.assertTrue(rows[0][2])
-        self.assertTrue(rows[1][2])
+        self.assertFalse(rows[0][2])
+        self.assertFalse(rows[1][2])
 
     def test_order_voice_segments_respects_background_toggle(self):
         """Ordering should preserve per-track background toggles from table rows."""

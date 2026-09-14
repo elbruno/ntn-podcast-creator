@@ -58,7 +58,8 @@ class ConfigManager:
             "intro_file": None,
             "outro_file": None,
             "background_tracks": [],
-            "background_volume": 10,
+            # 5% is about -26 dB: a deliberately quiet "Chill" bed.
+            "background_volume": 5,
             "track_volumes": {},  # Individual volumes per track
             "last_output_name": "podcast_output",
             "rss_feed_url": DEFAULT_RSS_FEED_URL,
@@ -106,7 +107,38 @@ class ConfigManager:
                 quality = asdict(AudioQualityConfig())
                 quality.update(result["audio_quality"])
                 result["audio_quality"] = quality
-            return result
+            return self._normalize_audio_settings(result)
+
+    @staticmethod
+    def normalize_audio_path(path: Optional[str]) -> Optional[str]:
+        """Return a native audio path without rewriting an existing literal path.
+
+        Old settings created on another OS may contain the other platform's
+        separators. Existing literal paths win so filenames containing a
+        backslash remain valid on POSIX.
+        """
+        if path is None or not isinstance(path, str) or os.path.exists(path):
+            return path
+        return os.path.normpath(path.replace("\\", os.sep).replace("/", os.sep))
+
+    @classmethod
+    def _normalize_audio_settings(cls, settings: Dict[str, Any]) -> Dict[str, Any]:
+        """Normalize only path-bearing settings and retain all other values."""
+        result = deepcopy(settings)
+        for key in ("intro_file", "outro_file"):
+            if key in result:
+                result[key] = cls.normalize_audio_path(result[key])
+        tracks = result.get("background_tracks")
+        if isinstance(tracks, list):
+            result["background_tracks"] = list(dict.fromkeys(
+                cls.normalize_audio_path(path) for path in tracks))
+        volumes = result.get("track_volumes")
+        if isinstance(volumes, dict):
+            result["track_volumes"] = {
+                cls.normalize_audio_path(path): volume
+                for path, volume in volumes.items()
+            }
+        return result
 
     @staticmethod
     def _validate_number(key: str, value: Any) -> None:
@@ -186,7 +218,7 @@ class ConfigManager:
         with self._lock:
             if not isinstance(settings, dict):
                 raise ValueError("settings must be a settings object")
-            settings = deepcopy(settings)
+            settings = self._normalize_audio_settings(settings)
             defaults = self._default_config()
             for key, value in settings.items():
                 if key not in defaults:
@@ -328,7 +360,7 @@ class ConfigManager:
         Returns:
             Path to intro file or None
         """
-        return self.get("intro_file")
+        return self.normalize_audio_path(self.get("intro_file"))
 
     def get_outro(self) -> Optional[str]:
         """Get outro file path.
@@ -336,7 +368,7 @@ class ConfigManager:
         Returns:
             Path to outro file or None
         """
-        return self.get("outro_file")
+        return self.normalize_audio_path(self.get("outro_file"))
 
     def get_background_tracks(self) -> List[str]:
         """Get background music tracks.
@@ -344,7 +376,10 @@ class ConfigManager:
         Returns:
             List of background music file paths
         """
-        return self.get("background_tracks", [])
+        tracks = self.get("background_tracks", [])
+        if not isinstance(tracks, list):
+            return tracks
+        return list(dict.fromkeys(self.normalize_audio_path(path) for path in tracks))
 
     def get_volume(self) -> int:
         """Get background music volume.
@@ -352,7 +387,7 @@ class ConfigManager:
         Returns:
             Volume percentage
         """
-        return self.get("background_volume", 10)
+        return self.get("background_volume", 5)
 
     def get_last_output_name(self) -> str:
         """Get last used output filename.
@@ -449,7 +484,11 @@ class ConfigManager:
         Returns:
             Dictionary mapping track paths to volumes
         """
-        return self.get("track_volumes", {})
+        volumes = self.get("track_volumes", {})
+        if not isinstance(volumes, dict):
+            return volumes
+        return {self.normalize_audio_path(path): volume
+                for path, volume in volumes.items()}
 
     def get_denoise_audio(self) -> bool:
         """Get audio denoising setting.

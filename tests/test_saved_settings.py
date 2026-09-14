@@ -33,8 +33,45 @@ def test_missing_file_defaults_do_not_write(tmp_path):
     assert snapshot == manager._default_config()
     assert snapshot["delete_voice"] is True
     assert snapshot["trim_silence"] is True
+    assert snapshot["background_volume"] == 5
     assert snapshot["audio_quality"] == asdict(AudioQualityConfig())
     assert not path.exists()
+
+
+def test_foreign_audio_separators_are_normalized_without_read_time_write(
+        tmp_path, audio_library):
+    path = tmp_path / "config.json"
+    raw = {
+        "intro_file": audio_library["intro_file"][0].replace("/", "\\"),
+        "outro_file": audio_library["outro_file"][0].replace("/", "\\"),
+        "background_tracks": [
+            audio_library["background_tracks"][0].replace("/", "\\"),
+            audio_library["background_tracks"][0],
+        ],
+        "track_volumes": {
+            audio_library["background_tracks"][0].replace("/", "\\"): 5,
+        },
+    }
+    path.write_text(json.dumps(raw), encoding="utf-8")
+    before = path.read_bytes()
+    manager = ConfigManager(str(path))
+    snapshot = manager.snapshot()
+    assert snapshot["intro_file"] == audio_library["intro_file"][0]
+    assert snapshot["outro_file"] == audio_library["outro_file"][0]
+    assert snapshot["background_tracks"] == [
+        audio_library["background_tracks"][0]]
+    assert snapshot["track_volumes"] == {
+        audio_library["background_tracks"][0]: 5}
+    assert path.read_bytes() == before
+
+
+def test_partial_update_does_not_clear_audio_selections(tmp_path):
+    manager = ConfigManager(str(tmp_path / "config.json"))
+    manager.update_settings(
+        {"intro_file": "intro.wav", "outro_file": "outro.wav"})
+    manager.update_settings({"background_volume": 7})
+    assert manager.snapshot()["intro_file"] == "intro.wav"
+    assert manager.snapshot()["outro_file"] == "outro.wav"
 
 
 @pytest.fixture
@@ -339,7 +376,7 @@ def test_invalid_legacy_settings_can_be_explicitly_repaired(tmp_path):
     with pytest.raises(ValueError):
         manager.update_settings({"background_volume": 10})
     assert manager.snapshot()["background_volume"] == "bad"
-    manager.update_settings({"background_volume": 10, "audio_quality": {}})
+    manager.update_settings({"background_volume": 5, "audio_quality": {}})
     assert manager.snapshot() == manager._default_config()
 
 
