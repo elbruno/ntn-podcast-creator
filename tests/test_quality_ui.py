@@ -434,7 +434,7 @@ def test_positional_api_and_all_yield_expressions(ui):
                 "denoise_method", "enhance_voice", "voice_enhancement_preset", "normalize_lufs",
                 "target_lufs", "intro_voice_overlap", "voice_outro_overlap", "generate_transcript",
                 "whisper_model", "auto_balance_levels", "auto_ducking", "voice_order_table",
-                "intro_override_file", "progress"]
+                "intro_override_file", "background_music_enabled", "progress"]
     assert list(inspect.signature(
         ui.create_podcast_handler_with_progress).parameters) == expected
     node = ast.parse(inspect.getsource(
@@ -525,7 +525,7 @@ def test_real_gradio_ui_construction_and_event_chains(ui):
     functions = {entry.fn: entry for entry in blocks.fns.values()
                  if entry.fn is not None}
     render = functions[ui.create_episode_from_saved]
-    assert len(render.outputs) == 7 and len(render.inputs) == 4
+    assert len(render.outputs) == 7 and len(render.inputs) == 5
     named = {entry.fn.__name__: entry for entry in blocks.fns.values()
              if entry.fn}
     clear_dep = named["prepare_episode"]

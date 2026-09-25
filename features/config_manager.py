@@ -79,10 +79,10 @@ class ConfigManager:
             "intro_voice_overlap": True,  # Enable 1-second overlap between intro and voice
             "voice_outro_overlap": False,  # Enable 1-second overlap between voice and outro
             # Audio balance & level safety
-            "auto_balance_levels": True,  # Auto-balance voice & music to prevent masking
+            "auto_balance_levels": False,  # Opt-in voice/music level balancing
             # Minimum dB separation between voice and background music
             "min_voice_music_separation_db": 18.0,
-            "auto_ducking": True,  # Dynamically lower background music during speech
+            "auto_ducking": False,  # Opt-in dynamic music reduction during speech
             "quality_gate_enabled": False,  # Opt-in; export is never blocked
             "audio_quality": asdict(AudioQualityConfig()),
             "music_seed": 0,  # Reproducible music selection per render
@@ -592,7 +592,7 @@ class ConfigManager:
         Returns:
             True if auto-balance is enabled, False otherwise
         """
-        return self.get("auto_balance_levels", True)
+        return self.get("auto_balance_levels", False)
 
     def set_auto_balance_levels(self, enabled: bool) -> None:
         """Set auto-balance audio levels setting.
@@ -624,7 +624,7 @@ class ConfigManager:
         Returns:
             True if auto-ducking is enabled, False otherwise
         """
-        return self.get("auto_ducking", True)
+        return self.get("auto_ducking", False)
 
     def get_audio_quality_config(self) -> AudioQualityConfig:
         """Merge legacy configuration with shared defaults; LUFS slider wins.

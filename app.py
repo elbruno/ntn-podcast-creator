@@ -1725,10 +1725,11 @@ def _render_episode(
     voice_outro_overlap,
     generate_transcript,
     whisper_model,
-    auto_balance_levels=True,
-    auto_ducking=True,
+    auto_balance_levels=False,
+    auto_ducking=False,
     voice_order_table=None,
     intro_override_file=None,
+    background_music_enabled=True,
     progress=gr.Progress(),
     *, snapshot
 ):
@@ -1753,6 +1754,8 @@ def _render_episode(
         auto_ducking: Whether to apply auto-ducking during speech
         voice_order_table: Table for custom voice file ordering
         intro_override_file: Optional one-time custom intro file
+        background_music_enabled: Whether this episode should include background
+            music at all; overrides per-recording background toggles when False
         progress: Gradio progress tracker
     """
     import threading
@@ -1901,6 +1904,7 @@ def _render_episode(
     log_message(f"  Outro: {outro_path if outro_path else 'None'}")
     log_message(
         f"  Background tracks: {len(background_tracks) if background_tracks else 0}")
+    log_message(f"  Background music enabled: {background_music_enabled}")
     log_message(f"  Volume: {volume}%")
     log_message(f"  Trim silence: {trim_silence}")
     log_message(f"  Denoise audio: {denoise_audio} (method: {denoise_method})")
@@ -1981,7 +1985,7 @@ def _render_episode(
                 intro_file=intro_path,
                 outro_file=outro_path,
                 background_files=background_tracks if (
-                    background_tracks and (
+                    background_music_enabled and background_tracks and (
                         any(voice_background_flags))
                 ) else None,
                 background_segments=selective_background_segments,
@@ -2705,8 +2709,9 @@ def create_podcast_handler_with_progress(
     voice_file, output_name, delete_voice, trim_silence, denoise_audio,
     denoise_method, enhance_voice, voice_enhancement_preset, normalize_lufs,
     target_lufs, intro_voice_overlap, voice_outro_overlap, generate_transcript,
-    whisper_model, auto_balance_levels=True, auto_ducking=True,
-    voice_order_table=None, intro_override_file=None, progress=gr.Progress()
+    whisper_model, auto_balance_levels=False, auto_ducking=False,
+    voice_order_table=None, intro_override_file=None, background_music_enabled=True,
+    progress=gr.Progress()
 ):
     """Legacy positional API: explicit processing choices win over saved values."""
     snapshot = _render_snapshot()
@@ -2716,12 +2721,12 @@ def create_podcast_handler_with_progress(
         target_lufs, intro_voice_overlap, voice_outro_overlap, generate_transcript,
         whisper_model, auto_balance_levels, auto_ducking, deepcopy(
             voice_order_table),
-        intro_override_file, progress, snapshot=snapshot
+        intro_override_file, background_music_enabled, progress, snapshot=snapshot
     ):
         yield status, audio, cleaned, transcript, console, bar, log
 
 
-def create_episode_from_saved(voice, name, order, intro_override, progress=gr.Progress()):
+def create_episode_from_saved(voice, name, order, intro_override, background_music_enabled=True, progress=gr.Progress()):
     """The main screen accepts episode inputs ONLY, never draft settings controls."""
     snapshot = _render_snapshot()
     yield from _render_episode(
@@ -2733,7 +2738,7 @@ def create_episode_from_saved(voice, name, order, intro_override, progress=gr.Pr
         snapshot["generate_transcript"], snapshot["whisper_model"],
         snapshot["auto_balance_levels"], snapshot["auto_ducking"], deepcopy(
             order),
-        intro_override, progress, snapshot=snapshot
+        intro_override, background_music_enabled, progress, snapshot=snapshot
     )
 
 
@@ -3021,7 +3026,7 @@ def create_ui():
                                                    value=[], type="array", interactive=True, static_columns=[1], label="Recording order")
                     with gr.Row():
                         name = gr.Textbox(label="Episode name", value=suggest_podcast_name(
-                            None), interactive=False, scale=5, min_width=180)
+                            None), interactive=True, scale=5, min_width=180)
                         edit_name = gr.Button(
                             "Edit", size="sm", scale=0, min_width=64)
                     create = gr.Button("Create Episode", variant="primary", size="lg", elem_classes=[
@@ -3034,6 +3039,9 @@ def create_ui():
                     with gr.Accordion("Episode options", open=False, elem_id="episode-options"):
                         background = gr.Dataframe(headers=["Recording", "Background music"], datatype=["str", "bool"],
                                                   value=[], type="array", interactive=True, static_columns=[0], label="Per-recording background")
+                        background_music_enabled = gr.Checkbox(
+                            label="Include background music", value=True,
+                            info="Uncheck to render this episode with voice only, no background music")
                         intro_override = gr.File(label="Custom intro for this episode only", file_types=[
                                                  "audio"], type="filepath")
                     alert = gr.HTML("")
@@ -3428,15 +3436,16 @@ def create_ui():
                         interactive=False), gr.File(interactive=False),
                     gr.Button(interactive=False), gr.Dataframe(
                         interactive=False),
-                    gr.Dataframe(interactive=False), gr.File(interactive=False), gr.Textbox(interactive=False))
+                    gr.Dataframe(interactive=False), gr.File(interactive=False),
+                    gr.Checkbox(interactive=False), gr.Textbox(interactive=False))
 
         guard_outputs = [create, another, voice, edit_name,
-                         order_table, background, intro_override, name]
+                         order_table, background, intro_override, background_music_enabled, name]
         prepare = create.click(prepare_episode, [preview_receipt, busy],
                                result_components + [started, preview_receipt, exported, cleaned, transcript,
                                                     status, progress_html, log, busy] + guard_outputs,
                                queue=False, trigger_mode="once")
-        render = prepare.success(create_episode_from_saved, [voice, name, order, intro_override],
+        render = prepare.success(create_episode_from_saved, [voice, name, order, intro_override, background_music_enabled],
                                  [status, exported, cleaned, transcript,
                                      console, progress_html, log],
                                  show_progress="hidden", concurrency_id="episode-render", concurrency_limit=1)
@@ -3460,22 +3469,22 @@ def create_ui():
             return (False, gr.Button(interactive=True), gr.Button(interactive=True), gr.File(interactive=True),
                     gr.Button(interactive=True), gr.Dataframe(
                         interactive=True), gr.Dataframe(interactive=True),
-                    gr.File(interactive=True), gr.Textbox(interactive=False))
+                    gr.File(interactive=True), gr.Checkbox(interactive=True), gr.Textbox(interactive=True))
 
         finished.then(release_episode, [], [busy] + guard_outputs)
 
         def reset_episode(receipt):
             values = reset_episode_values(receipt)
-            return (*empty_results(), values["voice"], [], [], [], None,
-                    gr.Textbox(value=values["name"], interactive=False), "", episode_marker(
+            return (*empty_results(), values["voice"], [], [], [], None, True,
+                    gr.Textbox(value=values["name"], interactive=True), "", episode_marker(
                         "empty"),
                     "", "", "", 0, None, None, None, None, "", "", "", "", False)
 
         another.click(reset_episode, [preview_receipt], result_components +
-                      [voice, order, order_table, background, intro_override, name, recordings, upload_state,
-                       timeline, health, alert, started, preview_receipt, exported, cleaned, transcript,
-                       status, progress_html, log, console, busy], concurrency_id="episode-render", concurrency_limit=1,
-                      show_progress="hidden").then(None, [], [], js="""() => {
+                      [voice, order, order_table, background, intro_override, background_music_enabled, name,
+                       recordings, upload_state, timeline, health, alert, started, preview_receipt, exported,
+                       cleaned, transcript, status, progress_html, log, console, busy], concurrency_id="episode-render",
+                      concurrency_limit=1, show_progress="hidden").then(None, [], [], js="""() => {
                           const hero = document.getElementById('episode-hero');
                           hero?.scrollIntoView({block: 'start'});
                           hero?.querySelector('button')?.focus({preventScroll: true});

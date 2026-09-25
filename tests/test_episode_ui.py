@@ -71,7 +71,7 @@ def test_idle_sentinels_empty_results_and_css_contract(ui, screen):
             assert component["type"] == "column"
     by_label = {c["props"].get("label"): c["props"]
                 for c in screen.config["components"]}
-    assert by_label["Episode name"]["interactive"] is False
+    assert by_label["Episode name"]["interactive"] is True
     assert by_label["Your episode"]["interactive"] is False
     assert by_label["Your episode"].get("value") is None
     for label in ("Episode options", "Timeline & premix details", "Technical details"):
@@ -237,11 +237,11 @@ def test_no_scalar_autosave_and_wrapper_has_only_episode_inputs(ui, screen):
                 "<lambda>", "background_level_description", "stage_background_selection"}
     render = functions["create_episode_from_saved"]
     assert [c.label for c in render.inputs if hasattr(c, "label")] == [
-        "Upload recordings", "Episode name", None, "Custom intro for this episode only"]
+        "Upload recordings", "Episode name", None, "Custom intro for this episode only", "Include background music"]
     assert not form_ids.intersection(c._id for c in render.inputs)
     assert len(render.outputs) == 7
     assert list(inspect.signature(ui.create_episode_from_saved).parameters) == [
-        "voice", "name", "order", "intro_override", "progress"]
+        "voice", "name", "order", "intro_override", "background_music_enabled", "progress"]
     assert render.concurrency_id == "episode-render" and render.concurrency_limit == 1
 
 
@@ -357,6 +357,18 @@ def test_single_recording_background_override_reaches_processor(ui, monkeypatch,
                                       progress=lambda *args: None))
     assert observed["background_files"] == (
         ["music.wav"] if background_enabled else None)
+
+
+def test_global_background_music_toggle_overrides_per_recording_flag(ui, monkeypatch):
+    voice, observed = capture_render(ui, monkeypatch)
+    ui.config_manager.update_settings(
+        {"background_tracks": ["music.wav"], "delete_voice": False})
+    list(ui.create_episode_from_saved([voice], "episode", [[1, "Recording.wav", True]], None,
+                                      background_music_enabled=False, progress=lambda *args: None))
+    assert observed["background_files"] is None
+    list(ui.create_episode_from_saved([voice], "episode", [[1, "Recording.wav", True]], None,
+                                      background_music_enabled=True, progress=lambda *args: None))
+    assert observed["background_files"] == ["music.wav"]
 
 
 def test_legacy_explicit_positional_choices_still_win(ui, monkeypatch):

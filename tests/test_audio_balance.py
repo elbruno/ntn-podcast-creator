@@ -77,8 +77,8 @@ class TestAudioBalanceConfig(unittest.TestCase):
 
     def test_default_balance_settings(self):
         """Test default values for audio balance settings."""
-        self.assertTrue(self.cfg.get_auto_balance_levels())
-        self.assertTrue(self.cfg.get_auto_ducking())
+        self.assertFalse(self.cfg.get_auto_balance_levels())
+        self.assertFalse(self.cfg.get_auto_ducking())
         self.assertEqual(self.cfg.get_min_voice_music_separation_db(), 18.0)
 
     def test_update_balance_settings(self):
