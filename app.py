@@ -2672,16 +2672,17 @@ def refresh_rss_feed_settings(feed_url: Optional[str], current_output_name: Opti
 def get_bottom_console_html(console_text: str, visible: bool = True,
                             show_close: bool = False, download_path=None) -> str:
     """Inline, keyboard-accessible log; exports live in the result DownloadButton."""
-    display = "block" if visible and console_text else "none"
+    display = "block !important" if visible and console_text else "none"
+    close_hint = '<span class="log-close-hint">Close</span>' if show_close else ""
     return (f'<details class="episode-log" style="display: {display}">'
-            '<summary>Processing log</summary>'
+            f'<summary>Processing log{close_hint}</summary>'
             f'<pre>{html.escape(console_text)}</pre></details>')
 
 
 def get_progress_html(pct, msg):
     """Compact inline progress, never a floating overlay."""
     percent = max(0, min(100, int(pct * 100)))
-    return (f'<div class="episode-progress" role="status" aria-live="polite">'
+    return (f'<div class="episode-progress" style="display: block" role="status" aria-live="polite">'
             f'<span>{html.escape(str(msg))} · {percent}%</span>'
             f'<progress aria-label="Episode progress" max="100" value="{percent}"></progress></div>')
 
@@ -2971,20 +2972,264 @@ def reset_episode_values(previous_preview=None):
 
 EPISODE_CSS = """
 <style>
-.gradio-container {max-width: 1080px !important; margin: auto;}
-#episode-create {max-width: 800px; margin: auto;}
-#episode-hero {border: 2px dashed var(--border-color-primary); border-radius: 16px;}
-#episode-summary-row {align-items: center;}
-.episode-primary {background: #4f46e5 !important; color: #fff !important; border-color: #4f46e5 !important;}
-.saved-summary {font-size: .9rem; color: var(--body-text-color-subdued);}
-.sound-card {padding: 1rem; border: 1px solid var(--border-color-primary); border-radius: .75rem; margin-bottom: .75rem;}
-.sound-card h3 {margin-top: 0;}
-.sound-note {font-size: .9rem; color: var(--body-text-color-subdued);}
-.recording-list {padding-inline-start: 1.3rem; overflow-wrap: anywhere;}
-.episode-log pre {max-height: 240px; overflow: auto; white-space: pre-wrap; font-size: .85rem;}
-.episode-log summary {cursor: pointer; padding: .5rem 0;}
-.episode-progress {display: grid; gap: .35rem; font-size: .9rem;}
-.episode-progress progress {width: 100%; accent-color: #6366f1;}
+:root {
+    --studio-bg: #080b12;
+    --studio-surface: rgba(18, 23, 35, .92);
+    --studio-surface-raised: rgba(25, 32, 47, .95);
+    --studio-border: rgba(148, 163, 184, .16);
+    --studio-border-strong: rgba(129, 140, 248, .38);
+    --studio-text: #f8fafc;
+    --studio-muted: #94a3b8;
+    --studio-accent: #8b5cf6;
+    --studio-accent-2: #22d3ee;
+    --studio-success: #34d399;
+    --studio-shadow: 0 24px 70px rgba(0, 0, 0, .34);
+}
+html, body {background: var(--studio-bg) !important;}
+body {
+    color: var(--studio-text);
+    background-image:
+        radial-gradient(circle at 12% 0%, rgba(139, 92, 246, .17), transparent 30rem),
+        radial-gradient(circle at 90% 8%, rgba(34, 211, 238, .11), transparent 28rem) !important;
+    background-attachment: fixed !important;
+}
+.gradio-container {
+    max-width: 1260px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+    margin: auto !important;
+    padding: 28px 28px 64px !important;
+    background: transparent !important;
+    color: var(--studio-text) !important;
+}
+.studio-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 2rem;
+    padding: 1.15rem 1.35rem;
+    margin-bottom: 1rem;
+    border: 1px solid var(--studio-border);
+    border-radius: 1.25rem;
+    background: linear-gradient(135deg, rgba(25, 32, 47, .94), rgba(12, 16, 26, .94));
+    box-shadow: var(--studio-shadow);
+    overflow: hidden;
+    position: relative;
+}
+.studio-header::after {
+    content: "";
+    position: absolute;
+    width: 15rem;
+    height: 15rem;
+    right: -5rem;
+    top: -8rem;
+    border-radius: 50%;
+    background: rgba(34, 211, 238, .12);
+    filter: blur(2px);
+}
+.studio-brand {display: flex; align-items: center; gap: .9rem; position: relative; z-index: 1;}
+.studio-logo {
+    display: grid;
+    place-items: center;
+    width: 2.8rem;
+    height: 2.8rem;
+    border-radius: .9rem;
+    color: white;
+    font-weight: 800;
+    letter-spacing: -.05em;
+    background: linear-gradient(135deg, var(--studio-accent), #6366f1 55%, var(--studio-accent-2));
+    box-shadow: 0 10px 28px rgba(99, 102, 241, .35);
+}
+.studio-brand h1 {font-size: 1.08rem; line-height: 1.15; margin: 0; letter-spacing: -.02em;}
+.studio-brand p {font-size: .78rem; color: var(--studio-muted); margin: .22rem 0 0;}
+.studio-live {
+    display: inline-flex;
+    align-items: center;
+    gap: .48rem;
+    color: #cbd5e1;
+    font-size: .76rem;
+    font-weight: 650;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    position: relative;
+    z-index: 1;
+}
+.studio-live::before {
+    content: "";
+    width: .5rem;
+    height: .5rem;
+    border-radius: 50%;
+    background: var(--studio-success);
+    box-shadow: 0 0 0 5px rgba(52, 211, 153, .12);
+}
+.studio-hero {padding: .6rem .15rem 1.2rem;}
+.studio-eyebrow {
+    margin: 0 0 .45rem;
+    color: #a5b4fc;
+    font-size: .72rem;
+    font-weight: 750;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+}
+.studio-hero h2 {margin: 0; font-size: clamp(1.75rem, 4vw, 2.65rem); letter-spacing: -.045em; line-height: 1.08;}
+.studio-hero p {margin: .7rem 0 0; color: var(--studio-muted); max-width: 42rem; line-height: 1.65;}
+.studio-step {
+    display: flex;
+    align-items: center;
+    gap: .7rem;
+    margin-bottom: .85rem;
+}
+.studio-step span {
+    display: grid;
+    place-items: center;
+    width: 1.7rem;
+    height: 1.7rem;
+    border: 1px solid rgba(165, 180, 252, .34);
+    border-radius: .55rem;
+    color: #c4b5fd;
+    background: rgba(99, 102, 241, .12);
+    font-size: .76rem;
+    font-weight: 750;
+}
+.studio-step strong {font-size: .85rem; letter-spacing: .01em;}
+.studio-card, .sound-card, #episode-results {
+    border: 1px solid var(--studio-border) !important;
+    border-radius: 1.05rem !important;
+    background: linear-gradient(145deg, var(--studio-surface-raised), var(--studio-surface)) !important;
+    box-shadow: 0 16px 45px rgba(0, 0, 0, .18) !important;
+}
+.studio-card {padding: 1.15rem !important;}
+#studio-workspace {align-items: stretch; gap: 1rem;}
+#episode-create {max-width: 1160px; margin: auto;}
+#episode-hero {
+    min-height: 13rem;
+    border: 1.5px dashed rgba(129, 140, 248, .55) !important;
+    border-radius: .9rem !important;
+    background: rgba(99, 102, 241, .055) !important;
+    transition: border-color .2s ease, background .2s ease, transform .2s ease;
+}
+#episode-hero:hover {
+    border-color: var(--studio-accent-2) !important;
+    background: rgba(34, 211, 238, .06) !important;
+    transform: translateY(-1px);
+}
+#episode-summary-row {
+    align-items: center;
+    padding: .7rem .8rem;
+    margin-top: .25rem;
+    border: 1px solid var(--studio-border);
+    border-radius: .75rem;
+    background: rgba(8, 11, 18, .36);
+}
+.episode-primary {
+    min-height: 3.25rem !important;
+    border: 0 !important;
+    border-radius: .78rem !important;
+    background: linear-gradient(110deg, #7c3aed, #4f46e5 55%, #0891b2) !important;
+    color: #fff !important;
+    font-weight: 750 !important;
+    box-shadow: 0 12px 28px rgba(79, 70, 229, .28) !important;
+    transition: transform .18s ease, box-shadow .18s ease, filter .18s ease !important;
+}
+.episode-primary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 16px 34px rgba(79, 70, 229, .4) !important;
+    filter: brightness(1.08);
+}
+.saved-summary {font-size: .82rem; color: var(--studio-muted); line-height: 1.55;}
+.saved-summary strong {color: #e2e8f0;}
+#episode-results {padding: 1.2rem !important; margin-top: 1rem;}
+.result-heading {margin-bottom: .8rem;}
+.result-heading h3 {margin: 0; color: var(--studio-text); font-size: 1.15rem;}
+.result-heading p {margin: .25rem 0 0; color: var(--studio-muted); font-size: .84rem;}
+.settings-header {
+    display: flex;
+    align-items: end;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: .65rem .15rem 1rem;
+}
+.settings-header h2 {margin: 0; font-size: 1.65rem; letter-spacing: -.035em;}
+.settings-header p {margin: .35rem 0 0; color: var(--studio-muted);}
+#settings-actions {
+    position: sticky;
+    top: .6rem;
+    z-index: 20;
+    align-items: center;
+    padding: .7rem;
+    margin-bottom: .8rem;
+    border: 1px solid var(--studio-border);
+    border-radius: .9rem;
+    background: rgba(12, 16, 26, .88);
+    backdrop-filter: blur(16px);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, .2);
+}
+.sound-grid {gap: .75rem;}
+.sound-card {padding: 1rem !important; margin-bottom: .3rem;}
+.sound-card h3 {margin-top: 0; font-size: 1rem;}
+.sound-note {font-size: .8rem; color: var(--studio-muted); line-height: 1.5;}
+.recording-list {padding-inline-start: 1.3rem; overflow-wrap: anywhere; color: #cbd5e1;}
+.recording-list li {padding: .18rem 0;}
+.episode-log pre {
+    max-height: 240px;
+    overflow: auto;
+    white-space: pre-wrap;
+    font-size: .8rem;
+    color: #a7f3d0;
+    background: #06080d;
+    border: 1px solid var(--studio-border);
+    border-radius: .65rem;
+    padding: .8rem;
+}
+.episode-log summary {cursor: pointer; padding: .5rem 0; color: var(--studio-muted);}
+.log-close-hint {float: right; color: #c4b5fd; font-size: .75rem;}
+.episode-progress {
+    display: grid;
+    gap: .45rem;
+    padding: .8rem;
+    border: 1px solid var(--studio-border);
+    border-radius: .75rem;
+    background: rgba(8, 11, 18, .58);
+    font-size: .85rem;
+}
+.episode-progress progress {width: 100%; height: .55rem; accent-color: var(--studio-accent-2);}
+.gradio-container .tabs {border: 0 !important;}
+.gradio-container .tab-nav {
+    gap: .35rem;
+    padding: .35rem !important;
+    margin-bottom: 1rem;
+    border: 1px solid var(--studio-border) !important;
+    border-radius: .85rem !important;
+    background: rgba(12, 16, 26, .72) !important;
+}
+.gradio-container .tab-nav button {
+    border: 0 !important;
+    border-radius: .62rem !important;
+    color: var(--studio-muted) !important;
+    font-weight: 680 !important;
+}
+.gradio-container .tab-nav button.selected {
+    color: white !important;
+    background: linear-gradient(120deg, rgba(124, 58, 237, .9), rgba(79, 70, 229, .82)) !important;
+}
+.gradio-container .form,
+.gradio-container .panel,
+.gradio-container .block {
+    --block-background-fill: rgba(15, 20, 31, .78);
+    --block-border-color: var(--studio-border);
+}
+.gradio-container input,
+.gradio-container textarea {
+    color: var(--studio-text) !important;
+}
+.gradio-container button:not(.episode-primary) {border-radius: .65rem !important;}
+.gradio-container .accordion {
+    border-color: var(--studio-border) !important;
+    border-radius: .85rem !important;
+    background: rgba(15, 20, 31, .72) !important;
+    overflow: hidden;
+}
+.gradio-container .accordion > .label-wrap {padding: .85rem 1rem !important;}
 #episode-results:not(:has([data-state="ready"])) {display: none !important;}
 #episode-create:not(:has(#upload-state [data-state="multiple"])) #episode-order {display: none !important;}
 #episode-create:has(#upload-state [data-state="empty"]) #episode-options,
@@ -2993,16 +3238,305 @@ EPISODE_CSS = """
 #episode-qc-actions:not(:has([data-state="warn"], [data-state="fail"])) {display: none !important;}
 .state-marker {display: none !important;}
 .qc-pass,.qc-warn,.qc-fail,.qc-neutral {padding: .65rem .9rem; border-radius: .6rem; border-inline-start: 4px solid;}
-.qc-pass {color: #065f46; background: #d1fae5;}
-.qc-warn {color: #78350f; background: #fef3c7;}
-.qc-fail {color: #991b1b; background: #fee2e2;}
-.qc-neutral {color: var(--body-text-color); background: var(--background-fill-secondary);}
-.dark .qc-pass {color: #a7f3d0; background: #064e3b;}
-.dark .qc-warn {color: #fde68a; background: #451a03;}
-.dark .qc-fail {color: #fecaca; background: #450a0a;}
-button:focus-visible,summary:focus-visible {outline: 3px solid #818cf8; outline-offset: 3px;}
+.qc-pass {color: #a7f3d0; background: rgba(6, 78, 59, .72);}
+.qc-warn {color: #fde68a; background: rgba(69, 26, 3, .72);}
+.qc-fail {color: #fecaca; background: rgba(69, 10, 10, .72);}
+.qc-neutral {color: #cbd5e1; background: rgba(30, 41, 59, .72);}
+
+/* Bright neo-brutalist product theme. These rules intentionally override
+   Gradio's light and dark token sets so contrast stays deterministic. */
+:root {
+    --studio-bg: #f4f1e8;
+    --studio-surface: #ffffff;
+    --studio-surface-raised: #ffffff;
+    --studio-border: #111111;
+    --studio-border-strong: #111111;
+    --studio-text: #111111;
+    --studio-muted: #555555;
+    --studio-accent: #315efb;
+    --studio-accent-2: #ff5c35;
+    --studio-success: #00a66a;
+    --studio-shadow: 8px 8px 0 #111111;
+}
+html, body {
+    background: #f4f1e8 !important;
+    color: #111111 !important;
+}
+body {
+    background-image:
+        linear-gradient(rgba(17, 17, 17, .035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(17, 17, 17, .035) 1px, transparent 1px) !important;
+    background-size: 28px 28px !important;
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+}
+.gradio-container {
+    --body-background-fill: transparent;
+    --body-text-color: #111111;
+    --body-text-color-subdued: #555555;
+    --block-background-fill: #ffffff;
+    --block-border-color: #111111;
+    --block-label-text-color: #111111;
+    --block-title-text-color: #111111;
+    --input-background-fill: #ffffff;
+    --input-border-color: #111111;
+    --input-placeholder-color: #777777;
+    --button-primary-background-fill: #315efb;
+    --button-primary-background-fill-hover: #264bd4;
+    --button-primary-text-color: #ffffff;
+    --button-secondary-background-fill: #ffffff;
+    --button-secondary-background-fill-hover: #f2efdf;
+    --button-secondary-text-color: #111111;
+    color: #111111 !important;
+}
+.studio-header {
+    padding: 1rem 1.15rem;
+    margin-bottom: 1.15rem;
+    border: 3px solid #111111;
+    border-radius: 0;
+    background: #ffffff;
+    box-shadow: var(--studio-shadow);
+    overflow: visible;
+}
+.studio-header::before {
+    content: "";
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: .55rem;
+    background: #315efb;
+}
+.studio-header::after {display: none;}
+.studio-brand {padding-left: .45rem;}
+.studio-logo {
+    width: 3rem;
+    height: 3rem;
+    border: 2px solid #111111;
+    border-radius: 0;
+    color: #111111;
+    background: #ffe500;
+    box-shadow: 4px 4px 0 #111111;
+    letter-spacing: -.04em;
+}
+.studio-brand h1 {color: #111111; font-size: 1.1rem; text-transform: uppercase; letter-spacing: .015em;}
+.studio-brand p {color: #555555; font-weight: 550;}
+.studio-live {
+    padding: .48rem .68rem;
+    border: 2px solid #111111;
+    color: #111111;
+    background: #c8ff00;
+    font-weight: 800;
+}
+.studio-live::before {
+    background: #111111;
+    box-shadow: none;
+}
+.studio-hero {
+    padding: 1.65rem .15rem 1.4rem;
+    max-width: 58rem;
+}
+.studio-eyebrow {
+    display: inline-block;
+    margin-bottom: .75rem;
+    padding: .34rem .5rem;
+    border: 2px solid #111111;
+    color: #ffffff;
+    background: #315efb;
+    font-size: .7rem;
+    letter-spacing: .14em;
+}
+.studio-hero h2 {
+    color: #111111;
+    font-size: clamp(2.15rem, 5vw, 4.25rem);
+    line-height: .98;
+    letter-spacing: -.065em;
+    max-width: 56rem;
+}
+.studio-hero p {
+    color: #444444;
+    max-width: 48rem;
+    font-size: 1rem;
+}
+.studio-card, .sound-card, #episode-results {
+    border: 3px solid #111111 !important;
+    border-radius: 0 !important;
+    color: #111111 !important;
+    background: #ffffff !important;
+    box-shadow: 6px 6px 0 #111111 !important;
+}
+.studio-card {padding: 1.05rem !important;}
+#studio-workspace {gap: 1.25rem;}
+.studio-step {margin-bottom: .75rem;}
+.studio-step span {
+    width: 1.75rem;
+    height: 1.75rem;
+    border: 2px solid #111111;
+    border-radius: 0;
+    color: #ffffff;
+    background: #315efb;
+}
+.studio-step strong {color: #111111; font-size: .88rem; text-transform: uppercase; letter-spacing: .045em;}
+#episode-hero {
+    min-height: 10rem;
+    border: 2px dashed #111111 !important;
+    border-radius: 0 !important;
+    color: #111111 !important;
+    background: #eef2ff !important;
+}
+#episode-hero:hover {
+    border-color: #111111 !important;
+    color: #111111 !important;
+    background: #dfe7ff !important;
+    transform: translate(-2px, -2px);
+}
+#episode-summary-row {
+    padding: .75rem;
+    border: 2px solid #111111;
+    border-radius: 0;
+    color: #111111;
+    background: #fff8cc;
+}
+.saved-summary {color: #333333; font-size: .82rem;}
+.saved-summary strong {color: #111111;}
+.episode-primary {
+    min-height: 3.2rem !important;
+    border: 3px solid #111111 !important;
+    border-radius: 0 !important;
+    color: #ffffff !important;
+    background: #315efb !important;
+    box-shadow: 5px 5px 0 #111111 !important;
+    text-transform: uppercase;
+    letter-spacing: .055em;
+}
+.episode-primary:hover {
+    transform: translate(2px, 2px);
+    box-shadow: 2px 2px 0 #111111 !important;
+    filter: none;
+}
+#episode-results {padding: 1.25rem !important; margin-top: 1.4rem;}
+.result-heading h3 {color: #111111; font-size: 1.35rem;}
+.result-heading p {color: #555555;}
+.settings-header {padding: 1.5rem .15rem 1rem;}
+.settings-header h2 {color: #111111; font-size: clamp(2rem, 4vw, 3.35rem); line-height: 1;}
+.settings-header p {color: #555555;}
+#settings-actions {
+    border: 3px solid #111111;
+    border-radius: 0;
+    color: #111111;
+    background: #ffe500;
+    box-shadow: 5px 5px 0 #111111;
+    backdrop-filter: none;
+}
+.sound-card {padding: .95rem !important;}
+.sound-card h3 {color: #111111;}
+.sound-note {color: #555555;}
+.recording-list {color: #222222;}
+.episode-progress {
+    border: 2px solid #111111;
+    border-radius: 0;
+    color: #111111;
+    background: #fff8cc;
+}
+.episode-progress progress {accent-color: #315efb;}
+.gradio-container .tab-nav {
+    gap: 0;
+    padding: 0 !important;
+    border: 3px solid #111111 !important;
+    border-radius: 0 !important;
+    background: #ffffff !important;
+    box-shadow: 5px 5px 0 #111111;
+}
+.gradio-container .tab-nav button {
+    min-height: 2.9rem;
+    border-radius: 0 !important;
+    color: #111111 !important;
+    background: #ffffff !important;
+    font-weight: 800 !important;
+    text-transform: uppercase;
+    letter-spacing: .045em;
+}
+.gradio-container .tab-nav button + button {border-left: 2px solid #111111 !important;}
+.gradio-container .tab-nav button.selected {
+    color: #ffffff !important;
+    background: #111111 !important;
+}
+.gradio-container .form,
+.gradio-container .panel,
+.gradio-container .block {
+    --block-background-fill: #ffffff;
+    --block-border-color: #111111;
+    color: #111111 !important;
+}
+.gradio-container label,
+.gradio-container span,
+.gradio-container p,
+.gradio-container h1,
+.gradio-container h2,
+.gradio-container h3,
+.gradio-container h4 {text-shadow: none;}
+.gradio-container input,
+.gradio-container textarea {
+    border-color: #111111 !important;
+    color: #111111 !important;
+    background: #ffffff !important;
+}
+.gradio-container button:not(.episode-primary) {
+    border: 2px solid #111111 !important;
+    border-radius: 0 !important;
+    color: #111111 !important;
+    background: #ffffff !important;
+    font-weight: 700 !important;
+}
+.gradio-container button:not(.episode-primary):hover {background: #ffe500 !important;}
+.gradio-container .accordion {
+    border: 2px solid #111111 !important;
+    border-radius: 0 !important;
+    color: #111111 !important;
+    background: #ffffff !important;
+}
+.gradio-container .accordion > .label-wrap {
+    color: #111111 !important;
+    background: #ffffff !important;
+}
+.qc-pass {color: #063c2d; background: #bdf9dd; border-color: #00a66a;}
+.qc-warn {color: #4c3200; background: #fff0a6; border-color: #e5a000;}
+.qc-fail {color: #5f1111; background: #ffd4d4; border-color: #e23b3b;}
+.qc-neutral {color: #111111; background: #eeeeee; border-color: #777777;}
+body.studio-light {
+    --studio-bg: #f4f1e8;
+    --studio-surface: #ffffff;
+    --studio-surface-raised: #ffffff;
+    --studio-border: #111111;
+    --studio-text: #111111;
+    --studio-muted: #555555;
+    --studio-shadow: 8px 8px 0 #111111;
+}
+body.studio-light .saved-summary strong,
+body.studio-light .result-heading h3 {color: #1e293b;}
+button:focus-visible,summary:focus-visible,input:focus-visible,textarea:focus-visible {
+    outline: 3px solid #818cf8 !important;
+    outline-offset: 3px !important;
+}
+@media(max-width: 860px) {
+    #studio-workspace, .sound-grid {flex-direction: column;}
+    #settings-actions {position: static;}
+}
 @media(max-width: 640px) {
-    .gradio-container {padding: 12px !important;}
+    .gradio-container .main.fillable {
+        padding-inline: 0 !important;
+    }
+    .gradio-container .main.fillable > .wrap {
+        width: 100% !important;
+        max-width: none !important;
+        margin-inline: 0 !important;
+    }
+    main.contain {
+        width: 100% !important;
+        max-width: none !important;
+        margin: 0 !important;
+    }
+    .gradio-container {padding: 14px !important;}
+    .studio-header {padding: .9rem; border-radius: 0;}
+    .studio-live {display: none;}
+    .studio-hero h2 {font-size: 1.75rem;}
     .saved-summary {line-height: 1.6;}
     #episode-summary-row {flex-direction: column; align-items: stretch;}
     #episode-summary-row > * {width: 100%;}
@@ -3030,7 +3564,18 @@ def create_ui():
 
     with gr.Blocks(title="NTN Podcast Creator") as app:
         gr.HTML(EPISODE_CSS)
-        gr.Markdown("# NTN Podcast Creator")
+        gr.HTML("""
+        <header class="studio-header">
+            <div class="studio-brand">
+                <div class="studio-logo">NTN</div>
+                <div>
+                    <h1>NTN Podcast Creator</h1>
+                    <p>Fast, consistent, publish-ready audio</p>
+                </div>
+            </div>
+            <div class="studio-live">Ready to create</div>
+        </header>
+        """)
         order = gr.State([])
         exported = gr.State(None)
         cleaned = gr.State(None)
@@ -3043,40 +3588,51 @@ def create_ui():
         with gr.Tabs(selected="create") as tabs:
             with gr.Tab("Create Episode", id="create"):
                 with gr.Column(elem_id="episode-create"):
-                    gr.Markdown("### Your next episode starts here")
-                    voice = gr.File(label="Upload recordings", file_count="multiple", file_types=["audio"],
-                                    type="filepath", elem_id="episode-hero")
-                    upload_state = gr.HTML(episode_marker(
-                        "empty"), elem_id="upload-state", elem_classes=["state-marker"])
-                    recordings = gr.HTML("")
-                    with gr.Column(elem_id="episode-order"):
-                        order_table = gr.Dataframe(headers=["Order", "Recording"], datatype=["number", "str"],
-                                                   value=[], type="array", interactive=True, static_columns=[1], label="Recording order")
-                    with gr.Row():
-                        name = gr.Textbox(label="Episode name", value=suggest_podcast_name(
-                            None), interactive=True, scale=5, min_width=180)
-                        edit_name = gr.Button(
-                            "Edit", size="sm", scale=0, min_width=64)
-                    create = gr.Button("Create Episode", variant="primary", size="lg", elem_classes=[
-                                       "episode-primary"])
-                    with gr.Row(elem_id="episode-summary-row"):
-                        summary = gr.HTML(
-                            saved_settings_summary(), min_width=240)
-                        change = gr.Button(
-                            "Change settings", size="sm", min_width=130)
-                    with gr.Accordion("Episode options", open=False, elem_id="episode-options"):
-                        background = gr.Dataframe(headers=["Recording", "Background music"], datatype=["str", "bool"],
-                                                  value=[], type="array", interactive=True, static_columns=[0], label="Per-recording background")
-                        background_music_enabled = gr.Checkbox(
-                            label="Add background music", value=False,
-                            info="Off by default. Enable for recordings selected above; the saved music level defaults to 2.5%.")
-                        with gr.Row():
-                            music_level = background_music_level_control()
-                            save_music_level = gr.Button(
-                                "Save as default", size="sm", scale=0, min_width=140)
-                        music_level_status = gr.Markdown("")
-                        intro_override = gr.File(label="Custom intro for this episode only", file_types=[
-                                                 "audio"], type="filepath")
+                    gr.HTML("""
+                    <section class="studio-hero">
+                        <p class="studio-eyebrow">New episode</p>
+                        <h2>From raw audio to ready to publish.</h2>
+                        <p>Drop in your recordings. We handle the cleanup, mix, levels, music, and final quality check.</p>
+                    </section>
+                    """)
+                    with gr.Row(elem_id="studio-workspace"):
+                        with gr.Column(scale=6, elem_classes=["studio-card"]):
+                            gr.HTML('<div class="studio-step"><span>1</span><strong>Add your recordings</strong></div>')
+                            voice = gr.File(label="Upload recordings", file_count="multiple", file_types=["audio"],
+                                            type="filepath", elem_id="episode-hero")
+                            upload_state = gr.HTML(episode_marker(
+                                "empty"), elem_id="upload-state", elem_classes=["state-marker"])
+                            recordings = gr.HTML("")
+                            with gr.Column(elem_id="episode-order"):
+                                order_table = gr.Dataframe(headers=["Order", "Recording"], datatype=["number", "str"],
+                                                           value=[], type="array", interactive=True, static_columns=[1], label="Recording order")
+                        with gr.Column(scale=5, elem_classes=["studio-card"]):
+                            gr.HTML('<div class="studio-step"><span>2</span><strong>Review and create</strong></div>')
+                            with gr.Row():
+                                name = gr.Textbox(label="Episode name", value=suggest_podcast_name(
+                                    None), interactive=True, scale=5, min_width=180)
+                                edit_name = gr.Button(
+                                    "Edit", size="sm", scale=0, min_width=64)
+                            create = gr.Button("Create Episode", variant="primary", size="lg", elem_classes=[
+                                               "episode-primary"])
+                            with gr.Row(elem_id="episode-summary-row"):
+                                summary = gr.HTML(
+                                    saved_settings_summary(), min_width=240)
+                                change = gr.Button(
+                                    "Change settings", size="sm", min_width=130)
+                            with gr.Accordion("Episode options", open=False, elem_id="episode-options"):
+                                background = gr.Dataframe(headers=["Recording", "Background music"], datatype=["str", "bool"],
+                                                          value=[], type="array", interactive=True, static_columns=[0], label="Per-recording background")
+                                background_music_enabled = gr.Checkbox(
+                                    label="Add background music", value=False,
+                                    info="Off by default. Enable for recordings selected above; the saved music level defaults to 2.5%.")
+                                with gr.Row():
+                                    music_level = background_music_level_control()
+                                    save_music_level = gr.Button(
+                                        "Save as default", size="sm", scale=0, min_width=140)
+                                music_level_status = gr.Markdown("")
+                                intro_override = gr.File(label="Custom intro for this episode only", file_types=[
+                                                         "audio"], type="filepath")
                     alert = gr.HTML("")
                     with gr.Accordion("Timeline & premix details", open=False, elem_id="episode-premix"):
                         timeline = gr.HTML("")
@@ -3085,6 +3641,12 @@ def create_ui():
                     progress_html = gr.HTML("")
                     log = gr.HTML("")
                     with gr.Column(elem_id="episode-results"):
+                        gr.HTML("""
+                        <div class="result-heading">
+                            <h3>Your episode is ready</h3>
+                            <p>Listen through the result and review the quality check before publishing.</p>
+                        </div>
+                        """)
                         result_state = gr.HTML(episode_marker(
                             "empty"), elem_classes=["state-marker"])
                         audio = gr.Audio(label="Your episode",
@@ -3129,9 +3691,16 @@ def create_ui():
                             refresh_transcript = gr.Button(
                                 "Check for background transcript", size="sm")
             with gr.Tab("Settings", id="settings"):
-                gr.Markdown(
-                    "### Saved defaults\nChanges here are drafts until **Save settings**. Episodes always use saved defaults.")
-                with gr.Row():
+                gr.HTML("""
+                <section class="settings-header">
+                    <div>
+                        <p class="studio-eyebrow">Studio profile</p>
+                        <h2>Make every episode sound like you.</h2>
+                        <p>Changes remain drafts until you save them. New episodes always use the last saved profile.</p>
+                    </div>
+                </section>
+                """)
+                with gr.Row(elem_id="settings-actions"):
                     save = gr.Button("Save settings", variant="primary")
                     discard = gr.Button("Discard changes")
                 settings_status = gr.Markdown("")
@@ -3198,41 +3767,42 @@ def create_ui():
                 with gr.Accordion("Podcast sound", open=True):
                     gr.Markdown(
                         "Choose one intro, one outro, and any number of background tracks.")
-                    with gr.Column(elem_classes=["sound-card"]):
-                        gr.Markdown(
-                            "### Intro\n<span class='sound-note'>One file · original volume (100%) · never treated as background music.</span>")
-                        controls["intro_file"] = build_setting("intro_file")
-                        intro_preview = gr.Audio(
-                            label="Preview intro", value=form_values["intro_file"]
-                            if form_values["intro_file"] and os.path.isfile(form_values["intro_file"]) else None,
-                            type="filepath", interactive=False)
-                        controls["intro_voice_overlap"] = build_setting(
-                            "intro_voice_overlap")
-                    with gr.Column(elem_classes=["sound-card"]):
-                        gr.Markdown(
-                            "### Outro\n<span class='sound-note'>One file · original volume (100%) · never treated as background music.</span>")
-                        controls["outro_file"] = build_setting("outro_file")
-                        outro_preview = gr.Audio(
-                            label="Preview outro", value=form_values["outro_file"]
-                            if form_values["outro_file"] and os.path.isfile(form_values["outro_file"]) else None,
-                            type="filepath", interactive=False)
-                        controls["voice_outro_overlap"] = build_setting(
-                            "voice_outro_overlap")
-                    with gr.Column(elem_classes=["sound-card"]):
-                        gr.Markdown(
-                            "### Background music\n<span class='sound-note'>Multiple tracks · one intentionally quiet master level · ducked under speech.</span>")
-                        controls["background_tracks"] = build_setting(
-                            "background_tracks")
-                        with gr.Row():
-                            barely = gr.Button(
-                                "Barely audible · 2.5%", size="sm")
-                            chill = gr.Button(
-                                "Chill · 5%", size="sm", variant="primary")
-                            present = gr.Button("Present · 10%", size="sm")
-                        controls["background_volume"] = build_setting(
-                            "background_volume")
-                        background_level = gr.Markdown(background_level_description(
-                            form_values["background_volume"]))
+                    with gr.Row(elem_classes=["sound-grid"]):
+                        with gr.Column(elem_classes=["sound-card"]):
+                            gr.Markdown(
+                                "### Intro\n<span class='sound-note'>One file · original volume (100%) · never treated as background music.</span>")
+                            controls["intro_file"] = build_setting("intro_file")
+                            intro_preview = gr.Audio(
+                                label="Preview intro", value=form_values["intro_file"]
+                                if form_values["intro_file"] and os.path.isfile(form_values["intro_file"]) else None,
+                                type="filepath", interactive=False)
+                            controls["intro_voice_overlap"] = build_setting(
+                                "intro_voice_overlap")
+                        with gr.Column(elem_classes=["sound-card"]):
+                            gr.Markdown(
+                                "### Outro\n<span class='sound-note'>One file · original volume (100%) · never treated as background music.</span>")
+                            controls["outro_file"] = build_setting("outro_file")
+                            outro_preview = gr.Audio(
+                                label="Preview outro", value=form_values["outro_file"]
+                                if form_values["outro_file"] and os.path.isfile(form_values["outro_file"]) else None,
+                                type="filepath", interactive=False)
+                            controls["voice_outro_overlap"] = build_setting(
+                                "voice_outro_overlap")
+                        with gr.Column(elem_classes=["sound-card"]):
+                            gr.Markdown(
+                                "### Background music\n<span class='sound-note'>Multiple tracks · one intentionally quiet master level · ducked under speech.</span>")
+                            controls["background_tracks"] = build_setting(
+                                "background_tracks")
+                            with gr.Row():
+                                barely = gr.Button(
+                                    "Barely audible · 2.5%", size="sm")
+                                chill = gr.Button(
+                                    "Chill · 5%", size="sm", variant="primary")
+                                present = gr.Button("Present · 10%", size="sm")
+                            controls["background_volume"] = build_setting(
+                                "background_volume")
+                            background_level = gr.Markdown(background_level_description(
+                                form_values["background_volume"]))
 
                 for title, keys in (
                     ("Voice processing", ("trim_silence", "denoise_audio", "enhance_voice",
@@ -3295,7 +3865,7 @@ def create_ui():
                     gr.Markdown("Upload → Create Episode → Download. Review yellow/red quality results before publishing. "
                                 "Suggested settings affect the next render only. Keep source recordings if you plan to rerender.")
                     theme = gr.Dropdown(
-                        ["System", "Light", "Dark"], value="System", label="Theme")
+                        ["Light", "System", "Dark"], value="Light", label="Theme")
 
         form = [controls[key] for key in SETTINGS_FIELDS] + [track_draft]
         refresh_form = [settings_status, summary] + form
@@ -3351,6 +3921,7 @@ def create_ui():
             const dark = theme === 'Dark' || (theme === 'System' && matchMedia('(prefers-color-scheme: dark)').matches);
             document.documentElement.classList.toggle('dark', dark);
             document.body.classList.toggle('dark', dark);
+            document.body.classList.toggle('studio-light', !dark);
         }""")
         controls["intro_file"].change(
             lambda path: path if path and os.path.isfile(path) else None,
