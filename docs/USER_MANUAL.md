@@ -157,7 +157,7 @@ The active UI organizes controls into the five Settings accordions below.
 #### Podcast sound
 
 - **Default intro** / **Default outro**: select an existing asset, or **None** to disable it, then save.
-- **Default Background Music Volume (%)**: global volume, 0–50%.
+- **Default Background Music Volume (%)**: global volume, 0–50%, default **2.5%**. This level applies only when background music is enabled for an episode; per-track overrides still take precedence.
 - **Intro-voice overlap (1 second)** and **Voice-outro overlap (1 second)**.
 
 #### Voice processing
@@ -167,12 +167,17 @@ The active UI organizes controls into the five Settings accordions below.
 - **Enable noise reduction**; select its **Noise Reduction Method** in **Advanced**.
 - **Enable professional voice enhancement**; select its **Enhancement Preset** in **Advanced**. This is local voice processing, not an Adobe Enhance tab.
 
+Silence trimming, noise reduction, and voice enhancement are **off by default**
+to preserve clean recordings without unnecessary processing. Enable them only
+when needed and click **Save settings**. Existing saved choices and explicitly
+loaded templates still take precedence over these defaults.
+
 #### Output & quality
 
 - **Normalize audio to professional LUFS level** and **Target LUFS Level** (−30 to −10; −16 is a typical podcast target).
 - **Final Audio Quality Gate**: optional and disabled by default. Save before rendering to enable it.
 - **Generate transcript with Whisper AI**: optional; download appears only if a transcript becomes available.
-- **Delete voice recording after creation**: uploaded working copies may be removed. Keep your own originals for rerendering.
+- **Delete voice recording after creation**: off by default to retain uploaded working copies for comparison and rerendering. Enabling it allows those copies to be removed; keep your own originals.
 
 #### Naming & RSS
 
@@ -208,6 +213,7 @@ These are explicit exceptions to ordinary draft editing:
 
 | Action | Effect |
 |---|---|
+| **Episode options → Save as default** | Saves only the selected global background music level and updates its Settings control. Other Settings drafts and per-track overrides are preserved; music is not enabled automatically. |
 | **Audio library — actions apply immediately → Add to library now** | Copies the asset into the library now. Background tracks join the saved pool immediately. Adding intro/outro assets does not select a saved default: select it and **Save settings**. |
 | **Remove selected background track now** | Immediately removes the selected track from the saved pool; the underlying file is preserved. Select it in **Per-track volume drafts** first. |
 | **Load and apply template** | Immediately applies template settings and refreshes the form from saved values, replacing drafts. |
@@ -234,8 +240,17 @@ In **Create Episode**, upload your edited source recordings. For multiple files,
 review **Recording order** and change the numeric positions as needed. Review the
 suggested **Episode name** and click **Edit** if necessary.
 
-Open **Episode options** to turn background music on/off for each recording or
-upload a one-time custom intro. These are episode inputs, not saved defaults.
+Background music is **off by default**, including after **Create another**.
+For a music test, open **Episode options**, check **Add background music**, and
+select the recordings in **Per-recording background** that should have music.
+Use **Background music level** to choose **2.5%**, **5%**, **7.5%**, or **10%**,
+then click **Save as default**. Changing the dropdown alone does not affect a
+render: episodes use the last saved level. Saving applies globally to future
+renders, not an episode already processing. The default is **2.5%**.
+The Settings master slider also supports other levels; a saved custom value is
+shown in this dropdown. Per-track overrides still take precedence.
+This toggle does not disable the saved intro or outro.
+You can also upload a one-time custom intro. These are episode inputs, not saved defaults.
 The app combines recordings; it is not a waveform editor.
 
 ### 2. Check saved defaults
@@ -258,7 +273,10 @@ recording length, selected features, hardware, and available models.
 
 ### 4. Review quality and download
 
-Listen in **Your episode** and use **Download episode**. The quality summary is:
+**Your episode** starts playback automatically when a completed export is ready.
+If your browser blocks autoplay with sound, click Play in that player.
+Preview players remain manual. Use **Download episode** to save the file.
+The quality summary is:
 
 | State | Meaning |
 |---|---|

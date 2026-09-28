@@ -43,9 +43,9 @@ class TestConfigManager(unittest.TestCase):
         config = self.config_manager._default_config()
         self.assertIsNone(config['intro_file'])
         self.assertIsNone(config['outro_file'])
-        self.assertEqual(config['background_volume'], 5)
+        self.assertEqual(config['background_volume'], 2.5)
         self.assertEqual(config['background_tracks'], [])
-        self.assertTrue(config['denoise_audio'])
+        self.assertFalse(config['denoise_audio'])
         self.assertEqual(config['denoise_method'], 'audio_denoiser')
 
     def test_get_set_value(self):

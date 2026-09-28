@@ -58,16 +58,16 @@ class ConfigManager:
             "intro_file": None,
             "outro_file": None,
             "background_tracks": [],
-            # 5% is about -26 dB: a deliberately quiet "Chill" bed.
-            "background_volume": 5,
+            # 2.5% is about -32 dB for an optional, quiet music bed.
+            "background_volume": 2.5,
             "track_volumes": {},  # Individual volumes per track
             "last_output_name": "podcast_output",
             "rss_feed_url": DEFAULT_RSS_FEED_URL,
             "prioritize_recording_filename": True,
-            "delete_voice": True,
-            "trim_silence": True,
-            # Audio denoising feature (enabled by default)
-            "denoise_audio": True,
+            "delete_voice": False,
+            "trim_silence": False,
+            # Audio denoising feature (disabled by default)
+            "denoise_audio": False,
             "denoise_method": "audio_denoiser",  # audio_denoiser, spectral, rnnoise
             # Voice enhancement feature (disabled by default)
             "enhance_voice": False,
@@ -346,7 +346,7 @@ class ConfigManager:
             tracks.remove(file_path)
             self.set("background_tracks", tracks)
 
-    def update_volume(self, volume: int) -> None:
+    def update_volume(self, volume: float) -> None:
         """Update background music volume.
 
         Args:
@@ -381,13 +381,13 @@ class ConfigManager:
             return tracks
         return list(dict.fromkeys(self.normalize_audio_path(path) for path in tracks))
 
-    def get_volume(self) -> int:
+    def get_volume(self) -> float:
         """Get background music volume.
 
         Returns:
             Volume percentage
         """
-        return self.get("background_volume", 5)
+        return self.get("background_volume", 2.5)
 
     def get_last_output_name(self) -> str:
         """Get last used output filename.
@@ -496,7 +496,7 @@ class ConfigManager:
         Returns:
             True if audio denoising is enabled, False otherwise
         """
-        return self.get("denoise_audio", True)
+        return self.get("denoise_audio", False)
 
     def set_denoise_audio(self, enabled: bool) -> None:
         """Set audio denoising setting.
@@ -741,8 +741,8 @@ class ConfigManager:
             "background_tracks": self.get_background_tracks(),
             "background_volume": self.get_volume(),
             "track_volumes": self.get_all_track_volumes(),
-            "delete_voice": self.get("delete_voice", True),
-            "trim_silence": self.get("trim_silence", True),
+            "delete_voice": self.get("delete_voice", False),
+            "trim_silence": self.get("trim_silence", False),
             "denoise_audio": self.get_denoise_audio(),
             "denoise_method": self.get_denoise_method(),
             "enhance_voice": self.get("enhance_voice", False),

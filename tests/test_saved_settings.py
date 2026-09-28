@@ -31,9 +31,13 @@ def test_missing_file_defaults_do_not_write(tmp_path):
     manager = ConfigManager(str(path))
     snapshot = manager.snapshot()
     assert snapshot == manager._default_config()
-    assert snapshot["delete_voice"] is True
-    assert snapshot["trim_silence"] is True
-    assert snapshot["background_volume"] == 5
+    for key in ("delete_voice", "trim_silence", "denoise_audio", "enhance_voice"):
+        assert snapshot[key] is False
+        assert manager.get_template_settings()[key] is False
+    assert manager.get_denoise_audio() is False
+    assert snapshot["background_volume"] == 2.5
+    assert manager.get_volume() == 2.5
+    assert manager.get_template_settings()["background_volume"] == 2.5
     assert snapshot["audio_quality"] == asdict(AudioQualityConfig())
     assert not path.exists()
 
@@ -181,8 +185,10 @@ def test_old_config_defaults_merge_without_migration(manager):
     with open(path, "rb") as source:
         original_bytes = source.read()
     snapshot = manager.snapshot()
-    assert snapshot["delete_voice"] is True
-    assert snapshot["trim_silence"] is True
+    for key in ("delete_voice", "trim_silence", "denoise_audio", "enhance_voice"):
+        assert snapshot[key] is False
+        assert manager.get_template_settings()[key] is False
+    assert manager.get_denoise_audio() is False
     assert snapshot["background_volume"] == 12
     assert snapshot["audio_quality"]["window_ms"] == 750
     assert snapshot["audio_quality"]["vmr_failure_db"] == 8
@@ -376,7 +382,7 @@ def test_invalid_legacy_settings_can_be_explicitly_repaired(tmp_path):
     with pytest.raises(ValueError):
         manager.update_settings({"background_volume": 10})
     assert manager.snapshot()["background_volume"] == "bad"
-    manager.update_settings({"background_volume": 5, "audio_quality": {}})
+    manager.update_settings({"background_volume": 2.5, "audio_quality": {}})
     assert manager.snapshot() == manager._default_config()
 
 
@@ -447,30 +453,36 @@ def test_legacy_set_still_calls_save_without_arguments(manager, monkeypatch):
 
 
 @pytest.mark.parametrize("enabled", [True, False])
-def test_templates_carry_trim_and_delete(tmp_path, enabled):
+def test_templates_carry_voice_processing_options(tmp_path, enabled):
     source = ConfigManager(str(tmp_path / "source.json"))
-    source.update_settings({"delete_voice": enabled, "trim_silence": enabled})
+    settings = dict.fromkeys(
+        ("delete_voice", "trim_silence", "denoise_audio", "enhance_voice"), enabled)
+    source.update_settings(settings)
+    saved = ConfigManager(source.config_file)
+    for key in settings:
+        assert saved.snapshot()[key] is enabled
+    assert saved.get_denoise_audio() is enabled
     template = source.get_template_settings()
-    assert template["delete_voice"] is enabled
-    assert template["trim_silence"] is enabled
+    for key in settings:
+        assert template[key] is enabled
     target = ConfigManager(str(tmp_path / "target.json"))
     target.apply_template_settings(template)
     reloaded = ConfigManager(target.config_file).snapshot()
-    assert reloaded["delete_voice"] is enabled
-    assert reloaded["trim_silence"] is enabled
+    for key in settings:
+        assert reloaded[key] is enabled
 
 
 def test_old_templates_preserve_trim_and_delete_defaults(manager):
     template = manager.get_template_settings()
-    assert template["delete_voice"] is True
-    assert template["trim_silence"] is True
+    assert template["delete_voice"] is False
+    assert template["trim_silence"] is False
     manager.apply_template_settings({"background_volume": 10})
-    assert manager.snapshot()["delete_voice"] is True
-    assert manager.snapshot()["trim_silence"] is True
-    manager.update_settings({"delete_voice": False, "trim_silence": False})
-    manager.apply_template_settings({"background_volume": 15})
     assert manager.snapshot()["delete_voice"] is False
     assert manager.snapshot()["trim_silence"] is False
+    manager.update_settings({"delete_voice": True, "trim_silence": True})
+    manager.apply_template_settings({"background_volume": 15})
+    assert manager.snapshot()["delete_voice"] is True
+    assert manager.snapshot()["trim_silence"] is True
 
 
 @pytest.mark.parametrize("key", ["trim_silence", "delete_voice"])

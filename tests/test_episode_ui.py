@@ -74,6 +74,12 @@ def test_idle_sentinels_empty_results_and_css_contract(ui, screen):
     assert by_label["Episode name"]["interactive"] is True
     assert by_label["Your episode"]["interactive"] is False
     assert by_label["Your episode"].get("value") is None
+    assert by_label["Your episode"]["autoplay"] is True
+    for component in screen.config["components"]:
+        if component["type"] == "audio" and component["props"].get("label") != "Your episode":
+            assert component["props"]["autoplay"] is False
+    assert by_label["Add background music"]["value"] is False
+    assert by_label["Master background level (%)"]["value"] == 2.5
     for label in ("Episode options", "Timeline & premix details", "Technical details"):
         assert by_label[label]["open"] is False
     assert '#episode-results:not(:has([data-state="ready"]))' in ui.EPISODE_CSS
@@ -237,7 +243,7 @@ def test_no_scalar_autosave_and_wrapper_has_only_episode_inputs(ui, screen):
                 "<lambda>", "background_level_description", "stage_background_selection"}
     render = functions["create_episode_from_saved"]
     assert [c.label for c in render.inputs if hasattr(c, "label")] == [
-        "Upload recordings", "Episode name", None, "Custom intro for this episode only", "Include background music"]
+        "Upload recordings", "Episode name", None, "Custom intro for this episode only", "Add background music"]
     assert not form_ids.intersection(c._id for c in render.inputs)
     assert len(render.outputs) == 7
     assert list(inspect.signature(ui.create_episode_from_saved).parameters) == [
@@ -296,7 +302,7 @@ def test_saved_wrapper_ignores_drafts_and_freezes_every_setting(ui, monkeypatch)
     draft[-1]["music.wav"] = 49
     rows = [[1, "Recording.wav", True]]
     generator = ui.create_episode_from_saved(
-        [voice], "episode", rows, None, progress=lambda *args: None)
+        [voice], "episode", rows, None, background_music_enabled=True, progress=lambda *args: None)
     results = [next(generator)]
     rows[0][2] = False
     changed = dict(saved, intro_file="new.wav", outro_file=None, background_tracks=[], track_volumes={},
@@ -354,7 +360,7 @@ def test_single_recording_background_override_reaches_processor(ui, monkeypatch,
     ui.config_manager.update_settings(
         {"background_tracks": ["music.wav"], "delete_voice": False})
     list(ui.create_episode_from_saved([voice], "episode", [[1, "Recording.wav", background_enabled]], None,
-                                      progress=lambda *args: None))
+                                      background_music_enabled=True, progress=lambda *args: None))
     assert observed["background_files"] == (
         ["music.wav"] if background_enabled else None)
 
@@ -369,6 +375,24 @@ def test_global_background_music_toggle_overrides_per_recording_flag(ui, monkeyp
     list(ui.create_episode_from_saved([voice], "episode", [[1, "Recording.wav", True]], None,
                                       background_music_enabled=True, progress=lambda *args: None))
     assert observed["background_files"] == ["music.wav"]
+
+def test_music_is_opt_in_at_two_point_five_percent(ui, monkeypatch):
+    voice, observed = capture_render(ui, monkeypatch)
+    ui.config_manager.update_settings({"background_tracks": ["music.wav"]})
+    rows = [[1, "Recording.wav", True]]
+    list(ui.create_episode_from_saved(
+        [voice], "dry", rows, None, progress=lambda *args: None))
+    assert observed["background_files"] is None
+    for key in ("denoise_audio", "enhance_voice_enabled", "trim_silence"):
+        assert observed[key] is False
+    assert Path("uploads/Recording.wav").exists()
+    list(ui.create_episode_from_saved(
+        [voice], "music-test", rows, None, background_music_enabled=True,
+        progress=lambda *args: None))
+    assert observed["background_files"] == ["music.wav"]
+    assert observed["background_volume"] == 2.5
+    assert observed["track_volumes"] is None
+    assert ui.config_manager.snapshot()["background_tracks"] == ["music.wav"]
 
 
 def test_legacy_explicit_positional_choices_still_win(ui, monkeypatch):
@@ -425,6 +449,95 @@ def test_sound_controls_are_simple_previewable_and_use_chill_presets(ui, screen)
     assert {"Barely audible · 2.5%", "Chill · 5%", "Present · 10%"} <= labels
 
 
+def test_music_level_dropdown_requires_explicit_save(ui, screen, monkeypatch):
+    components = {c.label: c for c in screen.blocks.values() if hasattr(c, "label")}
+    level = components["Background music level"]
+    assert level.choices == [("2.5%", 2.5), ("5%", 5), ("7.5%", 7.5), ("10%", 10)]
+    assert level.value == 2.5
+    parent_ids = ancestors(screen)[level._id]
+    assert any(c["id"] in parent_ids and c["props"].get("label") == "Episode options"
+               for c in screen.config["components"])
+    action = handlers(screen)["save_background_music_default"]
+    assert action.inputs == [level]
+    assert action.outputs[2] is components["Master background level (%)"]
+    assert components["Add background music"] not in action.outputs
+    assert level not in handlers(screen)["create_episode_from_saved"].inputs
+    before = ui.config_manager.snapshot()
+    for dependency in screen.config["dependencies"]:
+        if any(target[0] == level._id and target[1] in {"input", "change"}
+               for target in dependency["targets"]):
+            message = screen.fns[dependency["id"]].fn()
+            assert "Not saved" in message
+    voice, observed = capture_render(ui, monkeypatch)
+    list(ui.create_episode_from_saved(
+        [voice], "unsaved-level", [[1, "Recording.wav", True]], None,
+        background_music_enabled=True, progress=lambda *args: None))
+    assert observed["background_volume"] == before["background_volume"]
+
+
+@pytest.mark.parametrize("volume", [2.5, 5, 7.5, 10])
+def test_save_music_level_persists_only_master_volume(ui, monkeypatch, volume):
+    voice, observed = capture_render(ui, monkeypatch)
+    ui.config_manager.update_settings(
+        {"background_tracks": ["music.wav"], "track_volumes": {"music.wav": 3}})
+    before = ui.config_manager.snapshot()
+    result = ui.save_background_music_default(volume)
+    assert "saved" in result[0] and f"{volume:g}%" in result[0]
+    assert result[2] == volume
+    assert ui.ConfigManager().snapshot() == dict(before, background_volume=volume)
+    assert ui.background_music_level_control().value == volume
+    list(ui.create_episode_from_saved(
+        [voice], "saved-level", [[1, "Recording.wav", True]], None,
+        background_music_enabled=True, progress=lambda *args: None))
+    assert observed["background_volume"] == volume
+    assert observed["track_volumes"] == {"music.wav": 3}
+    assert ui.background_music_level_control().value == volume
+
+
+@pytest.mark.parametrize("volume", [None, "5", True, -1, 51, float("nan"), float("inf")])
+def test_invalid_music_level_is_not_saved(ui, volume):
+    ui.config_manager.update_settings({})
+    before = ui.config_manager.snapshot()
+    disk = Path("core/config.json").read_bytes()
+    result = ui.save_background_music_default(volume)
+    assert "not saved" in result[0]
+    assert result[2:] == (ui.gr.skip(), ui.gr.skip())
+    assert ui.config_manager.snapshot() == before
+    assert Path("core/config.json").read_bytes() == disk
+
+
+def test_music_level_write_failure_preserves_settings_and_drafts(ui, screen, monkeypatch):
+    from gradio.state_holder import SessionState
+
+    ui.config_manager.update_settings({})
+    before = ui.config_manager.snapshot()
+    disk = Path("core/config.json").read_bytes()
+
+    def fail(settings):
+        raise OSError("read only disk")
+
+    monkeypatch.setattr(ui.config_manager, "_write_settings", fail)
+    action = handlers(screen)["save_background_music_default"]
+    result = action.fn(5)
+    assert "not saved" in result[0] and "read only disk" in result[0]
+    wire = asyncio.run(screen.postprocess_data(action, result, SessionState(screen)))
+    assert all("value" not in update for update in wire[2:])
+    assert ui.config_manager.snapshot() == before
+    assert Path("core/config.json").read_bytes() == disk
+
+
+@pytest.mark.parametrize("volume", [0, 3.5, 14, 50])
+def test_dropdown_preserves_custom_saved_level(ui, screen, volume):
+    ui.config_manager.update_settings({"background_volume": volume})
+    functions = handlers(screen)
+    for name in ("refresh_music_level", "refresh_asset_controls"):
+        refreshed = functions[name].fn()
+        dropdown, status = refreshed if name == "refresh_music_level" else refreshed[-2:]
+        assert dropdown.value == volume
+        assert (f"{volume:g}%", volume) in dropdown.choices
+        assert status == ""
+
+
 @pytest.mark.parametrize("key,value", [
     ("delete_voice", "false"), ("trim_silence", 0), ("denoise_method", "bogus"),
     ("whisper_model", "bogus"), ("background_volume",
@@ -478,6 +591,10 @@ def test_template_and_import_refresh_every_form_control(ui, screen):
     imported = ui.import_episode_settings(exported)
     assert imported[2:] == expected
     functions = handlers(screen)
+    for event in ("save_episode_settings", "reset_episode"):
+        assert any(dep["trigger_after"] == functions[event]._id and
+                   screen.fns[dep["id"]].fn.__name__ == "refresh_music_level"
+                   for dep in screen.config["dependencies"])
     save_inputs = functions["save_episode_settings"].inputs
     for event in ("discard_episode_settings", "load_episode_template", "import_episode_settings", "suggested_episode_settings"):
         assert functions[event].outputs[2:] == save_inputs
@@ -485,6 +602,8 @@ def test_template_and_import_refresh_every_form_control(ui, screen):
                    screen.fns[dep["id"]
                               ].fn.__name__ == "refresh_asset_controls"
                    for dep in screen.config["dependencies"])
+    refresh_outputs = functions["refresh_asset_controls"].outputs
+    assert refresh_outputs[-2].label == "Background music level"
 
 
 def test_prepare_finish_reset_repeated_episodes_keep_exports_and_settings(ui, screen):
@@ -504,6 +623,8 @@ def test_prepare_finish_reset_repeated_episodes_keep_exports_and_settings(ui, sc
         result = finish.fn(report.file_path, None, None, 0)
         assert len(result) == len(finish.outputs)
         assert result[1] == result[2] == report.file_path
+        assert finish.outputs[1].label == "Your episode"
+        assert finish.outputs[1].autoplay is True
         assert finish.outputs[2].__class__.__name__ == "DownloadButton"
         assert 'data-state="ready"' in result[0]
         assert 'data-state="warn"' in result[13]
@@ -511,6 +632,8 @@ def test_prepare_finish_reset_repeated_episodes_keep_exports_and_settings(ui, sc
         cleared = reset.fn(None)
         assert len(cleared) == len(reset.outputs)
         by_component = dict(zip(reset.outputs, cleared))
+        music = functions["create_episode_from_saved"].inputs[-1]
+        assert by_component[music] is False
         assert all(
             by_component[c] is None for c in functions["create_episode_from_saved"].outputs[1:4])
         assert cleared[1] is None and cleared[2] is None
@@ -547,3 +670,25 @@ def test_premix_only_alerts_on_problems(ui, monkeypatch):
         assert bool(ui.episode_premix(["Recording.wav"], [
                     [1, "Recording.wav", True]], None)[2]) is has_alert
     assert ui.episode_premix(None, [], None) == ("", "", "")
+
+
+@pytest.mark.parametrize("music_enabled,selected", [(False, True), (True, True), (True, False)])
+def test_premix_respects_music_opt_in(ui, monkeypatch, music_enabled, selected):
+    ui.config_manager.update_settings({"background_tracks": ["music.wav"]})
+    observed = {}
+
+    def analyze(paths, **kwargs):
+        observed.update(kwargs)
+        return {"overall_status": "optimal"}
+
+    def timeline(paths, intro, flags):
+        observed["flags"] = flags
+        return "timeline"
+
+    monkeypatch.setattr(ui.audio_processor, "analyze_levels", analyze, raising=False)
+    monkeypatch.setattr(ui, "preview_timeline", timeline)
+    ui.episode_premix(["Recording.wav"], [[1, "Recording.wav", selected]], None, music_enabled)
+    expected = music_enabled and selected
+    assert observed["background_files"] == (["music.wav"] if expected else None)
+    assert observed["flags"] == [expected]
+    assert observed["background_volume"] == 2.5

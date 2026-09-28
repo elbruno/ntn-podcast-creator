@@ -1892,7 +1892,7 @@ def _render_episode(
     intro_path = intro_override_path or snapshot.get("intro_file")
     outro_path = snapshot.get("outro_file")
     background_tracks = snapshot.get("background_tracks", [])
-    volume = snapshot.get("background_volume", 5)
+    volume = snapshot.get("background_volume", 2.5)
     track_volumes = snapshot.get("track_volumes", {})
 
     log_message(f"Configuration loaded:")
@@ -2726,7 +2726,7 @@ def create_podcast_handler_with_progress(
         yield status, audio, cleaned, transcript, console, bar, log
 
 
-def create_episode_from_saved(voice, name, order, intro_override, background_music_enabled=True, progress=gr.Progress()):
+def create_episode_from_saved(voice, name, order, intro_override, background_music_enabled=False, progress=gr.Progress()):
     """The main screen accepts episode inputs ONLY, never draft settings controls."""
     snapshot = _render_snapshot()
     yield from _render_episode(
@@ -2758,7 +2758,7 @@ def background_level_description(volume) -> str:
     try:
         value = float(volume)
     except (TypeError, ValueError, OverflowError):
-        return "Choose a background level. Chill (5%) is recommended."
+        return "Choose a background level. Start with Barely audible (2.5%)."
     if not math.isfinite(value) or value <= 0:
         return "**Off** — no background music will be audible."
     gain = 20 * math.log10(value / 100)
@@ -2774,7 +2774,7 @@ def background_level_description(volume) -> str:
 def saved_settings_summary():
     cfg = saved_settings_snapshot()
     parts = [
-        f'{len(cfg["background_tracks"])} music tracks · {cfg["background_volume"]}%']
+        f'Music off by default · {len(cfg["background_tracks"])} tracks available at {cfg["background_volume"]}%']
     parts.append("intro " + ("on" if cfg["intro_file"] else "off"))
     parts.append("outro " + ("on" if cfg["outro_file"] else "off"))
     parts.append(
@@ -2782,6 +2782,31 @@ def saved_settings_summary():
     parts.append("quality check " +
                  ("on" if cfg["quality_gate_enabled"] else "off"))
     return '<p class="saved-summary"><strong>Saved settings</strong> · ' + html.escape(" · ".join(parts)) + '</p>'
+
+
+def background_music_level_control():
+    volume = saved_settings_snapshot()["background_volume"]
+    levels = [2.5, 5, 7.5, 10]
+    valid = (isinstance(volume, (int, float)) and not isinstance(volume, bool)
+             and 0 <= volume <= 50)
+    if valid and volume not in levels:
+        levels.append(volume)
+    return gr.Dropdown(
+        choices=[(f"{level:g}%", level) for level in sorted(levels)],
+        value=volume if valid else None, label="Background music level",
+        info=("Choose a level, then Save as default. Per-track overrides still apply."
+              if valid else "Saved level is invalid. Choose a valid level and Save as default."))
+
+
+def save_background_music_default(volume):
+    """Save only the master music level, leaving unrelated settings intact."""
+    try:
+        config_manager.update_settings({"background_volume": volume})
+    except (ValueError, TypeError, OverflowError, OSError) as error:
+        return ("Music level not saved: " + str(error), saved_settings_summary(),
+                gr.skip(), gr.skip())
+    return (f"Default music level saved: {volume:g}%. Used when background music is enabled.",
+            saved_settings_summary(), volume, background_level_description(volume))
 
 
 def settings_form_values():
@@ -2893,15 +2918,18 @@ def stage_episode_background(table, rows):
     return updated
 
 
-def episode_premix(voice, order, intro_override):
+def episode_premix(voice, order, intro_override, background_music_enabled=False):
     if not voice:
         return "", "", ""
     ordered = order_voice_segments(voice, order)
     paths, flags = [p for p, _ in ordered], [enabled for _, enabled in ordered]
+    if not background_music_enabled:
+        flags = [False] * len(paths)
     cfg = saved_settings_snapshot()
     try:
         analysis = audio_processor.analyze_levels(
-            paths, background_files=cfg["background_tracks"], background_volume=cfg["background_volume"],
+            paths, background_files=cfg["background_tracks"] if any(flags) else None,
+            background_volume=cfg["background_volume"],
             track_volumes=cfg["track_volumes"], quality_config=config_manager.get_audio_quality_config())
     except Exception as error:
         analysis = None
@@ -3040,8 +3068,13 @@ def create_ui():
                         background = gr.Dataframe(headers=["Recording", "Background music"], datatype=["str", "bool"],
                                                   value=[], type="array", interactive=True, static_columns=[0], label="Per-recording background")
                         background_music_enabled = gr.Checkbox(
-                            label="Include background music", value=True,
-                            info="Uncheck to render this episode with voice only, no background music")
+                            label="Add background music", value=False,
+                            info="Off by default. Enable for recordings selected above; the saved music level defaults to 2.5%.")
+                        with gr.Row():
+                            music_level = background_music_level_control()
+                            save_music_level = gr.Button(
+                                "Save as default", size="sm", scale=0, min_width=140)
+                        music_level_status = gr.Markdown("")
                         intro_override = gr.File(label="Custom intro for this episode only", file_types=[
                                                  "audio"], type="filepath")
                     alert = gr.HTML("")
@@ -3055,7 +3088,7 @@ def create_ui():
                         result_state = gr.HTML(episode_marker(
                             "empty"), elem_classes=["state-marker"])
                         audio = gr.Audio(label="Your episode",
-                                         type="filepath", interactive=False)
+                                         type="filepath", interactive=False, autoplay=True)
                         with gr.Row():
                             download = gr.DownloadButton(
                                 "Download episode", variant="primary", value=None, elem_classes=["episode-primary"])
@@ -3284,13 +3317,25 @@ def create_ui():
                     configured=saved["background_tracks"]), value=None),
                 saved["background_volume"],
                 background_level_description(saved["background_volume"]),
+                background_music_level_control(),
+                "",
             )
+
+        def refresh_music_level():
+            return background_music_level_control(), ""
 
         asset_controls = [controls["intro_file"], intro_preview,
                           controls["outro_file"], outro_preview,
                           controls["background_tracks"], track, track_volume,
-                          background_level]
-        save.click(save_episode_settings, form, [settings_status, summary])
+                          background_level, music_level, music_level_status]
+        save.click(save_episode_settings, form, [settings_status, summary]).then(
+            refresh_music_level, [], [music_level, music_level_status])
+        music_level.input(
+            lambda: "Not saved yet. Click Save as default to use this level.",
+            [], [music_level_status])
+        music_default_saved = save_music_level.click(
+            save_background_music_default, [music_level],
+            [music_level_status, summary, controls["background_volume"], background_level])
         discard.click(discard_episode_settings, [], refresh_form).then(
             refresh_asset_controls, [], asset_controls)
         load_template.click(load_episode_template, [template], refresh_form).then(
@@ -3412,9 +3457,11 @@ def create_ui():
         def update_on_voice_upload(files, custom_intro):
             return episode_upload_details(files)
 
-        def update_timeline_with_order_state(files, rows, custom_intro):
-            return episode_premix(files, rows, custom_intro)
+        def update_timeline_with_order_state(files, rows, custom_intro, music_enabled):
+            return episode_premix(files, rows, custom_intro, music_enabled)
 
+        music_default_saved.then(update_timeline_with_order_state, [
+                                 voice, order, intro_override, background_music_enabled], [timeline, health, alert])
         voice.change(update_on_voice_upload, [voice, intro_override],
                      [order, order_table, background, recordings, upload_state]).then(
             empty_results, [], result_components)
@@ -3423,9 +3470,11 @@ def create_ui():
         background.input(stage_episode_background, [
                          background, order], [order])
         order.change(update_timeline_with_order_state, [
-                     voice, order, intro_override], [timeline, health, alert])
+                     voice, order, intro_override, background_music_enabled], [timeline, health, alert])
         intro_override.change(update_timeline_with_order_state, [
-                              voice, order, intro_override], [timeline, health, alert])
+                              voice, order, intro_override, background_music_enabled], [timeline, health, alert])
+        background_music_enabled.change(update_timeline_with_order_state, [
+                                        voice, order, intro_override, background_music_enabled], [timeline, health, alert])
 
         def prepare_episode(receipt, is_busy):
             if is_busy:
@@ -3475,7 +3524,7 @@ def create_ui():
 
         def reset_episode(receipt):
             values = reset_episode_values(receipt)
-            return (*empty_results(), values["voice"], [], [], [], None, True,
+            return (*empty_results(), values["voice"], [], [], [], None, False,
                     gr.Textbox(value=values["name"], interactive=True), "", episode_marker(
                         "empty"),
                     "", "", "", 0, None, None, None, None, "", "", "", "", False)
@@ -3484,7 +3533,8 @@ def create_ui():
                       [voice, order, order_table, background, intro_override, background_music_enabled, name,
                        recordings, upload_state, timeline, health, alert, started, preview_receipt, exported,
                        cleaned, transcript, status, progress_html, log, console, busy], concurrency_id="episode-render",
-                      concurrency_limit=1, show_progress="hidden").then(None, [], [], js="""() => {
+                      concurrency_limit=1, show_progress="hidden").then(
+                          refresh_music_level, [], [music_level, music_level_status]).then(None, [], [], js="""() => {
                           const hero = document.getElementById('episode-hero');
                           hero?.scrollIntoView({block: 'start'});
                           hero?.querySelector('button')?.focus({preventScroll: true});
@@ -3858,13 +3908,13 @@ def _legacy_create_ui():
                             with gr.Row(elem_classes=["compact-row"]):
                                 delete_voice_checkbox = gr.Checkbox(
                                     label="Delete voice recording after creation",
-                                    value=True,
+                                    value=config_manager.get("delete_voice", False),
                                     info="Saves storage space"
                                 )
 
                                 trim_silence_checkbox = gr.Checkbox(
                                     label="Trim silence from voice recording",
-                                    value=True,
+                                    value=config_manager.get("trim_silence", False),
                                     info="Removes silence from start and end"
                                 )
 
