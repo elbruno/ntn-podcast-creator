@@ -17,7 +17,7 @@ from features.lufs_normalizer import LUFSNormalizer, normalize_audio_lufs
 
 STATS = {
     "input_i": "-23.45",
-    "input_tp": "-4.32",
+    "input_tp": "-14.32",
     "input_lra": "3.21",
     "input_thresh": "-33.54",
     "target_offset": "0.12",
@@ -250,6 +250,52 @@ class TestLUFSNormalizer(unittest.TestCase):
 
 @unittest.skipUnless(shutil.which("ffmpeg"), "FFmpeg is required for integration tests")
 class TestRealFFmpeg(unittest.TestCase):
+    def test_loud_intro_does_not_make_voice_ramp_up(self):
+        from pydub import AudioSegment
+        from pydub.generators import Sine
+
+        with tempfile.TemporaryDirectory() as directory:
+            source = str(Path(directory) / "intro_voice.wav")
+            output = str(Path(directory) / "normalized.wav")
+            intro = Sine(880).to_audio_segment(duration=15000).apply_gain(-6)
+            voice = Sine(440).to_audio_segment(duration=60000).apply_gain(-28)
+            with (intro + voice).export(source, format="wav"):
+                pass
+            logs = []
+            normalizer = LUFSNormalizer()
+            self.assertEqual(normalizer.normalize_lufs(
+                source, output, log_callback=logs.append), output)
+            result = AudioSegment.from_file(output)
+            opening = result[15000:15500].dBFS
+            settled = result[25000:25500].dBFS
+            self.assertAlmostEqual(opening, settled, delta=0.2)
+            self.assertTrue(any("linear mode" in line for line in logs), logs)
+
+    def test_peak_limited_normalization_preserves_onset_and_reports_limit(self):
+        from pydub import AudioSegment
+        from pydub.generators import Sine
+
+        with tempfile.TemporaryDirectory() as directory:
+            source = str(Path(directory) / "transient.wav")
+            output = str(Path(directory) / "normalized.wav")
+            voice = Sine(440).to_audio_segment(duration=10000).apply_gain(-30)
+            transient = Sine(880).to_audio_segment(duration=10).apply_gain(-1)
+            with voice.overlay(transient, position=5000).export(source, format="wav"):
+                pass
+            logs = []
+            normalizer = LUFSNormalizer()
+            original = normalizer._get_loudness_stats(source, log_callback=logs.append)
+            self.assertEqual(normalizer.normalize_lufs(
+                source, output, log_callback=logs.append), output)
+            result = AudioSegment.from_file(output)
+            self.assertAlmostEqual(result[:500].dBFS, result[8000:8500].dBFS, delta=0.2)
+            self.assertLessEqual(result.max_dBFS, -1.4)
+            self.assertTrue(any("constant gain" in line for line in logs), logs)
+            measured = normalizer._get_loudness_stats(output, log_callback=logs.append)
+            self.assertGreater(float(measured["input_i"]), float(original["input_i"]) + 10)
+            self.assertLessEqual(float(measured["input_tp"]), -1.4)
+            self.assertTrue(any("below the LUFS target" in line for line in logs))
+
     def test_normal_wav_uses_actual_measured_two_pass(self):
         with tempfile.TemporaryDirectory() as directory:
             source = str(Path(directory) / "normal.wav")

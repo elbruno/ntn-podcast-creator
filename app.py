@@ -2012,7 +2012,8 @@ def _render_episode(
                 quality_gate_enabled=quality_enabled,
                 quality_config=quality_config,
                 music_seed=music_seed,
-                quality_report_callback=capture_quality_report
+                quality_report_callback=capture_quality_report,
+                level_quiet_opening=snapshot["level_quiet_opening"]
             )
             result_container['result'] = (
                 result_path, denoised_path, transcript_path)
@@ -2222,7 +2223,8 @@ def create_podcast_handler(voice_file, output_name, delete_voice, trim_silence, 
             denoise_method=denoise_method,
             normalize_lufs=normalize_lufs,
             target_lufs=target_lufs,
-            log_callback=log_message
+            log_callback=log_message,
+            level_quiet_opening=config_manager.get("level_quiet_opening", False)
         )
 
         # Delete voice recording if requested
@@ -2751,6 +2753,7 @@ SETTINGS_FIELDS = (
     "voice_enhancement_preset", "normalize_lufs", "target_lufs", "auto_balance_levels",
     "min_voice_music_separation_db", "auto_ducking", "generate_transcript", "whisper_model",
     "quality_gate_enabled", "audio_quality", "music_seed",
+    "level_quiet_opening",
 )
 
 
@@ -2891,7 +2894,7 @@ def episode_upload_details(voice):
     rows = build_voice_order_rows(files)
     listing = ''.join(
         f'<li>{html.escape(os.path.basename(path))} · {get_audio_duration(path)}</li>' for path in files)
-    return (rows, [row[:2] for row in rows], [[row[1], row[2]] for row in rows],
+    return (rows, [row[:2] for row in rows], episode_background_control(rows),
             f'<ul class="recording-list">{listing}</ul>' if files else "",
             episode_marker("multiple" if len(files) > 1 else "single" if files else "empty"))
 
@@ -2907,15 +2910,21 @@ def stage_episode_order(table, rows, voice):
             0) if available else should_enable_background_for_filename(name)])
     normalized = normalize_voice_order_table(
         merged, voice, apply_move_action=False)
-    return normalized, [row[:2] for row in normalized], [[row[1], row[2]] for row in normalized]
+    return normalized, [row[:2] for row in normalized], episode_background_control(normalized)
 
 
-def stage_episode_background(table, rows):
+def episode_background_control(rows):
+    return gr.CheckboxGroup(
+        choices=[(row[1], index) for index, row in enumerate(rows)],
+        value=[index for index, row in enumerate(rows) if row[2]],
+        interactive=True)
+
+
+def stage_episode_background(selected, rows):
     updated = deepcopy(rows or [])
+    enabled = set(selected or [])
     for index, row in enumerate(updated):
-        if table and index < len(table):
-            row[2] = parse_background_enabled_value(
-                table[index][1], default=row[2])
+        row[2] = index in enabled
     return updated
 
 
@@ -3218,7 +3227,7 @@ body {
     --block-background-fill: rgba(15, 20, 31, .78);
     --block-border-color: var(--studio-border);
 }
-.gradio-container input,
+.gradio-container input:not([type="checkbox"]):not([type="radio"]),
 .gradio-container textarea {
     color: var(--studio-text) !important;
 }
@@ -3472,11 +3481,18 @@ body {
 .gradio-container h2,
 .gradio-container h3,
 .gradio-container h4 {text-shadow: none;}
-.gradio-container input,
+.gradio-container input:not([type="checkbox"]):not([type="radio"]),
 .gradio-container textarea {
     border-color: #111111 !important;
     color: #111111 !important;
     background: #ffffff !important;
+}
+.gradio-container input[type="checkbox"] {
+    appearance: auto !important;
+    accent-color: #315efb;
+    width: 1.1rem;
+    height: 1.1rem;
+    cursor: pointer;
 }
 .gradio-container button:not(.episode-primary) {
     border: 2px solid #111111 !important;
@@ -3621,8 +3637,10 @@ def create_ui():
                                 change = gr.Button(
                                     "Change settings", size="sm", min_width=130)
                             with gr.Accordion("Episode options", open=False, elem_id="episode-options"):
-                                background = gr.Dataframe(headers=["Recording", "Background music"], datatype=["str", "bool"],
-                                                          value=[], type="array", interactive=True, static_columns=[0], label="Per-recording background")
+                                background = gr.CheckboxGroup(
+                                    choices=[], value=[], interactive=True,
+                                    label="Per-recording background",
+                                    info="Select the recordings that should have background music.")
                                 background_music_enabled = gr.Checkbox(
                                     label="Add background music", value=False,
                                     info="Off by default. Enable for recordings selected above; the saved music level defaults to 2.5%.")
@@ -3718,6 +3736,7 @@ def create_ui():
                     "generate_transcript": "Generate transcript with Whisper AI", "whisper_model": "Whisper Model",
                     "quality_gate_enabled": "Final Audio Quality Gate", "audio_quality": "Audio quality thresholds (JSON)",
                     "music_seed": "Music seed",
+                    "level_quiet_opening": "Make quiet opening words audible",
                 }
                 enums = {"denoise_method": ["audio_denoiser", "spectral", "rnnoise"],
                          "voice_enhancement_preset": ["podcast", "light", "aggressive"],
@@ -3806,7 +3825,7 @@ def create_ui():
 
                 for title, keys in (
                     ("Voice processing", ("trim_silence", "denoise_audio", "enhance_voice",
-                                          "auto_balance_levels", "auto_ducking")),
+                                          "auto_balance_levels", "auto_ducking", "level_quiet_opening")),
                     ("Output & quality", ("normalize_lufs", "target_lufs", "quality_gate_enabled",
                                           "generate_transcript", "delete_voice")),
                     ("Naming & RSS", ("prioritize_recording_filename", "rss_feed_url")),
@@ -4056,7 +4075,7 @@ def create_ui():
                         interactive=False), gr.File(interactive=False),
                     gr.Button(interactive=False), gr.Dataframe(
                         interactive=False),
-                    gr.Dataframe(interactive=False), gr.File(interactive=False),
+                    gr.CheckboxGroup(interactive=False), gr.File(interactive=False),
                     gr.Checkbox(interactive=False), gr.Textbox(interactive=False))
 
         guard_outputs = [create, another, voice, edit_name,
@@ -4088,7 +4107,7 @@ def create_ui():
         def release_episode():
             return (False, gr.Button(interactive=True), gr.Button(interactive=True), gr.File(interactive=True),
                     gr.Button(interactive=True), gr.Dataframe(
-                        interactive=True), gr.Dataframe(interactive=True),
+                        interactive=True), gr.CheckboxGroup(interactive=True),
                     gr.File(interactive=True), gr.Checkbox(interactive=True), gr.Textbox(interactive=True))
 
         finished.then(release_episode, [], [busy] + guard_outputs)

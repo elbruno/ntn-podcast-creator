@@ -333,10 +333,11 @@ class TestFinalQualityPipeline(PipelineCase):
     def test_optional_trailing_api_and_nonempty_return_triple_are_preserved(self):
         parameters = list(inspect.signature(
             AudioProcessor.create_podcast).parameters.values())
-        self.assertEqual([param.name for param in parameters[-5:]],
-                         ["log_callback", "quality_gate_enabled", "quality_config", "music_seed", "quality_report_callback"])
+        self.assertEqual([param.name for param in parameters[-6:]],
+                         ["log_callback", "quality_gate_enabled", "quality_config", "music_seed",
+                          "quality_report_callback", "level_quiet_opening"])
         self.assertEqual(
-            [param.default for param in parameters[-4:]], [False, None, 0, None])
+            [param.default for param in parameters[-5:]], [False, None, 0, None, False])
         self.assertTrue(all(
             param.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD for param in parameters))
         denoised = self.write(tone(3000, -20), "denoised.wav")
@@ -460,6 +461,37 @@ class TestMixStems(PipelineCase):
         self.assertEqual(music.raw_data, expected.raw_data)
         self.assertLess(music[-50:].dBFS, music[:50].dBFS - 15)
         self.assertEqual(self.sidecar()["metadata"]["outro_offset_ms"], 3000)
+
+    def test_intro_overlap_has_no_added_fades_and_preserves_first_voice_samples(self):
+        voice = tone(3000, -24)
+        intro = tone(2000, -12, frequency=220)
+        actual_voice, music, offset = self.capture_render(
+            voice_file=self.write(voice, "unchanged.wav"),
+            intro_file=self.write(intro, "intro.wav"), intro_voice_overlap=True)
+        self.assertEqual(offset, 1)
+        self.assertEqual(actual_voice.raw_data, voice.raw_data)
+        self.assertEqual(music[:1000].raw_data, intro[1000:].raw_data)
+        self.assertAlmostEqual(music[950:1000].dBFS, music[:50].dBFS, delta=0.1)
+
+    def test_opening_word_correction_is_opt_in_and_keeps_timeline(self):
+        voice = silence(1000) + tone(500, -50) + tone(7000, -23)
+        path = self.write(voice, "quiet_opening.wav")
+        original, _, _ = self.capture_render(voice_file=path)
+        self.assertEqual(original.raw_data, voice.raw_data)
+        corrected, _, offset = self.capture_render(
+            voice_file=path, level_quiet_opening=True,
+            intro_file=self.write(tone(2000, -20), "intro.wav"), intro_voice_overlap=False)
+        self.assertEqual(offset, 2)
+        self.assertGreater(corrected[1000:1250].dBFS, voice[1000:1250].dBFS + 20)
+        self.assertEqual(corrected[5000:].raw_data, voice[5000:].raw_data)
+        self.assertEqual(len(corrected), len(voice))
+
+    def test_opening_word_correction_failure_logs_fallback_and_exports(self):
+        with patch.object(pipeline, "level_voice_onset", side_effect=OSError("ffmpeg unavailable")):
+            actual, _, _ = self.capture_render(level_quiet_opening=True)
+        self.assertEqual(actual.raw_data, tone(3000).raw_data)
+        self.assertTrue(any("Opening-word correction failed" in message for message in self.logs))
+        self.assertTrue((self.root / "episode.mp3").is_file())
 
     def test_outro_without_intro_keeps_actual_last_second_of_voice(self):
         voice = tone(1000, -25, frequency=440) + tone(1000, -25, frequency=880)

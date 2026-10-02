@@ -101,7 +101,7 @@ def test_settings_accordion_membership_and_form_order(ui, screen):
         "Podcast sound": ("intro_file", "outro_file", "background_tracks", "background_volume",
                           "intro_voice_overlap", "voice_outro_overlap"),
         "Voice processing": ("trim_silence", "denoise_audio", "enhance_voice",
-                             "auto_balance_levels", "auto_ducking"),
+                             "auto_balance_levels", "auto_ducking", "level_quiet_opening"),
         "Output & quality": ("normalize_lufs", "target_lufs", "quality_gate_enabled",
                              "generate_transcript", "delete_voice"),
         "Naming & RSS": ("prioritize_recording_filename", "rss_feed_url"),
@@ -130,6 +130,7 @@ def test_settings_accordion_membership_and_form_order(ui, screen):
         "Auto-balance voice & music levels (Recommended)", "Minimum voice/music separation (dB)",
         "Auto-ducking", "Generate transcript with Whisper AI", "Whisper Model",
         "Final Audio Quality Gate", "Audio quality thresholds (JSON)", "Music seed",
+        "Make quiet opening words audible",
     ]
 
 
@@ -257,7 +258,7 @@ def test_upload_single_multiple_order_and_background_drafts(ui, monkeypatch):
     assert 'data-state="single"' in first[-1]
     assert "a.wav · 01:23" in first[-2]
     assert first[0] == [[1, "a.wav", False]]
-    enabled = ui.stage_episode_background([["a.wav", True]], first[0])
+    enabled = ui.stage_episode_background([0], first[0])
     assert enabled == [[1, "a.wav", True]] and first[0][0][2] is False
     rows, *_ = ui.episode_upload_details(["a.wav", "Recording.m4a"])
     assert rows[0][1] == "Recording.m4a"
@@ -265,10 +266,25 @@ def test_upload_single_multiple_order_and_background_drafts(ui, monkeypatch):
         [[2, "Recording.m4a"], [1, "a.wav"]], rows, ["a.wav", "Recording.m4a"])
     assert reordered == [[1, "a.wav", False], [2, "Recording.m4a", True]]
     assert table == [[1, "a.wav"], [2, "Recording.m4a"]]
-    assert background == [["a.wav", False], ["Recording.m4a", True]]
+    assert background.choices == [("a.wav", 0), ("Recording.m4a", 1)]
+    assert background.value == [1]
     assert 'data-state="multiple"' in ui.episode_upload_details(
         ["a.wav", "b.wav"])[-1]
     assert 'data-state="empty"' in ui.episode_upload_details(None)[-1]
+
+def test_background_checkboxes_use_row_identity_and_can_clear_all(ui, screen):
+    component = next(c for c in screen.config["components"]
+                     if c["props"].get("label") == "Per-recording background")
+    assert component["type"] == "checkboxgroup"
+    assert component["props"]["interactive"] is True
+    rows = [[1, "Recording.wav", True], [2, "Recording.wav", False]]
+    control = ui.episode_background_control(rows)
+    assert control.choices == [("Recording.wav", 0), ("Recording.wav", 1)]
+    assert ui.stage_episode_background([1], rows) == [
+        [1, "Recording.wav", False], [2, "Recording.wav", True]]
+    assert ui.stage_episode_background([], rows) == [
+        [1, "Recording.wav", False], [2, "Recording.wav", False]]
+    assert rows[0][2] is True
 
 
 def capture_render(ui, monkeypatch):
@@ -296,6 +312,7 @@ def test_saved_wrapper_ignores_drafts_and_freezes_every_setting(ui, monkeypatch)
              "delete_voice": False, "trim_silence": False, "auto_balance_levels": False,
              "auto_ducking": False, "normalize_lufs": True, "enhance_voice": True,
              "voice_enhancement_preset": "light", "whisper_model": "small"}
+    saved["level_quiet_opening"] = True
     ui.config_manager.update_settings(saved)
     draft = list(ui.settings_form_values())
     draft[ui.SETTINGS_FIELDS.index("target_lufs")] = -20
@@ -308,7 +325,8 @@ def test_saved_wrapper_ignores_drafts_and_freezes_every_setting(ui, monkeypatch)
     changed = dict(saved, intro_file="new.wav", outro_file=None, background_tracks=[], track_volumes={},
                    background_volume=1, music_seed=99, min_voice_music_separation_db=30,
                    quality_gate_enabled=False, audio_quality={"window_ms": 1000}, target_lufs=-20,
-                   delete_voice=True, trim_silence=True, auto_balance_levels=True, auto_ducking=True)
+                   delete_voice=True, trim_silence=True, auto_balance_levels=True, auto_ducking=True,
+                   level_quiet_opening=False)
     ui.config_manager.update_settings(changed)
     results.extend(generator)
     assert all(len(row) == 7 for row in results)
@@ -321,6 +339,7 @@ def test_saved_wrapper_ignores_drafts_and_freezes_every_setting(ui, monkeypatch)
         "auto_balance_levels": "auto_balance_levels", "auto_ducking": "auto_ducking",
         "enhance_voice_enabled": "enhance_voice", "voice_enhancement_preset": "voice_enhancement_preset",
         "whisper_model": "whisper_model", "quality_gate_enabled": "quality_gate_enabled",
+        "level_quiet_opening": "level_quiet_opening",
     }.items():
         assert observed[processor_key] == saved[saved_key]
     assert observed["quality_config"].window_ms == 750

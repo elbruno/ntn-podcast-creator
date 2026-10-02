@@ -243,6 +243,8 @@ suggested **Episode name** and click **Edit** if necessary.
 Background music is **off by default**, including after **Create another**.
 For a music test, open **Episode options**, check **Add background music**, and
 select the recordings in **Per-recording background** that should have music.
+These are standard checkboxes: click a recording name or its box to toggle it,
+or focus it and press Space. Clearing all recordings disables music on all of them.
 Use **Background music level** to choose **2.5%**, **5%**, **7.5%**, or **10%**,
 then click **Save as default**. Changing the dropdown alone does not affect a
 render: episodes use the last saved level. Saving applies globally to future
@@ -252,6 +254,23 @@ shown in this dropdown. Per-track overrides still take precedence.
 This toggle does not disable the saved intro or outro.
 You can also upload a one-time custom intro. These are episode inputs, not saved defaults.
 The app combines recordings; it is not a waveform editor.
+
+The intro overlap adds no fades to either stem. Disable **Intro-voice overlap**
+in **Settings → Podcast sound** for a direct, non-overlapping intro-to-voice cut.
+Two-pass
+LUFS mastering preserves a constant gain rather than ramping the voice up after
+a loud intro. It preserves the source loudness range; if the LUFS target would
+exceed the true-peak limit, a warning reports constant gain with transient peak
+limiting instead of turning down the entire recording to accommodate a few peaks.
+Peak limiting can leave integrated loudness below the requested LUFS target.
+For a recording with very quiet first words, enable **Make quiet opening words
+audible** in **Settings → Voice processing**, then **Save settings**. This opt-in
+correction adaptively levels the first five seconds against the following speech,
+with up to 32 dB of gain. It preserves duration, does not fade the voice in, and
+leaves audio after five seconds unchanged. A short blend returns to the original
+level after the opening words. It may also raise noise present beneath quiet
+speech; it cannot reconstruct missing speech. Failures log a warning and retain
+the original recording. Regenerate existing episodes to apply these changes.
 
 ### 2. Check saved defaults
 

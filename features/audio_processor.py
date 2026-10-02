@@ -6,15 +6,18 @@ import math
 import tempfile
 import json
 import atexit
+import subprocess
 from dataclasses import asdict
 from typing import List, Optional, Callable, Tuple, Dict, Any, Union
 import numpy as np
 from pydub import AudioSegment
 from pydub.silence import detect_leading_silence
+from pydub.exceptions import CouldntDecodeError
 from .audio_denoiser_processor import denoise_audio_file
 from .noise_reducer import reduce_noise
 from .lufs_normalizer import normalize_audio_lufs
 from .voice_enhancer import enhance_voice
+from .voice_onset import level_voice_onset
 from .audio_quality import (
     AudioQualityAnalyzer, AudioQualityConfig, AudioQualityReport, create_preview,
 )
@@ -787,7 +790,8 @@ class AudioProcessor:
         quality_config: Optional[Union[dict, AudioQualityConfig]] = None,
         music_seed: int = 0,
         quality_report_callback: Optional[Callable[[
-            AudioQualityReport], None]] = None
+            AudioQualityReport], None]] = None,
+        level_quiet_opening: bool = False
     ) -> Tuple[str, Optional[str], Optional[str]]:
         """Create complete podcast with intro, outro, and background music.
 
@@ -819,6 +823,7 @@ class AudioProcessor:
             quality_config: Shared QC/ducking thresholds; explicit targets override target_lufs
             music_seed: Local seed for reproducible music selection
             quality_report_callback: Request-local report capture; previews retire on rerender/exit
+            level_quiet_opening: Opt-in correction of quiet first words; preserves duration
 
         Returns:
             Tuple of (path to output file, path to denoised audio or None, path to transcript or None)
@@ -916,6 +921,13 @@ class AudioProcessor:
         # Load main voice recording
         log(f"Loading main voice: {os.path.basename(voice_file_to_process)}")
         voice = self.load_audio(voice_file_to_process)
+
+        if level_quiet_opening:
+            try:
+                voice = level_voice_onset(voice, log)
+            except (OSError, subprocess.SubprocessError, ValueError, CouldntDecodeError) as error:
+                log(f"Warning: Opening-word correction failed: {error}. "
+                    "Continuing with the original recording level.")
 
         # Trim silence if requested
         if trim_silence:
@@ -1053,6 +1065,7 @@ class AudioProcessor:
         outro_offset_ms = voice_offset_ms + len(voice) - outro_overlap
         if intro_overlap:
             log(f"Applying {intro_overlap}ms overlap between intro and voice")
+            log("No transition fades applied to intro or voice")
         if outro is not None:
             if outro_overlap:
                 log(f"Adding outro with {outro_overlap}ms overlap")

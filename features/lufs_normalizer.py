@@ -212,13 +212,35 @@ class LUFSNormalizer:
                     measured_thresh = measured["input_thresh"]
                     offset = measured["target_offset"]
 
+                    # A smaller LRA silently switches loudnorm to dynamic mode,
+                    # which ramps speech up after a louder intro. Preserve the
+                    # measured range so mastering applies one constant gain.
+                    linear_lra = max(lra, measured_lra)
+                    gain_db = target_lufs - measured_i
+                    if (target_lufs - measured_i > true_peak - measured_tp
+                            or linear_lra > 50):
+                        reason = ("LUFS target exceeds true-peak headroom"
+                                  if target_lufs - measured_i > true_peak - measured_tp
+                                  else "Measured loudness range exceeds loudnorm's linear range")
+                        log(f"Warning: {reason}. Using constant gain with transient "
+                            "peak limiting to preserve the voice onset. Limiting "
+                            "may leave integrated loudness below the LUFS target.")
+                        peak_limit = 10 ** (true_peak / 20)
+                        normalization_filter = (
+                            f"aresample=192000,volume={gain_db}dB,"
+                            f"alimiter=limit={peak_limit}:level=false:latency=true,"
+                            "aresample=44100")
+                    else:
+                        normalization_filter = (
+                            f"loudnorm=I={target_lufs}:TP={true_peak}:LRA={linear_lra}:"
+                            f"measured_I={measured_i}:measured_TP={measured_tp}:"
+                            f"measured_LRA={measured_lra}:measured_thresh={measured_thresh}:"
+                            f"offset={offset}:linear=true:print_format=summary")
+
                     cmd = [
                         "ffmpeg",
                         "-i", input_file,
-                        "-af", f"loudnorm=I={target_lufs}:TP={true_peak}:LRA={lra}:"
-                        f"measured_I={measured_i}:measured_TP={measured_tp}:"
-                        f"measured_LRA={measured_lra}:measured_thresh={measured_thresh}:"
-                        f"offset={offset}:linear=true:print_format=summary",
+                        "-af", normalization_filter,
                         "-ar", "44100",
                         "-y",
                         output_file
@@ -248,11 +270,11 @@ class LUFSNormalizer:
 
             if result.returncode == 0 and os.path.exists(output_file):
                 output_size_mb = os.path.getsize(output_file) / (1024 * 1024)
-                # Two passes do not guarantee linear processing: FFmpeg may use
-                # dynamic mode when the LRA or true-peak constraints require it.
                 modes = re.findall(
                     r"Normalization Type:\s*(linear|dynamic)\b", result.stderr, re.IGNORECASE)
                 mode = f"FFmpeg {modes[-1].lower()} mode" if modes else "FFmpeg mode not reported"
+                if two_pass and ",alimiter=" in normalization_filter:
+                    mode = "constant gain (transient peak limiting)"
                 passes = "two-pass (measured)" if two_pass else "single-pass"
                 log(f"✓ LUFS normalization complete: {passes}, {mode}: "
                     f"{os.path.basename(output_file)} ({output_size_mb:.1f}MB)")

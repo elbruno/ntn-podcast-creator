@@ -31,7 +31,7 @@ def test_missing_file_defaults_do_not_write(tmp_path):
     manager = ConfigManager(str(path))
     snapshot = manager.snapshot()
     assert snapshot == manager._default_config()
-    for key in ("delete_voice", "trim_silence", "denoise_audio", "enhance_voice"):
+    for key in ("delete_voice", "trim_silence", "denoise_audio", "enhance_voice", "level_quiet_opening"):
         assert snapshot[key] is False
         assert manager.get_template_settings()[key] is False
     assert manager.get_denoise_audio() is False
@@ -40,6 +40,22 @@ def test_missing_file_defaults_do_not_write(tmp_path):
     assert manager.get_template_settings()["background_volume"] == 2.5
     assert snapshot["audio_quality"] == asdict(AudioQualityConfig())
     assert not path.exists()
+
+def test_opening_word_correction_persists_and_round_trips_templates(manager):
+    manager.update_settings({"level_quiet_opening": True, "intro_voice_overlap": False})
+    saved = ConfigManager(manager.config_file)
+    assert saved.snapshot()["level_quiet_opening"] is True
+    assert saved.snapshot()["intro_voice_overlap"] is False
+    template = saved.get_template_settings()
+    assert template["level_quiet_opening"] is True
+    saved.apply_template_settings({"level_quiet_opening": False})
+    assert saved.get("level_quiet_opening") is False
+    saved.apply_template_settings(template)
+    assert saved.get("level_quiet_opening") is True
+    before = saved.snapshot()
+    with pytest.raises(ValueError, match="level_quiet_opening must be boolean"):
+        saved.apply_template_settings({"level_quiet_opening": "true"})
+    assert saved.snapshot() == before
 
 
 def test_foreign_audio_separators_are_normalized_without_read_time_write(

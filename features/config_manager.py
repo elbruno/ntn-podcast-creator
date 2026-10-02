@@ -66,6 +66,7 @@ class ConfigManager:
             "prioritize_recording_filename": True,
             "delete_voice": False,
             "trim_silence": False,
+            "level_quiet_opening": False,
             # Audio denoising feature (disabled by default)
             "denoise_audio": False,
             "denoise_method": "audio_denoiser",  # audio_denoiser, spectral, rnnoise
@@ -743,6 +744,7 @@ class ConfigManager:
             "track_volumes": self.get_all_track_volumes(),
             "delete_voice": self.get("delete_voice", False),
             "trim_silence": self.get("trim_silence", False),
+            "level_quiet_opening": self.get("level_quiet_opening", False),
             "denoise_audio": self.get_denoise_audio(),
             "denoise_method": self.get_denoise_method(),
             "enhance_voice": self.get("enhance_voice", False),
@@ -782,7 +784,7 @@ class ConfigManager:
             raise ValueError("music_seed must be an integer")
         if "quality_gate_enabled" in settings and not isinstance(settings["quality_gate_enabled"], bool):
             raise ValueError("quality_gate_enabled must be boolean")
-        for key in ("delete_voice", "trim_silence"):
+        for key in ("delete_voice", "trim_silence", "level_quiet_opening"):
             if key in settings and not isinstance(settings[key], bool):
                 raise ValueError(f"{key} must be boolean")
 
@@ -816,7 +818,7 @@ class ConfigManager:
             self.set("track_volumes", settings["track_volumes"])
 
         # Processing options
-        for key in ("delete_voice", "trim_silence"):
+        for key in ("delete_voice", "trim_silence", "level_quiet_opening"):
             if key in settings:
                 self.set(key, settings[key])
 
