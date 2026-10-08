@@ -32,6 +32,16 @@ docker-compose up -d
 
 Open your browser to **http://localhost:7860** and you're ready!
 
+Already saved your settings? Generate from a terminal without opening the portal:
+
+```powershell
+.\scripts\ntn-create.ps1 "C:\Recordings\S recording 3.m4a"
+```
+
+Requires PowerShell 7 and an updated, running container. Saved background music is
+included; transcription is off unless you pass `-Transcribe`.
+See the [command-line Docker workflow](docs/DOCKER.md#command-line-episode-creation).
+
 ### Option 2: Local Installation
 
 1. **Install Requirements**:
@@ -265,4 +275,3 @@ A: Yes! Open **Settings → Audio library — actions apply immediately**, add a
 
 **Q: Do I need a powerful computer?**
 A: Not really. AI Denoiser works faster with a GPU but runs fine on CPU. Processing a 20-minute podcast takes about 5-15 minutes on most computers.
-

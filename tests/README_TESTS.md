@@ -4,6 +4,19 @@ This directory contains UI tests for the NTN Podcast Creator application.
 
 ## Running the Tests
 
+### Command-line Episode Workflow
+
+```bash
+python -m pytest tests/test_episode_cli.py -q
+```
+
+Tests cover saved-settings parity, CLI background/transcription defaults, original
+recording preservation, RSS naming, collisions, failure cleanup, and real Gradio
+upload/SSE/download requests. Tests use short synthetic audio and mock processing.
+If PowerShell 7 is available, the actual client is also exercised; otherwise that
+test is skipped. Set `NTN_PWSH` to an explicit `pwsh` executable to include it.
+No running Docker container, network RSS feed, or model download is required.
+
 ### Core Functionality Tests (Quick - ~60 seconds)
 ```bash
 python tests/test_ui_core.py

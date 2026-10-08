@@ -24,6 +24,8 @@ from features.config_manager import ConfigManager, DEFAULT_RSS_FEED_URL
 from features.audio_denoiser_processor import denoise_audio_file
 from features.template_manager import TemplateManager
 from features.audio_quality import AudioQualityConfig, AudioQualityReport
+from features.episode_service import render_audio, render_lock, persist_quality_report
+from features.episode_naming import extract_ntn_number as _extract_ntn_number
 
 
 # Initialize components
@@ -1036,34 +1038,7 @@ def save_render_quality_report(output_path, enabled, report, started_ns):
     The producer's matching metadata survives; metrics never come from disk.
     Disabled renders get only a receipt, never a copy of previous QC findings.
     """
-    output_path = os.path.realpath(output_path)
-    if report is not None and os.path.realpath(report.file_path or "") != output_path:
-        raise ValueError("Quality report belongs to a different audio file")
-    identity = _quality_file_identity(output_path)
-    metadata = None
-    try:
-        producer = _read_quality_sidecar(output_path)
-        if producer["identity"] == identity:
-            metadata = producer.get("metadata")
-    except FileNotFoundError:
-        pass
-    except (OSError, ValueError, TypeError) as error:
-        log_message(f"Producer quality metadata unavailable: {error}")
-    preview = report.preview_file if enabled and report is not None else None
-    preview_identity = _register_quality_preview(preview, output_path)
-    data = report.to_dict() if enabled and report is not None else {}
-    if enabled and metadata is not None:
-        data["metadata"] = metadata
-    data.update({
-        "schema": "ntn-quality-v1", "output_path": output_path,
-        "identity": identity, "preview_identity": preview_identity,
-        "ui": {"identity": identity, "started_ns": started_ns,
-               "enabled": bool(enabled), "preview_identity": preview_identity,
-               "override": False},
-    })
-    if _quality_file_identity(output_path) != identity:
-        raise ValueError("Audio changed while saving the quality receipt")
-    _write_quality_sidecar(output_path + ".quality.json", data)
+    persist_quality_report(output_path, enabled, report, started_ns, log_message)
 
 
 def _load_render_quality_report(output_path, started_ns=0):
@@ -1980,41 +1955,31 @@ def _render_episode(
 
     def run_process():
         try:
-            result_path, denoised_path, transcript_path = audio_processor.create_podcast(
-                voice_file=voice_path,
-                intro_file=intro_path,
-                outro_file=outro_path,
-                background_files=background_tracks if (
-                    background_music_enabled and background_tracks and (
-                        any(voice_background_flags))
-                ) else None,
-                background_segments=selective_background_segments,
-                background_volume=volume,
-                track_volumes=track_volumes if track_volumes else None,
-                output_file=output_path,
-                trim_silence=trim_silence,
-                denoise_audio=denoise_audio,
-                denoise_method=denoise_method,
-                enhance_voice_enabled=enhance_voice,
+            render_settings = dict(
+                snapshot, intro_file=intro_path, outro_file=outro_path,
+                background_tracks=background_tracks, background_volume=volume,
+                track_volumes=track_volumes, trim_silence=trim_silence,
+                denoise_audio=denoise_audio, denoise_method=denoise_method,
+                enhance_voice=enhance_voice,
                 voice_enhancement_preset=voice_enhancement_preset,
-                normalize_lufs=normalize_lufs,
-                target_lufs=target_lufs,
+                normalize_lufs=normalize_lufs, target_lufs=target_lufs,
                 intro_voice_overlap=intro_voice_overlap,
                 voice_outro_overlap=voice_outro_overlap,
-                auto_balance_levels=auto_balance_levels,
-                min_voice_music_separation_db=snapshot.get(
-                    "min_voice_music_separation_db", 18.0),
-                auto_ducking=auto_ducking,
-                generate_transcript=generate_transcript,
-                whisper_model=whisper_model,
-                defer_transcription=True,
-                log_callback=threaded_log_callback,
-                quality_gate_enabled=quality_enabled,
-                quality_config=quality_config,
+                auto_balance_levels=auto_balance_levels, auto_ducking=auto_ducking,
+                generate_transcript=generate_transcript, whisper_model=whisper_model,
+                quality_gate_enabled=quality_enabled, quality_config=quality_config,
                 music_seed=music_seed,
-                quality_report_callback=capture_quality_report,
-                level_quiet_opening=snapshot["level_quiet_opening"]
             )
+            with render_lock():
+                result_path, denoised_path, transcript_path = render_audio(
+                    audio_processor, render_settings, voice_file=voice_path,
+                    output_file=output_path,
+                    background_enabled=bool(background_music_enabled and
+                                            background_tracks and any(voice_background_flags)),
+                    background_segments=selective_background_segments,
+                    log_callback=threaded_log_callback,
+                    quality_report_callback=capture_quality_report,
+                )
             result_container['result'] = (
                 result_path, denoised_path, transcript_path)
         except Exception as e:
@@ -2123,11 +2088,12 @@ def _render_episode(
             progress(0.95, "📝 Transcribing (background)...")
 
             def run_background_transcription():
-                transcript_path_local = audio_processor.transcribe_podcast(
-                    audio_file=result_path,
-                    whisper_model=whisper_model,
-                    log_callback=log_message
-                )
+                with render_lock():
+                    transcript_path_local = audio_processor.transcribe_podcast(
+                        audio_file=result_path,
+                        whisper_model=whisper_model,
+                        log_callback=log_message
+                    )
 
                 if transcript_path_local and os.path.exists(transcript_path_local):
                     log_message(
@@ -2566,16 +2532,7 @@ def get_template_choices() -> List[str]:
 def extract_ntn_number(title: Optional[str]) -> Optional[int]:
     """Extract NTN episode number from a title string."""
 
-    if not title:
-        return None
-
-    match = re.search(r"ntn\s*(\d+)", title, re.IGNORECASE)
-    if match:
-        try:
-            return int(match.group(1))
-        except ValueError:
-            return None
-    return None
+    return _extract_ntn_number(title)
 
 
 def fetch_rss_episode_info(feed_url: Optional[str], force_refresh: bool = False) -> Tuple[Optional[str], Optional[str], Optional[str]]:
@@ -4154,6 +4111,8 @@ def create_ui():
 
         refresh_transcript.click(find_transcript, [exported], [
                                  transcript_download, transcript_state])
+        from features.episode_api import register_episode_api
+        register_episode_api(config_manager, audio_processor)
     app.queue(default_concurrency_limit=1)
     return app
 

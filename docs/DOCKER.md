@@ -14,17 +14,18 @@ Once the image is published to Docker Hub, you can run it directly without cloni
 
 ```bash
 # Create directories for your audio files
-mkdir -p audios/intro_audio audios/outro_audio audios/background_music outputs uploads
+mkdir -p audios/intro_audio audios/outro_audio audios/background_music outputs uploads core
 
 # Run the container
 docker run -d \
   --name ntn-podcast-creator \
-  -p 7860:7860 \
+  -p 127.0.0.1:7860:7860 \
   -v $(pwd)/audios/intro_audio:/app/audios/intro_audio \
   -v $(pwd)/audios/outro_audio:/app/audios/outro_audio \
   -v $(pwd)/audios/background_music:/app/audios/background_music \
   -v $(pwd)/outputs:/app/outputs \
   -v $(pwd)/uploads:/app/uploads \
+  -v $(pwd)/core:/app/core \
   elbruno/ntn-podcast-creator:latest
 
 # View logs
@@ -72,12 +73,13 @@ docker build -t ntn-podcast-creator .
 # Run the container
 docker run -d \
   --name ntn-podcast-creator \
-  -p 7860:7860 \
+  -p 127.0.0.1:7860:7860 \
   -v $(pwd)/audios/intro_audio:/app/audios/intro_audio \
   -v $(pwd)/audios/outro_audio:/app/audios/outro_audio \
   -v $(pwd)/audios/background_music:/app/audios/background_music \
   -v $(pwd)/outputs:/app/outputs \
   -v $(pwd)/uploads:/app/uploads \
+  -v $(pwd)/core:/app/core \
   ntn-podcast-creator
 
 # View logs
@@ -102,7 +104,24 @@ The Docker setup uses volume mounts to persist your data:
 | `./outputs` | Generated podcast files |
 | `./uploads` | Uploaded voice recordings |
 
-**Note**: Settings (config.json) are stored inside the container and will persist as long as the container exists. To preserve settings across container deletions, you can optionally mount config.json, but ensure the file exists first: `touch config.json` before starting the container.
+**Settings**: Compose now mounts `./core` at `/app/core` to persist settings and
+templates across container recreation. Mount the directory, not just `config.json`:
+settings saves use atomic file replacement. For standalone `docker run`, add
+`-v <absolute-host-core-directory>:/app/core`.
+
+**Existing containers**: Before enabling the new mount or rebuilding, back up the
+running container's settings. A bind mount hides the image/container's old files.
+From the repository root, copy to a new backup directory:
+
+```powershell
+docker cp ntn-podcast-creator:/app/core ./core-backup
+```
+
+Compare the backup with your host `core` directory, then copy the desired
+`config.json` and `templates` into host `core` before recreating the container.
+Do not replace saved settings with the repository's sample configuration.
+Use paths under `/app/audios/...` or relative `audios/...` for saved audio; Windows
+host paths are not readable inside a Linux container.
 
 All these files and directories remain on your host machine, so your data persists even if you stop or remove the container.
 
@@ -122,6 +141,101 @@ To have audio files automatically available when starting the container:
 ## Accessing Your Podcasts
 
 Generated podcasts are saved in the `./outputs` directory on your host machine. You can access them directly even while the container is running.
+
+## Command-line Episode Creation
+
+Once you have saved the desired settings in the portal, a recording can be
+processed without opening a browser. The container must already be running and
+must include the new `create_episode` API. Requires **PowerShell 7+** (`pwsh`),
+not Windows PowerShell 5.1. No host Python installation or recording-folder mount
+is needed; the client uploads the file over HTTP.
+
+After backing up/migrating settings as described above, rebuild from the repository root:
+
+```powershell
+docker compose -f deployment/docker-compose.yml up -d --build
+.\scripts\ntn-create.ps1 "C:\Recordings\S recording 3.m4a"
+```
+
+The command uses the next episode number from the configured RSS feed, skips
+existing episode names, shows processing logs, and downloads the MP3 to the
+current directory. The container also retains its output in `/app/outputs`
+(the host `outputs` directory with Compose).
+
+```powershell
+# Choose a name, e.g. when RSS is unavailable
+.\scripts\ntn-create.ps1 "C:\Recordings\S recording 3.m4a" -Name ntn568
+
+# Disable background music for this episode
+.\scripts\ntn-create.ps1 "C:\Recordings\S recording 3.m4a" -NoBackground
+
+# Explicitly enable transcription and wait for it
+.\scripts\ntn-create.ps1 "C:\Recordings\S recording 3.m4a" -Transcribe
+
+# Download to another folder or connect to another local port
+.\scripts\ntn-create.ps1 "C:\Recordings\S recording 3.m4a" `
+  -OutputDirectory "C:\Podcasts\Finished" -ServerUrl "http://localhost:7860"
+
+# Optional session alias for a shorter command
+Set-Alias ntn-create "$PWD/scripts/ntn-create.ps1"
+ntn-create "C:\Recordings\S recording 3.m4a"
+```
+
+### CLI defaults and safety
+
+- Uses a snapshot of **saved** intro, outro, tracks, track volumes, voice processing,
+  normalization, overlap, and quality settings. Unsaved portal edits do not apply.
+- **Background music is on by default**, regardless of the recording's filename.
+  This differs intentionally from the portal's per-recording filename rules.
+  No saved tracks means no music.
+- **Transcription is always off by default**, even if it is enabled in saved settings.
+  `-Transcribe` uses the saved Whisper model and waits for completion. Failure produces
+  a warning while preserving the exported MP3.
+- Overrides do not change saved settings. Successful export updates the last output name.
+- Downloads available transcripts, quality reports, and cleaned recordings alongside
+  the MP3. Quality findings do not block an exported MP3.
+- Original host recordings are never deleted. Server-owned temporary working copies
+  are cleaned after each job, including failed jobs.
+  Gradio's content-addressed upload cache follows the server's cache lifecycle; it
+  is not deleted by a CLI job because other queued jobs may reference the same upload.
+- Both terminal and website renders share the `episode-render` queue.
+- Automatic naming refreshes RSS and skips existing outputs; RSS failure requires
+  `-Name`. Names are extension-free stems containing letters, digits, `-`, or `_`.
+  Explicit collisions fail. Server exports and local downloads are never overwritten.
+- A failed connection after submission may leave a job running. The client never
+  retries automatically. Check container logs/outputs before submitting again.
+- Returns a nonzero exit code for critical render, upload, connection, or download
+  failures. Optional-feature warnings leave a successfully downloaded episode usable.
+
+### API contract
+
+The client uses Gradio 6.10's existing HTTP server:
+
+1. `POST /gradio_api/upload`, multipart field `files`, returns an uploaded path.
+2. `POST /gradio_api/call/create_episode`, JSON `data`:
+   `[FileData, name, background, transcribe]`. FileData contains `path` and
+   `meta: {"_type": "gradio.FileData"}`; use the path returned by upload.
+3. `GET /gradio_api/call/create_episode/{event_id}` streams SSE
+   `generating`, `complete`, `heartbeat`, or `error` events.
+
+Each result is a single JSON object in Gradio's output array, with
+`schema: "ntn-episode-v1"`, `state`, `success`, and cumulative `logs`.
+A successful terminal result includes `episode_name`, `output_path`, `warnings`,
+`qc_status`, and FileData download references `mp3`, `transcript`, `quality_report`,
+and `denoised` (optional references are null). Processing failures return
+`state: "error"`, `success: false`, and `error`. Invalid upload paths can be rejected
+by Gradio before the handler runs, producing an SSE error.
+
+### Troubleshooting and exposure
+
+- **API missing**: rebuild/update the container; older images cannot run this command.
+- **Connection refused**: confirm the container is running and port 7860 is mapped.
+- **Saved asset missing**: repair the saved intro/outro/music paths in Settings.
+- **Download exists**: use another output directory; the server episode remains available.
+- **RSS unavailable**: specify `-Name` rather than accepting an unsafe fallback.
+- This workflow is for a **trusted local instance**. Compose publishes port 7860 on
+  `127.0.0.1` only. For standalone Docker use `-p 127.0.0.1:7860:7860`.
+  This API does not add authentication; do not expose it directly to the internet.
 
 ## Updating the Application
 
