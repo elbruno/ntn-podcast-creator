@@ -145,12 +145,21 @@ Generated podcasts are saved in the `./outputs` directory on your host machine. 
 ## Command-line Episode Creation
 
 Once you have saved the desired settings in the portal, a recording can be
-processed without opening a browser. The container must already be running and
-must include the new `create_episode` API. Requires **PowerShell 7+** (`pwsh`),
+processed without opening a browser. The script starts the local Docker container
+if no server is listening at the default URL, then waits for the API. Docker
+Desktop's engine must already be running; the container must include the
+`create_episode` API. Requires **PowerShell 7+** (`pwsh`),
 not Windows PowerShell 5.1. No host Python installation or recording-folder mount
 is needed; the client uploads the file over HTTP.
 
-After backing up/migrating settings as described above, rebuild from the repository root:
+For an existing, up-to-date container, just run the script from the repository root:
+
+```powershell
+.\scripts\ntn-create.ps1 "C:\Recordings\S recording 3.m4a"
+```
+
+If the container predates the episode API, back up/migrate settings as described
+above and rebuild explicitly:
 
 ```powershell
 docker compose -f deployment/docker-compose.yml up -d --build
@@ -183,6 +192,21 @@ ntn-create "C:\Recordings\S recording 3.m4a"
 
 ### CLI defaults and safety
 
+- Automatic startup is limited to `http://localhost:7860` and
+  `http://127.0.0.1:7860` without a path prefix. A reachable server is reused.
+  Other URLs never trigger Docker startup. `-NoAutoStart` disables startup.
+- A named existing container is started without recreating or rebuilding it, so
+  its saved settings are preserved. If none exists, the repository's Compose
+  configuration is used (and may build the image on first run). The Compose file
+  is resolved relative to the script, not your current working directory.
+- Compose startup uses plain progress, disables ANSI output, and accepts startup
+  prompts with `--yes` so piped PowerShell output does not require a console
+  handle. Use a current Docker Compose plugin that supports these options.
+- Readiness waits up to 180 seconds after Docker startup. Override with
+  `-StartupTimeoutSeconds 300` for slower startup. Docker build time is separate
+  from this timeout. The container stays running after the command finishes.
+- Startup failures occur before upload/submission. Check Docker Desktop, container
+  logs, and port mappings before retrying; startup never retries a render.
 - Uses a snapshot of **saved** intro, outro, tracks, track volumes, voice processing,
   normalization, overlap, and quality settings. Unsaved portal edits do not apply.
 - **Background music is on by default**, regardless of the recording's filename.
@@ -229,7 +253,12 @@ by Gradio before the handler runs, producing an SSE error.
 ### Troubleshooting and exposure
 
 - **API missing**: rebuild/update the container; older images cannot run this command.
-- **Connection refused**: confirm the container is running and port 7860 is mapped.
+- **Connection refused**: the CLI starts the default local container automatically
+  if Docker Desktop's engine is ready. For custom URLs or `-NoAutoStart`, start the
+  server yourself and verify its port mapping. If automatic startup times out,
+  check container logs and increase `-StartupTimeoutSeconds` if needed.
+- **`failed to get console: The handle is invalid`**: update the CLI script;
+  automatic Compose startup now runs non-interactively with plain-text output.
 - **Saved asset missing**: repair the saved intro/outro/music paths in Settings.
 - **Download exists**: use another output directory; the server episode remains available.
 - **RSS unavailable**: specify `-Name` rather than accepting an unsafe fallback.

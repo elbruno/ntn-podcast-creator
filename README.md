@@ -38,7 +38,9 @@ Already saved your settings? Generate from a terminal without opening the portal
 .\scripts\ntn-create.ps1 "C:\Recordings\S recording 3.m4a"
 ```
 
-Requires PowerShell 7 and an updated, running container. Saved background music is
+Requires PowerShell 7 and Docker Desktop with its engine running. The script starts
+the local container if needed and waits for the API; no browser is required.
+Existing containers must include the episode API. Saved background music is
 included; transcription is off unless you pass `-Transcribe`.
 See the [command-line Docker workflow](docs/DOCKER.md#command-line-episode-creation).
 

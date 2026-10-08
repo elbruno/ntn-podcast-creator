@@ -1,7 +1,7 @@
 #Requires -Version 7.0
 <#
 .SYNOPSIS
-Upload one recording to a running NTN container and download the episode.
+Start the local NTN container if needed, upload a recording, and download the episode.
 .EXAMPLE
 ./scripts/ntn-create.ps1 "C:\Recordings\S recording 3.m4a"
 .EXAMPLE
@@ -15,8 +15,88 @@ param(
     [switch] $NoBackground,
     [switch] $Transcribe,
     [string] $ServerUrl = "http://localhost:7860",
-    [string] $OutputDirectory = "."
+    [string] $OutputDirectory = ".",
+    [switch] $NoAutoStart,
+    [ValidateRange(1, 3600)]
+    [int] $StartupTimeoutSeconds = 180
 )
+
+function Test-ConnectionRefused {
+    param([System.Exception] $Exception)
+
+    while ($null -ne $Exception) {
+        if ($Exception -is [System.Net.Sockets.SocketException] -and
+            $Exception.SocketErrorCode -eq [System.Net.Sockets.SocketError]::ConnectionRefused) {
+            return $true
+        }
+        $Exception = $Exception.InnerException
+    }
+    return $false
+}
+
+function Get-EpisodeServerConfig {
+    param(
+        [string] $BaseUrl,
+        [bool] $AutoStart,
+        [string] $RepositoryRoot,
+        [int] $TimeoutSeconds
+    )
+
+    try {
+        $configResponse = Invoke-WebRequest -Uri "$BaseUrl/config" -TimeoutSec 15
+    } catch {
+        if (-not (Test-ConnectionRefused $_.Exception)) { throw }
+        if (-not $AutoStart) {
+            throw "No NTN server is listening at $BaseUrl. Start the application first, or use the default local URL without -NoAutoStart to start Docker automatically."
+        }
+        if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+            throw "Docker is required for automatic startup. Install/start Docker Desktop, or start the application yourself and use -NoAutoStart."
+        }
+        $composeFile = Join-Path $RepositoryRoot "deployment\docker-compose.yml"
+        if (-not (Test-Path -LiteralPath $composeFile -PathType Leaf)) {
+            throw "Cannot find the Docker Compose configuration: $composeFile"
+        }
+        & docker info --format '{{.ServerVersion}}' | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            throw "Docker is not available. Start Docker Desktop, wait until its engine is ready, and rerun this command."
+        }
+        $containers = @(& docker container ls --all --filter 'name=^/ntn-podcast-creator$' --format '{{.Names}}')
+        if ($LASTEXITCODE -ne 0) { throw "Could not list Docker containers." }
+        if ($containers -contains "ntn-podcast-creator") {
+            Write-Host "Starting existing NTN container (saved settings unchanged)..."
+            & docker start ntn-podcast-creator | Out-Host
+        } else {
+            Write-Host "Starting NTN with Docker Compose (the first run may build the image)..."
+            & docker compose --ansi never --progress plain -f $composeFile up -d --no-recreate --yes | Out-Host
+        }
+        if ($LASTEXITCODE -ne 0) {
+            throw "Docker startup failed. Review the Docker errors above; no episode was submitted."
+        }
+        Write-Host "Waiting up to $TimeoutSeconds seconds for $BaseUrl..."
+        $timer = [System.Diagnostics.Stopwatch]::StartNew()
+        $lastError = ""
+        $configResponse = $null
+        while ($timer.Elapsed.TotalSeconds -lt $TimeoutSeconds) {
+            $remaining = [Math]::Max(1, [int][Math]::Ceiling($TimeoutSeconds - $timer.Elapsed.TotalSeconds))
+            try {
+                $configResponse = Invoke-WebRequest -Uri "$BaseUrl/config" -TimeoutSec ([Math]::Min(15, $remaining))
+                break
+            } catch {
+                if (-not (Test-ConnectionRefused $_.Exception) -and
+                    $_.Exception -isnot [System.Net.Http.HttpRequestException] -and
+                    $_.Exception -isnot [System.Threading.Tasks.TaskCanceledException]) { throw }
+                $lastError = $_.Exception.Message
+            }
+            if ($timer.Elapsed.TotalSeconds -lt $TimeoutSeconds) {
+                Start-Sleep -Seconds ([Math]::Min(2, $TimeoutSeconds - $timer.Elapsed.TotalSeconds))
+            }
+        }
+        if ($null -eq $configResponse) {
+            throw "NTN did not become ready at $BaseUrl within $TimeoutSeconds seconds. Check 'docker logs --tail 100 ntn-podcast-creator' and the port mapping (127.0.0.1:7860:7860). Use -StartupTimeoutSeconds for a slower startup. Last connection error: $lastError"
+        }
+    }
+    return ConvertFrom-Json -InputObject $configResponse.Content -AsHashtable -Depth 100
+}
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
@@ -39,8 +119,10 @@ try {
     }
     $base = $server.AbsoluteUri.TrimEnd("/")
     # Gradio's pages map contains an empty key, which requires a JSON hashtable.
-    $configResponse = Invoke-WebRequest -Uri "$base/config" -TimeoutSec 15
-    $config = ConvertFrom-Json -InputObject $configResponse.Content -AsHashtable -Depth 100
+    $localDefault = $server.Host -in @("localhost", "127.0.0.1") -and
+        $server.Scheme -eq "http" -and $server.Port -eq 7860 -and $server.AbsolutePath -eq "/"
+    $config = Get-EpisodeServerConfig -BaseUrl $base -AutoStart ($localDefault -and -not $NoAutoStart) `
+        -RepositoryRoot (Split-Path -Parent $PSScriptRoot) -TimeoutSeconds $StartupTimeoutSeconds
     if (-not ($config["dependencies"] | Where-Object { $_["api_name"] -eq "create_episode" })) {
         throw "This server has no create_episode API. Rebuild/update the container first."
     }

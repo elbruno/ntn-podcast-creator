@@ -17,6 +17,16 @@ If PowerShell 7 is available, the actual client is also exercised; otherwise tha
 test is skipped. Set `NTN_PWSH` to an explicit `pwsh` executable to include it.
 No running Docker container, network RSS feed, or model download is required.
 
+Docker auto-start checks (PowerShell 7, mocked Docker and HTTP; no container changes):
+
+```powershell
+pwsh -NoProfile -File .\tests\test_ntn_create_startup.ps1
+```
+
+Covers server reuse, existing-container startup, first-run Compose startup,
+readiness retries/timeouts, disabled startup, unavailable Docker, command failures,
+and non-connection errors.
+
 ### Core Functionality Tests (Quick - ~60 seconds)
 ```bash
 python tests/test_ui_core.py
