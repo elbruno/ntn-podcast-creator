@@ -7,7 +7,7 @@ $tokens = $null
 $parseErrors = $null
 $ast = [System.Management.Automation.Language.Parser]::ParseFile($scriptPath, [ref] $tokens, [ref] $parseErrors)
 if ($parseErrors.Count) { throw ($parseErrors -join "`n") }
-foreach ($name in @("Test-ConnectionRefused", "Get-EpisodeServerConfig")) {
+foreach ($name in @("Test-ConnectionRefused", "Get-EpisodeServerConfig", "Open-EpisodeAudio")) {
     $definition = $ast.Find({
         param($node)
         $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $name
@@ -162,4 +162,39 @@ try {
 } finally {
     Remove-Item -LiteralPath $recording -Force
 }
-Write-Host "PASS: startup scenarios, 6 URL eligibility checks, and real refused-connection CLI check; no real Docker containers or recordings were used."
+
+$destinationDefault = $ast.Find({
+    param($node)
+    $node -is [System.Management.Automation.Language.IfStatementAst] -and
+        $node.Clauses[0].Item1.Extent.Text -eq '-not $PSBoundParameters.ContainsKey("OutputDirectory")'
+}, $true)
+Assert-True ($null -ne $destinationDefault) "Missing recording-folder default."
+function Get-TestDestination {
+    param([string] $OutputDirectory)
+    $source = [pscustomobject] @{ DirectoryName = 'C:\Recordings\episode [579] with spaces' }
+    $body = 'param([string] $OutputDirectory)' + "`n" + $destinationDefault.Extent.Text + "`n" + 'return $OutputDirectory'
+    & ([scriptblock]::Create($body)) @PSBoundParameters
+}
+Assert-True ((Get-TestDestination) -eq 'C:\Recordings\episode [579] with spaces') "Default must use the recording folder."
+Assert-True ((Get-TestDestination -OutputDirectory ".") -eq ".") "Explicit current directory must override the default."
+Assert-True ((Get-TestDestination -OutputDirectory 'C:\Finished episodes') -eq 'C:\Finished episodes') "Custom destination must be preserved."
+
+$script:played = [System.Collections.Generic.List[string]]::new()
+$script:playerError = $false
+function Start-Process {
+    param($FilePath, $ErrorAction)
+    if ($script:playerError) { throw [System.ComponentModel.Win32Exception]::new("No audio player configured") }
+    $script:played.Add($FilePath)
+}
+$audioPath = 'C:\Recordings\episode [579] with spaces\ntn579.mp3'
+Open-EpisodeAudio -Path $audioPath
+Assert-True ($script:played.Count -eq 1 -and $script:played[0] -eq $audioPath) "Default playback must open the exact downloaded MP3 path."
+Open-EpisodeAudio -Path $audioPath -NoPlay
+Assert-True ($script:played.Count -eq 1) "-NoPlay must not open the player."
+$script:playerError = $true
+$playbackWarnings = @()
+Open-EpisodeAudio -Path $audioPath -WarningVariable playbackWarnings -WarningAction SilentlyContinue
+Assert-True ($playbackWarnings.Count -eq 1 -and $playbackWarnings[0].Message.Contains("Episode was saved") -and
+    $playbackWarnings[0].Message.Contains($audioPath)) "Player failure must warn with the saved path, not fail the episode."
+
+Write-Host "PASS: startup, URL safety, real connection refusal, download destination, and playback checks; no real Docker containers, recordings, or players were used."

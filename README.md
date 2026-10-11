@@ -42,6 +42,8 @@ Requires PowerShell 7 and Docker Desktop with its engine running. The script sta
 the local container if needed and waits for the API; no browser is required.
 Existing containers must include the episode API. Saved background music is
 included; transcription is off unless you pass `-Transcribe`.
+Downloads go beside the recording and the MP3 opens in your default audio player.
+Override with `-OutputDirectory "C:\Podcasts\Finished"` and/or `-NoPlay`.
 See the [command-line Docker workflow](docs/DOCKER.md#command-line-episode-creation).
 
 ### Option 2: Local Installation

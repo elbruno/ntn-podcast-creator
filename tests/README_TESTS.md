@@ -21,11 +21,18 @@ Docker auto-start checks (PowerShell 7, mocked Docker and HTTP; no container cha
 
 ```powershell
 pwsh -NoProfile -File .\tests\test_ntn_create_startup.ps1
+pwsh -NoProfile -File .\tests\test_ntn_create_downloads.ps1
 ```
 
 Covers server reuse, existing-container startup, first-run Compose startup,
 readiness retries/timeouts, disabled startup, unavailable Docker, command failures,
-and non-connection errors.
+non-connection errors, recording-folder/default destination overrides, and
+default/disabled playback plus player-launch warnings (the player is mocked).
+The HTTP client tests also exercise default and explicit download destinations
+with `-NoPlay` to avoid opening a real player.
+The PowerShell download test runs the full client against a local fake HTTP server,
+including companion downloads, collision safety, and original recording preservation;
+it does not require Python, Docker, or real audio processing.
 
 ### Core Functionality Tests (Quick - ~60 seconds)
 ```bash

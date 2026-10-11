@@ -2,10 +2,16 @@
 <#
 .SYNOPSIS
 Start the local NTN container if needed, upload a recording, and download the episode.
+.DESCRIPTION
+Downloads the episode and companion files beside the recording, then opens the MP3
+in the default audio player. Use -OutputDirectory to change the destination and
+-NoPlay to skip playback. The original recording and container output are preserved.
 .EXAMPLE
 ./scripts/ntn-create.ps1 "C:\Recordings\S recording 3.m4a"
 .EXAMPLE
 ./scripts/ntn-create.ps1 "C:\Recordings\recording.m4a" -Name ntn568 -Transcribe
+.EXAMPLE
+./scripts/ntn-create.ps1 "C:\Recordings\recording.m4a" -OutputDirectory "." -NoPlay
 #>
 [CmdletBinding()]
 param(
@@ -15,7 +21,9 @@ param(
     [switch] $NoBackground,
     [switch] $Transcribe,
     [string] $ServerUrl = "http://localhost:7860",
-    [string] $OutputDirectory = ".",
+    [ValidateNotNullOrEmpty()]
+    [string] $OutputDirectory,
+    [switch] $NoPlay,
     [switch] $NoAutoStart,
     [ValidateRange(1, 3600)]
     [int] $StartupTimeoutSeconds = 180
@@ -32,6 +40,19 @@ function Test-ConnectionRefused {
         $Exception = $Exception.InnerException
     }
     return $false
+}
+
+function Open-EpisodeAudio {
+    [CmdletBinding()]
+    param([string] $Path, [switch] $NoPlay)
+
+    if ($NoPlay) { return }
+    try {
+        Start-Process -FilePath $Path -ErrorAction Stop
+        Write-Host "Opened in default audio player: $Path"
+    } catch [System.ComponentModel.Win32Exception], [System.InvalidOperationException] {
+        Write-Warning "Episode was saved to '$Path', but the audio player could not be opened: $($_.Exception.Message). Open it manually or use -NoPlay."
+    }
 }
 
 function Get-EpisodeServerConfig {
@@ -126,6 +147,9 @@ try {
     if (-not ($config["dependencies"] | Where-Object { $_["api_name"] -eq "create_episode" })) {
         throw "This server has no create_episode API. Rebuild/update the container first."
     }
+    if (-not $PSBoundParameters.ContainsKey("OutputDirectory")) {
+        $OutputDirectory = $source.DirectoryName
+    }
     $null = New-Item -ItemType Directory -Path $OutputDirectory -Force
     $destinationDirectory = (Get-Item -LiteralPath $OutputDirectory).FullName
     Write-Host "Uploading $($source.Name)..."
@@ -203,6 +227,7 @@ try {
         throw "Server reported success without an MP3."
     }
     Write-Host "Container output: $($result.output_path)"
+    $downloadedMp3 = $null
     foreach ($kind in @("mp3", "transcript", "quality_report", "denoised")) {
         $artifact = $result.$kind
         if ($null -eq $artifact) { continue }
@@ -229,10 +254,12 @@ try {
         }
         [System.IO.File]::Move($temporaryDownload, $target, $false)
         $temporaryDownload = $null
+        if ($kind -eq "mp3") { $downloadedMp3 = $target }
         Write-Host "Downloaded: $target"
     }
     foreach ($warning in $result.warnings) { Write-Warning $warning }
     Write-Host "Episode $($result.episode_name) complete. QC: $($result.qc_status)"
+    Open-EpisodeAudio -Path $downloadedMp3 -NoPlay:$NoPlay
 } catch {
     Write-Error -Message $_.Exception.Message -ErrorAction Continue
     if ($submitted -and -not $completed) {

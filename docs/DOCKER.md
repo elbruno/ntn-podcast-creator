@@ -167,8 +167,9 @@ docker compose -f deployment/docker-compose.yml up -d --build
 ```
 
 The command uses the next episode number from the configured RSS feed, skips
-existing episode names, shows processing logs, and downloads the MP3 to the
-current directory. The container also retains its output in `/app/outputs`
+existing episode names, shows processing logs, downloads the MP3 to the
+recording's folder, and opens it in your default audio player. The container also
+retains its output in `/app/outputs`
 (the host `outputs` directory with Compose).
 
 ```powershell
@@ -180,6 +181,12 @@ current directory. The container also retains its output in `/app/outputs`
 
 # Explicitly enable transcription and wait for it
 .\scripts\ntn-create.ps1 "C:\Recordings\S recording 3.m4a" -Transcribe
+
+# Skip automatic playback
+.\scripts\ntn-create.ps1 "C:\Recordings\S recording 3.m4a" -NoPlay
+
+# Keep the previous download-to-current-directory behavior and skip playback
+.\scripts\ntn-create.ps1 "C:\Recordings\S recording 3.m4a" -OutputDirectory "." -NoPlay
 
 # Download to another folder or connect to another local port
 .\scripts\ntn-create.ps1 "C:\Recordings\S recording 3.m4a" `
@@ -217,7 +224,14 @@ ntn-create "C:\Recordings\S recording 3.m4a"
   a warning while preserving the exported MP3.
 - Overrides do not change saved settings. Successful export updates the last output name.
 - Downloads available transcripts, quality reports, and cleaned recordings alongside
-  the MP3. Quality findings do not block an exported MP3.
+  the MP3. The default destination is the recording's folder, not the terminal's
+  current directory. `-OutputDirectory` overrides it for all downloaded files.
+  Files are downloaded directly there; existing local files are never overwritten.
+  Quality findings do not block an exported MP3.
+- After successful downloads, the MP3 opens through the OS file association.
+  `-NoPlay` disables this. Playback launch failure produces a warning without
+  treating the saved episode as a failed render; open it manually or configure
+  a default MP3 player. No files are moved or removed from the container.
 - Original host recordings are never deleted. Server-owned temporary working copies
   are cleaned after each job, including failed jobs.
   Gradio's content-addressed upload cache follows the server's cache lifecycle; it

@@ -319,16 +319,18 @@ def test_api_rejects_server_paths_and_duplicate_names(server):
     assert not duplicate["success"] and "already exists" in duplicate["error"]
 
 
-@pytest.mark.parametrize("transcribe,no_background", [(False, False), (True, True)])
-def test_powershell_client(server, tmp_path, transcribe, no_background):
+@pytest.mark.parametrize("transcribe,no_background,default_destination",
+                         [(False, False, True), (True, True, False)])
+def test_powershell_client(server, tmp_path, transcribe, no_background, default_destination):
     pwsh = os.environ.get("NTN_PWSH") or shutil.which("pwsh")
     if not pwsh:
         pytest.skip("PowerShell 7 is not installed; set NTN_PWSH to test the client")
-    output = tmp_path / "download with spaces"
+    output = server[3].parent if default_destination else tmp_path / "download with spaces"
     server[1].update_settings({"background_tracks": [str(server[3])]})
     command = [pwsh, "-NoProfile", "-File", str(ROOT / "scripts/ntn-create.ps1"),
-               str(server[3]), "-Name", "ntn590", "-ServerUrl", server[0],
-               "-OutputDirectory", str(output)]
+               str(server[3]), "-Name", "ntn590", "-ServerUrl", server[0], "-NoPlay"]
+    if not default_destination:
+        command.extend(["-OutputDirectory", str(output)])
     if transcribe:
         def transcript(**kwargs):
             path = Path(kwargs["audio_file"]).with_name("ntn590_transcript.txt")
@@ -340,6 +342,7 @@ def test_powershell_client(server, tmp_path, transcribe, no_background):
         command.append("-NoBackground")
     result = subprocess.run(command, capture_output=True, text=True, timeout=45)
     assert result.returncode == 0, result.stdout + result.stderr
+    assert "Opened in default audio player" not in result.stdout
     assert (output / "ntn590.mp3").is_file()
     assert (output / "ntn590_transcript.txt").exists() is transcribe
     assert bool(server[2].settings_seen["background_files"]) is not no_background
