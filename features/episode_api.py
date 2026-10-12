@@ -7,9 +7,10 @@ import shutil
 import tempfile
 import threading
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterator, Optional
+from typing import Any, Callable, Dict, Iterator, Optional, Tuple
 
 import gradio as gr
 from gradio.utils import get_upload_folder
@@ -27,6 +28,42 @@ class EpisodeRequest:
     name: str = ""
     background: bool = True
     transcribe: bool = False
+    recordings: Tuple[str, ...] = ()
+    saved_settings: bool = False
+    expected_settings: Optional[Dict[str, Any]] = None
+    folder_output: bool = False
+
+
+@contextmanager
+def episode_output(name: str, automatic: bool, folder_output: bool):
+    """Folder jobs keep exact filenames in separate, persistent render directories."""
+    directory = Path("outputs")
+    isolated = None
+    if folder_output:
+        directory.mkdir(parents=True, exist_ok=True)
+        isolated = Path(tempfile.mkdtemp(prefix="folder-episode-", dir=directory))
+        directory = isolated
+    try:
+        with reserve_output(directory, name, automatic) as output:
+            yield output
+    finally:
+        if isolated is not None and not any(isolated.iterdir()):
+            isolated.rmdir()
+
+
+def episode_settings(manager, snapshot=None) -> Dict[str, Any]:
+    """Only processing settings; never expose unrelated configuration."""
+    settings = manager.snapshot() if snapshot is None else snapshot
+    keys = (
+        "intro_file", "outro_file", "background_tracks", "background_volume",
+        "track_volumes", "trim_silence", "denoise_audio", "denoise_method",
+        "enhance_voice", "voice_enhancement_preset", "normalize_lufs", "target_lufs",
+        "intro_voice_overlap", "voice_outro_overlap", "auto_balance_levels",
+        "min_voice_music_separation_db", "auto_ducking", "generate_transcript",
+        "whisper_model", "quality_gate_enabled", "audio_quality", "music_seed",
+        "level_quiet_opening",
+    )
+    return {key: settings[key] for key in keys}
 
 
 def file_reference(path: Optional[str]) -> Optional[Dict[str, Any]]:
@@ -49,12 +86,16 @@ def render_saved_episode(manager, processor, request: EpisodeRequest,
 
     with render_lock():
         settings = manager.snapshot()
+        if request.expected_settings is not None and episode_settings(manager, settings) != request.expected_settings:
+            raise ValueError("Saved settings changed after confirmation. Review and confirm again.")
         defaults = manager._default_config()
         for key in defaults:
             manager._validate_setting(key, settings[key], defaults)
         settings["quality_config"] = AudioQualityConfig.from_mapping(
             dict(settings["audio_quality"], target_lufs=settings["target_lufs"]))
-        settings["generate_transcript"] = request.transcribe
+        if not request.saved_settings:
+            settings["generate_transcript"] = request.transcribe
+        transcribe = settings["generate_transcript"]
         for key in ("intro_file", "outro_file"):
             if settings[key] and not Path(settings[key]).is_file():
                 raise FileNotFoundError(f"Saved {key} is missing: {settings[key]}")
@@ -62,25 +103,34 @@ def render_saved_episode(manager, processor, request: EpisodeRequest,
             for track in settings["background_tracks"]:
                 if not Path(track).is_file():
                     raise FileNotFoundError(f"Saved background track is missing: {track}")
-        source = Path(request.recording)
-        if not source.is_file():
-            raise FileNotFoundError("Uploaded recording is missing")
+        sources = [Path(path) for path in (request.recordings or (request.recording,))]
+        for source in sources:
+            if not source.is_file():
+                raise FileNotFoundError(f"Uploaded recording is missing: {source.name}")
         automatic = not request.name
         name = next_rss_name(settings["rss_feed_url"]) if automatic else request.name
-        with reserve_output(Path("outputs"), name, automatic) as output:
+        with episode_output(name, automatic, request.folder_output) as output:
             record(f"Episode name: {output.stem}")
+            if request.folder_output:
+                record(f"Server output directory: {output.parent}")
             record(f"Background music: {'enabled' if request.background else 'disabled'}")
             record(f"Intro: {settings['intro_file'] or 'none'}; outro: {settings['outro_file'] or 'none'}")
             record(f"Saved background tracks: {len(settings['background_tracks'])}; "
                    f"master volume: {settings['background_volume']}%")
-            record(f"Transcription: {'enabled' if request.transcribe else 'disabled'}")
+            record(f"Transcription: {'enabled' if transcribe else 'disabled'}")
             os.makedirs("uploads", exist_ok=True)
             with tempfile.TemporaryDirectory(prefix="episode-", dir="uploads") as inputs, \
                     tempfile.TemporaryDirectory(prefix=".episode-", dir="outputs") as staging:
-                voice = Path(inputs) / source.name
-                shutil.copyfile(source, voice)
-                if len(AudioSegment.from_file(voice)) == 0:
-                    raise ValueError("Recording contains no audio")
+                voices = []
+                for index, source in enumerate(sources):
+                    filename = source.name if len(sources) == 1 else f"{index}-{source.name}"
+                    voice = Path(inputs) / filename
+                    shutil.copyfile(source, voice)
+                    if len(AudioSegment.from_file(voice)) == 0:
+                        raise ValueError(f"Recording contains no audio: {source.name}")
+                    voices.append(str(voice))
+                voice = voices[0] if len(voices) == 1 else processor.concatenate_audio_files(
+                    voices, output_path=str(Path(inputs) / "combined.mp3"), log_callback=record)
                 staged_output = Path(staging) / output.name
                 reports = []
                 started = time.time_ns()
@@ -143,7 +193,7 @@ def render_saved_episode(manager, processor, request: EpisodeRequest,
                 except (OSError, ValueError, TypeError) as error:
                     record(f"Warning: Last episode name could not be saved: {error}. MP3 is available.")
                 transcript = None
-                if request.transcribe:
+                if transcribe:
                     record("Transcribing exported episode...")
                     try:
                         transcript = processor.transcribe_podcast(
@@ -202,6 +252,40 @@ def episode_events(manager, processor, request: EpisodeRequest) -> Iterator[Dict
 
 
 def register_episode_api(manager, processor):
+    def folder_episode_settings() -> dict:
+        return episode_settings(manager)
+
+    def create_folder_episode(recordings: list[gr.FileData], name: str,
+                              confirmed_settings: dict) -> Iterator[dict]:
+        try:
+            if not isinstance(name, str) or not name or not isinstance(confirmed_settings, dict):
+                raise ValueError("An explicit name and confirmed settings are required.")
+            if not isinstance(recordings, list) or not recordings:
+                raise ValueError("At least one uploaded recording is required.")
+            paths = []
+            for recording in recordings:
+                data = gr.FileData.model_validate(recording)
+                path = Path(data.path).resolve()
+                if not path.is_relative_to(Path(get_upload_folder()).resolve()) or not path.is_file():
+                    raise ValueError("Upload every recording using /gradio_api/upload first.")
+                paths.append(str(path))
+            if len(set(paths)) != len(paths):
+                raise ValueError("Duplicate uploaded recordings.")
+        except (ValueError, OSError) as error:
+            yield {"schema": "ntn-episode-v1", "state": "error", "success": False,
+                   "error": str(error)}
+            return
+        yield from episode_events(manager, processor, EpisodeRequest(
+            paths[0], name, recordings=tuple(paths), saved_settings=True,
+            expected_settings=confirmed_settings, folder_output=True))
+
+    gr.api(folder_episode_settings, api_name="folder_episode_settings",
+           api_description="Processing settings to confirm before a folder episode.",
+           concurrency_id="episode-render", concurrency_limit=1)
+    gr.api(create_folder_episode, api_name="create_folder_episode",
+           api_description="Render ordered uploads using confirmed saved settings.",
+           concurrency_id="episode-render", concurrency_limit=1)
+
     def create_episode(recording: gr.FileData, name: str = "",
                        background: bool = True, transcribe: bool = False) -> Iterator[dict]:
         # gr.api does not preprocess components; explicitly limit paths to uploads.

@@ -2,6 +2,106 @@
 
 This guide explains how to run the NTN Podcast Creator using Docker.
 
+## Pending episode folders (Python)
+
+Select a folder rather than manually supplying each voice recording:
+
+```powershell
+python .\scripts\ntn-create-pending.py
+python .\scripts\ntn-create-pending.py --list-only
+python .\scripts\ntn-create-pending.py --no-play
+python .\scripts\ntn-create-pending.py --root "D:\Podcast"
+python .\scripts\ntn-create-pending.py --server-url http://localhost:7860 --no-auto-start
+```
+
+The client uses only Python's standard library (Python 3.8+); no PowerShell,
+FFmpeg, Gradio, or audio/AI packages are required on Windows. Audio processing
+and joining happen inside Docker. It can be launched from any working directory.
+
+### Folder selection
+
+- Default library: `C:\od\OneDrive\Podcast`.
+- Only immediate dated folders such as `26 10 11 NTN 580 Title` are scanned.
+  The date is interpreted as year/month/day in the 2000s. Archive and undated
+  idea folders are not traversed.
+- Pending folders appear newest first by the date in their name, not OneDrive's
+  modification timestamp. All matching folders are examined.
+- A final such as `ntn580.mp3`, `nt580.mp3`, `ntn580-03.mp3`, or
+  `ntn580_final.mp3` means already processed. A final with a different episode
+  number also excludes the folder, with a warning; nothing is renamed.
+- Voice inputs can be `Recording` or `Recoding` in M4A, MP3, or WAV, ignoring
+  case. The base file comes first, followed by `(2)`, `(3)`, etc. Multiple inputs
+  are joined without additional pauses or crossfades, using the existing MP3
+  intermediate concatenation helper.
+- Duplicate indices (including two extensions at the same index), missing base
+  files, and index gaps block processing until the files are corrected.
+- Folders without recognized recordings and access errors are reported.
+
+Choose an index, review the ordered inputs, final destination and server settings,
+then enter `s` to confirm. Enter at selection, or anything other than `s`/`si` at
+confirmation, cancels without uploading audio. The script processes one episode
+per invocation and opens the downloaded MP3 in your default audio player after
+all downloads finish. Use `--no-play` to disable this. A player launch failure
+produces a warning without affecting the saved episode. Playback depends on the
+default MP3 application configured on your computer.
+
+### Server and saved settings
+
+The server must include the new `folder_episode_settings` and
+`create_folder_episode` API endpoints. To update an existing container after
+updating this repository, explicitly rebuild when no episode is running:
+
+```powershell
+docker compose -f .\deployment\docker-compose.yml up -d --build
+```
+
+The script never recreates or rebuilds an existing container automatically.
+For the default local URL only, it starts the existing `ntn-podcast-creator`
+container if the connection is refused. If no container exists it uses Docker
+Compose to create one; Docker Desktop's engine must already be running.
+Custom server URLs and `--no-auto-start` require an already-running server.
+`--list-only` never contacts Docker or the API.
+
+The new flow uses the **server's saved processing configuration**, including
+intro/outro, background tracks and volumes, optional voice processing,
+normalization, quality gate and **saved transcription toggle/model**. If settings
+change after review, the server rejects the render and asks for a new confirmation.
+The old single-recording PowerShell command and `create_episode` API retain their
+original defaults: transcription off unless explicitly requested.
+
+### Outputs, OneDrive and recovery
+
+The final is named exactly `ntn<folder_number>.mp3`, downloaded beside the
+recordings; a copy remains in a unique server directory such as
+`outputs/folder-episode-<unique-id>/ntn581.mp3`. Each folder render gets its own
+directory, so an older `outputs/ntn581.mp3` or another folder with the same
+episode number cannot block the new render. Older outputs are neither reused
+nor overwritten: the selected recordings are always processed.
+The single-recording API/PowerShell workflow keeps its existing flat output
+directory and collision checks. Optional
+transcript, cleaned voice and quality report are downloaded alongside it when
+available. The client's downloads do not rebind server-side quality identities
+to the local copy. The usual last-output-name bookkeeping remains on the server;
+processing toggles are not changed.
+
+Original recordings are never modified or deleted, even if the app's
+`delete_voice` setting is enabled. Existing outputs and local downloads are never
+overwritten, and collisions never increment the folder's episode number.
+Downloads use unique `.part` files and are published only when complete; partial
+downloads are removed. Final filename recognition is not an audio quality check.
+
+OneDrive may download cloud-only recordings when they are uploaded. Keep OneDrive
+connected and ensure the selected files are available; read/upload failures are
+reported and no render is submitted until all uploads succeed.
+
+If the render connection fails, the server may still be working. The client shows
+the job identifier when available: inspect Docker logs and server `outputs`
+before resubmitting. A local download failure does not delete the server output;
+the error gives its path and MP3 download URL. Recover the output from the server
+or the repository's mounted `outputs` folder instead of generating it again.
+Optional processing failures continue with warnings as in the app; critical
+input, rendering or write failures stop and are not reported as success.
+
 ## Quick Start with Docker
 
 ### Prerequisites

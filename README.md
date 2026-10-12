@@ -46,6 +46,16 @@ Downloads go beside the recording and the MP3 opens in your default audio player
 Override with `-OutputDirectory "C:\Podcasts\Finished"` and/or `-NoPlay`.
 See the [command-line Docker workflow](docs/DOCKER.md#command-line-episode-creation).
 
+To select a pending episode folder instead of supplying a recording:
+
+```powershell
+python .\scripts\ntn-create-pending.py
+```
+
+This Python client scans `C:\od\OneDrive\Podcast`, orders recordings, and renders
+through Docker using the saved settings. It needs no PowerShell or local audio
+packages. See [pending episode folders](docs/DOCKER.md#pending-episode-folders-python).
+
 ### Option 2: Local Installation
 
 1. **Install Requirements**:

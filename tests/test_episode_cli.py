@@ -19,13 +19,20 @@ from pydub.generators import Sine
 
 from features.config_manager import ConfigManager
 from features.episode_api import (
-    EpisodeRequest, episode_events, register_episode_api, render_saved_episode,
+    EpisodeRequest, episode_events, episode_settings, register_episode_api, render_saved_episode,
 )
 from features.episode_naming import extract_ntn_number, next_rss_name, reserve_output, validate_name
 from features.episode_service import render_lock
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_lazy_package_exports_preserve_public_imports():
+    from features import AudioProcessor, ConfigManager as PublicConfigManager
+    from features.audio_processor import AudioProcessor as Processor
+    assert AudioProcessor is Processor
+    assert PublicConfigManager is ConfigManager
 
 
 @pytest.fixture
@@ -71,6 +78,44 @@ def test_cli_defaults_and_original_preserved(setup):
     assert manager.snapshot()["last_output_name"] == "ntn568"
 
 
+def test_folder_settings_and_ordered_concatenation(setup):
+    from features.audio_processor import AudioProcessor
+    manager, _, first = setup
+    second = first.with_name("second.wav")
+    Sine(880).to_audio_segment(duration=400).export(second, format="wav")
+    manager.update_settings({"generate_transcript": True})
+    processor = AudioProcessor()
+    processor.transcribe_podcast = Mock(side_effect=RuntimeError("optional transcription failure"))
+    before = [path.read_bytes() for path in (first, second)]
+    settings = episode_settings(manager)
+    result = render_saved_episode(manager, processor, EpisodeRequest(
+        str(first), "ntn600", recordings=(str(first), str(second)), saved_settings=True,
+        expected_settings=settings), lambda _: None)
+    assert result["success"]
+    audio = AudioSegment.from_file(result["mp3"]["path"])
+    assert abs(len(audio) - 650) < 10
+    import numpy as np
+    for start, end, expected in ((50, 200, 440), (300, 600, 880)):
+        segment = audio[start:end].set_channels(1)
+        samples = np.array(segment.get_array_of_samples())
+        spectrum = np.abs(np.fft.rfft(samples))
+        peak = np.fft.rfftfreq(len(samples), 1 / segment.frame_rate)[spectrum.argmax()]
+        assert abs(peak - expected) < 15
+    processor.transcribe_podcast.assert_called_once()
+    assert [path.read_bytes() for path in (first, second)] == before
+    assert not list(Path("uploads").iterdir())
+
+
+def test_folder_rejects_changed_settings(setup):
+    manager, processor, source = setup
+    confirmed = episode_settings(manager)
+    manager.update_settings({"background_volume": 3})
+    with pytest.raises(ValueError, match="changed after confirmation"):
+        render_saved_episode(manager, processor, EpisodeRequest(
+            str(source), "ntn600", saved_settings=True, expected_settings=confirmed), print)
+    processor.create_podcast.assert_not_called()
+
+
 def test_cli_overrides_are_request_local(setup):
     manager, processor, recording = setup
     manager.update_settings({"whisper_model": "small", "background_tracks": ["missing.wav"]})
@@ -90,7 +135,8 @@ def test_cli_overrides_are_request_local(setup):
     assert manager.snapshot()["generate_transcript"] is False
 
 
-def test_real_processor_exports_mix_and_bound_quality_report(setup):
+@pytest.mark.parametrize("folder_output", [False, True])
+def test_real_processor_exports_mix_and_bound_quality_report(setup, folder_output):
     from features.audio_processor import AudioProcessor, _read_quality_sidecar
     manager, _, recording = setup
     intro = recording.with_name("intro.wav")
@@ -104,7 +150,8 @@ def test_real_processor_exports_mix_and_bound_quality_report(setup):
         "voice_outro_overlap": False, "quality_gate_enabled": True,
     })
     result = render_saved_episode(manager, AudioProcessor(),
-                                  EpisodeRequest(str(recording), "ntn573"), lambda _: None)
+                                  EpisodeRequest(str(recording), "ntn573",
+                                                 folder_output=folder_output), lambda _: None)
     output = result["mp3"]["path"]
     assert 0.70 < AudioSegment.from_file(output).duration_seconds < 0.80
     assert result["quality_report"] is not None
@@ -112,6 +159,50 @@ def test_real_processor_exports_mix_and_bound_quality_report(setup):
     assert receipt["output_path"] == output
     assert receipt["ui"]["enabled"] is True
     assert receipt["metadata"]["settings"]["intro_file"] == str(intro)
+
+
+def test_folder_output_failure_cleans_directory(setup):
+    manager, processor, recording = setup
+    processor.create_podcast.side_effect = RuntimeError("export failed")
+    request = EpisodeRequest(str(recording), "ntn581", folder_output=True)
+    result = list(episode_events(manager, processor, request))[-1]
+    assert not result["success"] and "export failed" in result["error"]
+    assert not list(Path("outputs").glob("folder-episode-*"))
+    assert not [path for path in Path("outputs").glob(".episode-*") if path.is_dir()]
+    assert not list(Path("uploads").iterdir())
+
+
+def test_folder_output_preserves_conflicting_artifacts_and_companions(setup):
+    manager, processor, recording = setup
+    Path("outputs").mkdir()
+    existing = {}
+    for name in ("ntn581.mp3", "ntn581.mp3.quality.json",
+                 "ntn581_denoised.wav", "ntn581_transcript.txt"):
+        path = Path("outputs") / name
+        path.write_bytes(b"prior unrelated artifact")
+        existing[path] = path.read_bytes()
+    original = processor.create_podcast.side_effect
+
+    def render_cleaned(**kwargs):
+        rendered, _, _ = original(**kwargs)
+        return rendered, kwargs["voice_file"], None
+
+    def transcribe(**kwargs):
+        path = Path(kwargs["audio_file"]).with_name("ntn581_transcript.txt")
+        path.write_text("new transcript", encoding="utf-8")
+        return str(path)
+
+    processor.create_podcast.side_effect = render_cleaned
+    processor.transcribe_podcast.side_effect = transcribe
+    result = render_saved_episode(
+        manager, processor, EpisodeRequest(str(recording), "ntn581", transcribe=True,
+                                         folder_output=True), print)
+    output = Path(result["output_path"])
+    assert output.name == "ntn581.mp3"
+    assert output.parent.name.startswith("folder-episode-")
+    for kind in ("denoised", "transcript"):
+        assert Path(result[kind]["path"]).parent == output.parent
+    assert {path: path.read_bytes() for path in existing} == existing
 
 
 def test_transcription_failure_keeps_export(setup):
@@ -307,6 +398,86 @@ def test_actual_upload_stream_download_and_queue(server):
     assert maximum == 1
     dependency = next(d for d in server[4].config["dependencies"] if d["api_name"] == "create_episode")
     assert server[4].fns[dependency["id"]].concurrency_id == "episode-render"
+
+
+def test_actual_python_folder_client(server, tmp_path):
+    from features.audio_processor import AudioProcessor
+    from features.episode_client import EpisodeClient
+    client = EpisodeClient(server[0])
+    client.ensure_server(ROOT, False, print)
+    source = server[3]
+    second = source.with_name("Recording (2).wav")
+    Sine(880).to_audio_segment(duration=400).export(second, format="wav")
+    server[2].concatenate_audio_files.side_effect = AudioProcessor().concatenate_audio_files
+    settings = client.settings()
+    Path("outputs").mkdir(exist_ok=True)
+    existing = Path("outputs/ntn601.mp3")
+    existing.write_bytes(b"unrelated prior episode")
+    uploads = [client.upload(path) for path in (source, second)]
+    result = client.render(uploads, "ntn601", settings, print)
+    destination = tmp_path / "downloaded"
+    destination.mkdir()
+    path = client.download(result["mp3"], destination)
+    assert path.name == "ntn601.mp3"
+    assert abs(len(AudioSegment.from_file(path)) - 650) < 10
+    duplicate = client._events("create_folder_episode", [uploads, "ntn601", settings], print)
+    assert duplicate["success"]
+    assert duplicate["output_path"] != result["output_path"]
+    assert Path(duplicate["output_path"]).name == "ntn601.mp3"
+    assert existing.read_bytes() == b"unrelated prior episode"
+    assert Path(result["output_path"]).is_file()
+    with pytest.raises(FileExistsError):
+        client.download(duplicate["mp3"], destination)
+    bad_upload = {"path": str(source), "meta": {"_type": "gradio.FileData"}}
+    with pytest.raises(RuntimeError):
+        client.render([bad_upload], "ntn602", settings, print)
+
+
+def test_menu_to_real_api_and_audio_pipeline(server, tmp_path, monkeypatch):
+    import importlib.util
+    import numpy as np
+    from features.audio_processor import AudioProcessor
+
+    root = tmp_path / "library"
+    folder = root / "26 10 11 NTN 603 Synthetic"
+    folder.mkdir(parents=True)
+    first = folder / "Recording.wav"
+    second = folder / "Recoding (2).wav"
+    Sine(440).to_audio_segment(duration=250).export(first, format="wav")
+    Sine(880).to_audio_segment(duration=400).export(second, format="wav")
+    intro = tmp_path / "intro.wav"
+    outro = tmp_path / "outro.wav"
+    Sine(220).to_audio_segment(duration=150).export(intro, format="wav")
+    Sine(660).to_audio_segment(duration=150).export(outro, format="wav")
+    server[1].update_settings({"intro_file": str(intro), "outro_file": str(outro),
+                               "intro_voice_overlap": False, "voice_outro_overlap": False})
+    real = AudioProcessor()
+    server[2].concatenate_audio_files.side_effect = real.concatenate_audio_files
+    server[2].create_podcast.side_effect = real.create_podcast
+    spec = importlib.util.spec_from_file_location("synthetic_pending", ROOT / "scripts/ntn-create-pending.py")
+    cli = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cli)
+    answers = iter(["1", "s"])
+    before = first.read_bytes(), second.read_bytes()
+    logs = []
+    assert cli.main(["--root", str(root), "--server-url", server[0], "--no-auto-start", "--no-play"],
+                    input_fn=lambda _: next(answers), log=logs.append) == 0
+    output = folder / "ntn603.mp3"
+    assert output.is_file()
+    audio = AudioSegment.from_file(output).set_channels(1)
+    assert abs(len(audio) - 950) < 10
+    for start, end, expected in ((20, 120, 220), (180, 370, 440),
+                                 (430, 760, 880), (820, 930, 660)):
+        segment = audio[start:end]
+        samples = np.array(segment.get_array_of_samples())
+        peak = np.fft.rfftfreq(len(samples), 1 / audio.frame_rate)[
+            np.abs(np.fft.rfft(samples)).argmax()]
+        assert abs(peak - expected) < 15
+    assert (first.read_bytes(), second.read_bytes()) == before
+    assert len(list(Path("outputs").glob("folder-episode-*/ntn603.mp3"))) == 1
+    assert not list(folder.glob("*.part"))
+    assert not list(Path("uploads").iterdir())
+    assert any("guardado" in line for line in logs)
 
 
 def test_api_rejects_server_paths_and_duplicate_names(server):
