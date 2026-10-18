@@ -141,15 +141,18 @@ def test_external_download_rejected(http_server, tmp_path):
                          "url": "https://example.com/a"}, tmp_path)
 
 
-def test_list_only_requires_no_audio_dependencies(tmp_path):
-    path = tmp_path / "26 10 11 NTN 580 Test"
+@pytest.mark.parametrize("name", ["26 10 11 NTN 580 Test",
+                                 "NTN 999 De Compaq a la PS5 clonar con IA"])
+def test_list_only_requires_no_audio_dependencies(tmp_path, name):
+    path = tmp_path / name
     path.mkdir()
     (path / "Recording.m4a").write_bytes(b"original")
     result = subprocess.run([sys.executable, "-S", str(SCRIPT), "--root", str(tmp_path),
                              "--list-only"], capture_output=True, text=True, timeout=10,
                             cwd=tmp_path)
     assert result.returncode == 0, result.stderr
-    assert "580" in result.stdout
+    assert name in result.stdout
+    assert "(1 grabaciones)" in result.stdout
 
 
 def test_cancel_and_no_pending_do_not_start_server(tmp_path, monkeypatch):
@@ -177,7 +180,7 @@ def test_change_after_confirmation_blocks_upload(tmp_path, monkeypatch):
         if "Seleccione" in prompt:
             return "1"
         source.write_bytes(b"changed original")
-        return "s"
+        return "y"
 
     logs = []
     assert cli.main(["--root", str(tmp_path)], input_fn=answer, log=logs.append) == 1
@@ -244,7 +247,7 @@ def test_menu_success_cancel_and_recovery(tmp_path, monkeypatch):
     assert cli.main(["--root", str(tmp_path)], input_fn=lambda _: next(answers),
                     log=lambda _: None) == 0
     client.upload.assert_not_called()
-    answers = iter(["1", "s"])
+    answers = iter(["1", "yes"])
     client.download.side_effect = OSError("disk unavailable")
     logs = []
     assert cli.main(["--root", str(tmp_path)], input_fn=lambda _: next(answers),
@@ -255,7 +258,9 @@ def test_menu_success_cancel_and_recovery(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("no_play", [False, True])
-def test_menu_opens_downloaded_mp3_only_after_downloads(tmp_path, monkeypatch, no_play):
+@pytest.mark.parametrize("confirmation", ["", "y", "YES", "yes", " Y ", "  "])
+def test_menu_opens_downloaded_mp3_only_after_downloads(
+        tmp_path, monkeypatch, no_play, confirmation):
     folder = tmp_path / "26 10 11 NTN 580"
     folder.mkdir()
     (folder / "Recording.m4a").write_bytes(b"original")
@@ -277,7 +282,7 @@ def test_menu_opens_downloaded_mp3_only_after_downloads(tmp_path, monkeypatch, n
     monkeypatch.setattr(cli, "EpisodeClient", lambda _: client)
     opened = Mock()
     monkeypatch.setattr(cli, "open_episode_audio", opened)
-    answers = iter(["1", "s"])
+    answers = iter(["1", confirmation])
     logs = []
     args = ["--root", str(tmp_path)] + (["--no-play"] if no_play else [])
     assert cli.main(args, input_fn=lambda _: next(answers), log=logs.append) == 0
@@ -286,6 +291,30 @@ def test_menu_opens_downloaded_mp3_only_after_downloads(tmp_path, monkeypatch, n
         opened.assert_not_called()
     else:
         opened.assert_called_once_with(folder / "ntn580.mp3", logs.append)
+
+
+@pytest.mark.parametrize("confirmation", ["n", "NO", "no", " N "])
+def test_confirmation_rejects_invalid_input_then_cancels(tmp_path, monkeypatch, confirmation):
+    folder = tmp_path / "NTN 999 Draft"
+    folder.mkdir()
+    (folder / "Recording.mp3").write_bytes(b"original")
+    client = Mock()
+    client.settings.return_value = {}
+    monkeypatch.setattr(cli, "EpisodeClient", lambda _: client)
+    answers = iter(["1", "maybe", confirmation])
+    prompts = []
+    logs = []
+
+    def answer(prompt):
+        prompts.append(prompt)
+        return next(answers)
+
+    assert cli.main(["--root", str(tmp_path)], input_fn=answer, log=logs.append) == 0
+    assert prompts[1:] == ["Crear episodio? YES/NO (y/n) [YES]: "] * 2
+    assert any("Respuesta invalida" in message for message in logs)
+    assert logs[-1] == "Cancelado; no se enviaron grabaciones."
+    client.upload.assert_not_called()
+    client.render.assert_not_called()
 
 
 @pytest.mark.parametrize("failure", [False, True])

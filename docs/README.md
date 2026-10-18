@@ -24,7 +24,7 @@ explicit intro/outro **None**, and an empty background pool (`[]`) survive resta
 ### [Docker Deployment Guide](DOCKER.md)
 Instructions for running with Docker, including setup and troubleshooting.
 Includes the [Python pending-folder workflow](DOCKER.md#pending-episode-folders-python):
-discover dated OneDrive episodes, select ordered recordings, and render with
+discover dated OneDrive episodes and undated NTN drafts, select ordered recordings, and render with
 saved settings without local audio dependencies.
 
 ### [Docker Publishing](DOCKER_PUBLISH.md)

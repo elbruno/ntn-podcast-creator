@@ -80,9 +80,15 @@ def main(argv=None, *, input_fn: Callable[[str], str] = input,
         log(f"Destino: {selected.path / selected.output_name}")
         log("Configuracion guardada del servidor:\n" +
             json.dumps(settings, ensure_ascii=False, indent=2))
-        if input_fn("Crear episodio? [s/N]: ").strip().casefold() not in ("s", "si", "sí"):
-            log("Cancelado; no se enviaron grabaciones.")
-            return 0
+        while True:
+            confirmation = input_fn(
+                "Crear episodio? YES/NO (y/n) [YES]: ").strip().casefold()
+            if confirmation in ("", "y", "yes"):
+                break
+            if confirmation in ("n", "no"):
+                log("Cancelado; no se enviaron grabaciones.")
+                return 0
+            log("Respuesta invalida. Use YES/NO o y/n; Enter confirma YES.")
         current = inspect_episode(selected.path)
         current_identities = [(path.stat().st_size, path.stat().st_mtime_ns)
                               for path in current.recordings]

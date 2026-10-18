@@ -457,7 +457,7 @@ def test_menu_to_real_api_and_audio_pipeline(server, tmp_path, monkeypatch):
     spec = importlib.util.spec_from_file_location("synthetic_pending", ROOT / "scripts/ntn-create-pending.py")
     cli = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(cli)
-    answers = iter(["1", "s"])
+    answers = iter(["1", "yes"])
     before = first.read_bytes(), second.read_bytes()
     logs = []
     assert cli.main(["--root", str(root), "--server-url", server[0], "--no-auto-start", "--no-play"],

@@ -1,15 +1,16 @@
-"""Read-only discovery of dated NTN episode folders."""
+"""Read-only discovery of dated and undated NTN episode folders."""
 
 import re
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 from .episode_naming import extract_ntn_number
 
 
-FOLDER_PATTERN = re.compile(r"^(\d{2})[ -](\d{2})[ -](\d{2})\s+NTN\s*(\d+)\b", re.I)
+FOLDER_PATTERN = re.compile(
+    r"^(?:(\d{2})[ -](\d{2})[ -](\d{2})\s+)?NTN\s*(\d+)\b", re.I)
 RECORDING_PATTERN = re.compile(
     r"^rec(?:ord|od)ing(?: \((\d+)\))?\.(m4a|mp3|wav)$", re.I)
 FINAL_PATTERN = re.compile(r"^ntn?(\d+)(?:[-_ ].+)?\.mp3$", re.I)
@@ -18,7 +19,7 @@ FINAL_PATTERN = re.compile(r"^ntn?(\d+)(?:[-_ ].+)?\.mp3$", re.I)
 @dataclass(frozen=True)
 class EpisodeFolder:
     path: Path
-    episode_date: date
+    episode_date: Optional[date]
     number: int
     recordings: Tuple[Path, ...]
     finals: Tuple[Path, ...]
@@ -37,8 +38,10 @@ def inspect_episode(path: Path) -> EpisodeFolder:
     match = FOLDER_PATTERN.match(path.name)
     if match is None:
         raise ValueError(f"Nombre de carpeta no reconocido: {path.name}")
-    year, month, day = (int(value) for value in match.groups()[:3])
-    episode_date = date(2000 + year, month, day)
+    episode_date = None
+    if match.group(1) is not None:
+        year, month, day = (int(value) for value in match.groups()[:3])
+        episode_date = date(2000 + year, month, day)
     number = extract_ntn_number(path.name)
     if number is None:
         raise ValueError(f"Falta numero NTN: {path.name}")
@@ -82,6 +85,7 @@ def discover_episodes(root: Path) -> Tuple[List[EpisodeFolder], List[str]]:
             episodes.append(inspect_episode(folder))
         except (OSError, ValueError) as error:
             warnings.append(f"No se pudo revisar {folder.name}: {error}")
-    episodes.sort(key=lambda episode: (episode.episode_date, episode.path.name.casefold()),
+    episodes.sort(key=lambda episode: (episode.episode_date or date.min,
+                                       episode.path.name.casefold()),
                   reverse=True)
     return episodes, warnings

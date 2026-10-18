@@ -21,11 +21,14 @@ and joining happen inside Docker. It can be launched from any working directory.
 ### Folder selection
 
 - Default library: `C:\od\OneDrive\Podcast`.
-- Only immediate dated folders such as `26 10 11 NTN 580 Title` are scanned.
-  The date is interpreted as year/month/day in the 2000s. Archive and undated
-  idea folders are not traversed.
+- Immediate dated folders such as `26 10 11 NTN 580 Title` and undated drafts
+  such as `NTN 999 De Compaq a la PS5 clonar con IA` are scanned.
+  The optional date is interpreted as year/month/day in the 2000s.
+  Archive folders and other names are not traversed.
 - Pending folders appear newest first by the date in their name, not OneDrive's
-  modification timestamp. All matching folders are examined.
+  modification timestamp. Undated drafts appear after dated episodes, ordered
+  by name descending (case-insensitive). All matching folders are examined,
+  with the same recording and existing-final checks for both folder formats.
 - A final such as `ntn580.mp3`, `nt580.mp3`, `ntn580-03.mp3`, or
   `ntn580_final.mp3` means already processed. A final with a different episode
   number also excludes the folder, with a warning; nothing is renamed.
@@ -38,8 +41,10 @@ and joining happen inside Docker. It can be launched from any working directory.
 - Folders without recognized recordings and access errors are reported.
 
 Choose an index, review the ordered inputs, final destination and server settings,
-then enter `s` to confirm. Enter at selection, or anything other than `s`/`si` at
-confirmation, cancels without uploading audio. The script processes one episode
+then confirm at `Crear episodio? YES/NO (y/n) [YES]: `. Enter, `YES`, or `y`
+starts production; `NO` or `n` cancels without uploading audio. Answers are
+case-insensitive; invalid answers repeat the prompt. Enter at episode selection
+still cancels. The script processes one episode
 per invocation and opens the downloaded MP3 in your default audio player after
 all downloads finish. Use `--no-play` to disable this. A player launch failure
 produces a warning without affecting the saved episode. Playback depends on the

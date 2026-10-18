@@ -20,11 +20,23 @@ def test_discovery_date_order_and_nonrecursive_scope(tmp_path):
     newer = folder(tmp_path, "26 10 11 NTN 580 Test", ["recording.MP3"])
     archive = folder(tmp_path, "Archive", [])
     folder(archive, "26 10 12 NTN 581", ["Recording.m4a"])
-    folder(tmp_path, "NTN 999 ideas", ["Recording.m4a"])
+    draft = folder(tmp_path, "NTN 999 ideas", ["Recording.m4a"])
+    folder(tmp_path, "Ideas NTN 998", ["Recording.m4a"])
     episodes, warnings = discover_episodes(tmp_path)
     assert not warnings
-    assert [episode.path for episode in episodes] == [newer, older]
+    assert [episode.path for episode in episodes] == [newer, older, draft]
     assert all(episode.pending for episode in episodes)
+
+
+def test_undated_drafts_have_no_date_and_stable_name_order(tmp_path):
+    second = folder(tmp_path, "NTN 999 Zebra", ["Recording.m4a"])
+    first = folder(tmp_path, "ntn 999 Alpha", ["recording.MP3"])
+    episodes, warnings = discover_episodes(tmp_path)
+    assert not warnings
+    assert [episode.path for episode in episodes] == [second, first]
+    assert all(episode.episode_date is None for episode in episodes)
+    assert all(episode.number == 999 and episode.pending for episode in episodes)
+    assert all(episode.output_name == "ntn999.mp3" for episode in episodes)
 
 
 def test_numeric_recording_order(tmp_path):
@@ -38,13 +50,15 @@ def test_numeric_recording_order(tmp_path):
 
 @pytest.mark.parametrize("name", ["ntn580.mp3", "NTN580-03.MP3", "nt580.mp3",
                                  "ntn580_final.mp3", "ntn580 (1).mp3"])
-def test_existing_final_excluded(tmp_path, name):
-    path = folder(tmp_path, "26 10 11 NTN 580", ["Recording.m4a", name])
+@pytest.mark.parametrize("prefix", ["26 10 11 ", ""])
+def test_existing_final_excluded(tmp_path, name, prefix):
+    path = folder(tmp_path, prefix + "NTN 580", ["Recording.m4a", name])
     assert not inspect_episode(path).pending
 
 
-def test_mismatched_final_warns_and_excludes(tmp_path):
-    path = folder(tmp_path, "26 10 11 NTN 580", ["Recording.m4a", "ntn581.mp3"])
+@pytest.mark.parametrize("prefix", ["26 10 11 ", ""])
+def test_mismatched_final_warns_and_excludes(tmp_path, prefix):
+    path = folder(tmp_path, prefix + "NTN 580", ["Recording.m4a", "ntn581.mp3"])
     episode = inspect_episode(path)
     assert not episode.pending
     assert "no coincide" in episode.problems[0]
@@ -57,8 +71,9 @@ def test_mismatched_final_warns_and_excludes(tmp_path):
     ["Recording.m4a", "Recording (3).m4a"],
     ["Recording.m4a", "Recording (0).m4a"],
 ])
-def test_ambiguous_recordings_blocked(tmp_path, names):
-    episode = inspect_episode(folder(tmp_path, "26 10 11 NTN 580", names))
+@pytest.mark.parametrize("prefix", ["26 10 11 ", ""])
+def test_ambiguous_recordings_blocked(tmp_path, names, prefix):
+    episode = inspect_episode(folder(tmp_path, prefix + "NTN 580", names))
     assert not episode.pending
     assert episode.problems
 
