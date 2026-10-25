@@ -123,7 +123,7 @@ def test_settings_accordion_membership_and_form_order(ui, screen):
     assert [component.label for component in form] == [
         "Default intro", "Default outro", "Background tracks", "Master background level (%)",
         "Delete voice recording after creation", "Trim silence from voice recording",
-        "Prefer Recording.m4a first", "RSS Feed URL", "Intro-voice overlap (1 second)",
+        "Prefer Recording.m4a first", "RSS Feed URL", "Intro-voice overlap (2 seconds)",
         "Voice-outro overlap (1 second)", "Enable noise reduction", "Noise Reduction Method",
         "Enable professional voice enhancement", "Enhancement Preset",
         "Normalize audio to professional LUFS level", "Target LUFS Level",
@@ -301,6 +301,23 @@ def capture_render(ui, monkeypatch):
     monkeypatch.setattr(ui.audio_processor,
                         "create_podcast", process, raising=False)
     return str(source), observed
+
+
+@pytest.mark.parametrize("enabled,total,label", [
+    (True, "00:13", "intro-voice 2s"),
+    (False, "00:15", None),
+])
+def test_timeline_matches_saved_intro_overlap(ui, monkeypatch, enabled, total, label):
+    ui.config_manager.update_settings({
+        "intro_voice_overlap": enabled, "voice_outro_overlap": False})
+    monkeypatch.setattr(ui, "get_audio_duration_seconds",
+                        lambda path: 5 if path == "intro.wav" else 10)
+    html = ui.generate_timeline_chart("voice.wav", "intro.wav", None, False)
+    assert f"<strong>{total}</strong>" in html
+    if label:
+        assert label in html
+    else:
+        assert "<strong>Overlaps:</strong>" not in html
 
 
 def test_saved_wrapper_ignores_drafts_and_freezes_every_setting(ui, monkeypatch):

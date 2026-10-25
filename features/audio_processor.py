@@ -813,7 +813,7 @@ class AudioProcessor:
             voice_enhancement_preset: Enhancement preset ("podcast", "light", "aggressive")
             normalize_lufs: Whether to normalize to target LUFS level
             target_lufs: Target LUFS level (-14 or -16 recommended)
-            intro_voice_overlap: Whether to enable 1-second overlap between intro and voice
+            intro_voice_overlap: Whether to enable 2-second overlap between intro and voice
             voice_outro_overlap: Whether to enable 1-second overlap between voice and outro
             generate_transcript: Whether to generate transcript using Whisper (optional)
             whisper_model: Whisper model size ("tiny", "base", "small", "medium", "large")
@@ -951,8 +951,8 @@ class AudioProcessor:
             )
 
         # Build the podcast sequence with overlaps
-        # Overlap duration: 1 second (1000ms)
-        overlap_ms = 1000
+        intro_overlap_ms = 2000
+        outro_overlap_ms = 1000
 
         intro_duration = 0
         outro_duration = 0
@@ -1056,12 +1056,11 @@ class AudioProcessor:
 
         # Place all stems on one timeline. This also preserves the real last
         # voice second when overlapping an outro without an intro.
-        intro_overlap = (min(overlap_ms, len(voice))
-                         if intro is not None and intro_voice_overlap
-                         and intro_duration >= overlap_ms else 0)
+        intro_overlap = (min(intro_overlap_ms, intro_duration, len(voice))
+                         if intro is not None and intro_voice_overlap else 0)
         voice_offset_ms = intro_duration - intro_overlap
-        outro_overlap = (overlap_ms if outro is not None and voice_outro_overlap
-                         and min(len(voice), outro_duration) >= overlap_ms else 0)
+        outro_overlap = (outro_overlap_ms if outro is not None and voice_outro_overlap
+                         and min(len(voice), outro_duration) >= outro_overlap_ms else 0)
         outro_offset_ms = voice_offset_ms + len(voice) - outro_overlap
         if intro_overlap:
             log(f"Applying {intro_overlap}ms overlap between intro and voice")
@@ -1077,7 +1076,8 @@ class AudioProcessor:
         else:
             log("No outro file provided")
 
-        episode_duration = outro_offset_ms + outro_duration
+        episode_duration = max(intro_duration, voice_offset_ms + len(voice),
+                               outro_offset_ms + outro_duration)
         episode_music = AudioSegment.silent(
             duration=episode_duration, frame_rate=voice.frame_rate)
         episode_music = episode_music.overlay(

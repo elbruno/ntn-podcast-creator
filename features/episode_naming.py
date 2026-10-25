@@ -42,6 +42,43 @@ def validate_name(name: str) -> str:
     return name
 
 
+def local_output_exists(directory: Path, name: str) -> bool:
+    names = [path.name.casefold() for path in directory.iterdir()]
+    name = name.casefold()
+    return any(item.startswith(f"{name}.mp3")
+               or item.startswith(f"{name}_denoised.")
+               or item == f"{name}_transcript.txt" for item in names)
+
+
+@contextmanager
+def reserve_local_output(directory: Path, name: str) -> Iterator[Path]:
+    """Reserve a local version without deleting another client's marker."""
+    name = validate_name(name)
+    version = 0
+    while True:
+        candidate = name if version == 0 else f"{name}-{version:02d}"
+        marker = directory / f".ntn-local-reservation-{candidate}"
+        if local_output_exists(directory, candidate):
+            version += 1
+            continue
+        try:
+            descriptor = os.open(marker, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        except FileExistsError as error:
+            raise FileExistsError(
+                f"Destino reservado: {candidate}. Hay otro cliente o una reserva "
+                f"pendiente en {marker}; revise antes de volver a intentar."
+            ) from error
+        os.close(descriptor)
+        try:
+            if local_output_exists(directory, candidate):
+                version += 1
+                continue
+            yield directory / f"{candidate}.mp3"
+            return
+        finally:
+            marker.unlink()
+
+
 @contextmanager
 def reserve_output(directory: Path, name: str, automatic: bool) -> Iterator[Path]:
     """Called under render_lock; abandoned markers are safe to retire then."""

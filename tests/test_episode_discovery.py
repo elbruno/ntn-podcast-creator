@@ -48,8 +48,7 @@ def test_numeric_recording_order(tmp_path):
     assert episode.output_name == "ntn576.mp3"
 
 
-@pytest.mark.parametrize("name", ["ntn580.mp3", "NTN580-03.MP3", "nt580.mp3",
-                                 "ntn580_final.mp3", "ntn580 (1).mp3"])
+@pytest.mark.parametrize("name", ["ntn580.mp3", "NTN580-03.MP3", "ntn580-100.mp3"])
 @pytest.mark.parametrize("prefix", ["26 10 11 ", ""])
 def test_existing_final_excluded(tmp_path, name, prefix):
     path = folder(tmp_path, prefix + "NTN 580", ["Recording.m4a", name])
@@ -72,10 +71,31 @@ def test_mismatched_final_warns_and_excludes(tmp_path, prefix):
     ["Recording.m4a", "Recording (0).m4a"],
 ])
 @pytest.mark.parametrize("prefix", ["26 10 11 ", ""])
-def test_ambiguous_recordings_blocked(tmp_path, names, prefix):
+def test_arbitrary_recording_indices_are_allowed(tmp_path, names, prefix):
     episode = inspect_episode(folder(tmp_path, prefix + "NTN 580", names))
-    assert not episode.pending
-    assert episode.problems
+    assert episode.pending
+    assert not episode.problems
+    assert {path.name for path in episode.recordings} == set(names)
+
+
+@pytest.mark.parametrize("name", ["nt580.mp3", "ntn580_final.mp3", "ntn580 (1).mp3",
+                                 "ntn580-1.mp3", "interview.FLAC", "voice.OGG",
+                                 "part.aac", "part.aiff", "part.wma"])
+def test_arbitrary_audio_is_a_recording(tmp_path, name):
+    episode = inspect_episode(folder(tmp_path, "NTN 580", [name]))
+    assert episode.pending and not episode.finals
+    assert [path.name for path in episode.recordings] == [name]
+
+
+def test_natural_order_and_generated_eligibility(tmp_path):
+    episode = inspect_episode(folder(tmp_path, "NTN 580", [
+        "part 10.WAV", "part 2.wav", "part 1.wav", "ntn580.mp3",
+        "ntn580-01.mp3", "notes.txt", "ntn580.mp3.part",
+    ]))
+    assert episode.selectable and not episode.pending
+    assert [path.name for path in episode.recordings] == [
+        "part 1.wav", "part 2.wav", "part 10.WAV"]
+    assert len(episode.finals) == 2
 
 
 def test_unrelated_mp3_and_invalid_date(tmp_path):

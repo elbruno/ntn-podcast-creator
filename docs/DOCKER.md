@@ -10,6 +10,7 @@ Select a folder rather than manually supplying each voice recording:
 python .\scripts\ntn-create-pending.py
 python .\scripts\ntn-create-pending.py --list-only
 python .\scripts\ntn-create-pending.py --no-play
+python .\scripts\ntn-create-pending.py --include-generated
 python .\scripts\ntn-create-pending.py --root "D:\Podcast"
 python .\scripts\ntn-create-pending.py --server-url http://localhost:7860 --no-auto-start
 ```
@@ -29,18 +30,25 @@ and joining happen inside Docker. It can be launched from any working directory.
   modification timestamp. Undated drafts appear after dated episodes, ordered
   by name descending (case-insensitive). All matching folders are examined,
   with the same recording and existing-final checks for both folder formats.
-- A final such as `ntn580.mp3`, `nt580.mp3`, `ntn580-03.mp3`, or
-  `ntn580_final.mp3` means already processed. A final with a different episode
-  number also excludes the folder, with a warning; nothing is renamed.
-- Voice inputs can be `Recording` or `Recoding` in M4A, MP3, or WAV, ignoring
-  case. The base file comes first, followed by `(2)`, `(3)`, etc. Multiple inputs
-  are joined without additional pauses or crossfades, using the existing MP3
-  intermediate concatenation helper.
-- Duplicate indices (including two extensions at the same index), missing base
-  files, and index gaps block processing until the files are corrected.
-- Folders without recognized recordings and access errors are reported.
+- Finals match `ntn580.mp3` or numeric versions such as `ntn580-01.mp3`,
+  `ntn580-100.mp3`, ignoring case. These folders are omitted by default;
+  `--include-generated` also lists them, marked as regenerations, if recordings
+  remain. A final with a different episode number blocks selection with a warning.
+- Any filename in M4A, MP3, WAV, OGG, FLAC, AAC, AIFF or WMA is a candidate,
+  except the exact final patterns above. Names like `nt580.mp3`,
+  `ntn580_final.mp3`, music and previously downloaded cleaned voices are also
+  candidates: review the list and exclude anything that is not a recording.
+- Inputs have a stable natural order, with the base `Recording` / `Recoding`
+  first, and numeric parts such as `(2)` before `(10)`. Index gaps, missing
+  base files and duplicate indices no longer block selection.
+- Multiple selected inputs are joined without additional pauses or crossfades,
+  using the existing MP3 intermediate concatenation helper.
+- Folders without recordings and access errors are reported.
 
-Choose an index, review the ordered inputs, final destination and server settings,
+Choose an episode index, then review the numbered candidate recordings. Enter
+accepts all in the displayed order; `3,1` uses only recordings 3 and 1 in that
+order. Duplicate or out-of-range indices are rejected. Use `q` to cancel.
+Review the selected inputs, final destination and server settings,
 then confirm at `Crear episodio? YES/NO (y/n) [YES]: `. Enter, `YES`, or `y`
 starts production; `NO` or `n` cancels without uploading audio. Answers are
 case-insensitive; invalid answers repeat the prompt. Enter at episode selection
@@ -74,10 +82,21 @@ change after review, the server rejects the render and asks for a new confirmati
 The old single-recording PowerShell command and `create_episode` API retain their
 original defaults: transcription off unless explicitly requested.
 
+The saved **Intro-voice overlap (2 seconds)** option controls both UI and CLI
+mixing. When enabled, voice starts two seconds before the intro ends (or the
+available shorter duration for a short intro/voice). When disabled, voice follows
+the intro without overlap. This is a real overlay, not a voice crossfade.
+Voice-outro overlap remains one second when enabled. Leading silence in a
+recording is not removed unless the saved trim-silence option is enabled.
+
 ### Outputs, OneDrive and recovery
 
-The final is named exactly `ntn<folder_number>.mp3`, downloaded beside the
-recordings; a copy remains in a unique server directory such as
+The final is initially named `ntn<folder_number>.mp3`, downloaded beside the
+recordings. If occupied, the first free version is used: `ntn581-01.mp3`,
+`ntn581-02.mp3`, etc. Numbering can exceed 99 and never changes the episode
+number. Existing transcripts, cleaned voices and quality sidecars also occupy
+a name. The chosen stem is sent to the server and shared by its artifacts.
+A copy remains in a unique server directory such as
 `outputs/folder-episode-<unique-id>/ntn581.mp3`. Each folder render gets its own
 directory, so an older `outputs/ntn581.mp3` or another folder with the same
 episode number cannot block the new render. Older outputs are neither reused
@@ -92,6 +111,13 @@ processing toggles are not changed.
 Original recordings are never modified or deleted, even if the app's
 `delete_voice` setting is enabled. Existing outputs and local downloads are never
 overwritten, and collisions never increment the folder's episode number.
+An exclusive `.ntn-local-reservation-<name>` marker protects the reviewed local
+name until the command exits. A pre-existing reservation stops the command
+with a diagnostic; it is never deleted automatically. After a crash, first
+check that no client is still using it and recover any completed server output
+before manually removing that specific marker. If an external process creates
+the target during rendering, downloading fails without replacement and reports
+how to recover the server result; do not render again just to retry a download.
 Downloads use unique `.part` files and are published only when complete; partial
 downloads are removed. Final filename recognition is not an audio quality check.
 

@@ -179,6 +179,8 @@ def test_change_after_confirmation_blocks_upload(tmp_path, monkeypatch):
     def answer(prompt):
         if "Seleccione" in prompt:
             return "1"
+        if "Grabaciones en orden" in prompt:
+            return ""
         source.write_bytes(b"changed original")
         return "y"
 
@@ -243,11 +245,11 @@ def test_menu_success_cancel_and_recovery(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, "EpisodeClient", lambda _: client)
     opened = Mock()
     monkeypatch.setattr(cli, "open_episode_audio", opened)
-    answers = iter(["wrong", "1", "n"])
+    answers = iter(["wrong", "1", "", "n"])
     assert cli.main(["--root", str(tmp_path)], input_fn=lambda _: next(answers),
                     log=lambda _: None) == 0
     client.upload.assert_not_called()
-    answers = iter(["1", "yes"])
+    answers = iter(["1", "", "yes"])
     client.download.side_effect = OSError("disk unavailable")
     logs = []
     assert cli.main(["--root", str(tmp_path)], input_fn=lambda _: next(answers),
@@ -282,7 +284,7 @@ def test_menu_opens_downloaded_mp3_only_after_downloads(
     monkeypatch.setattr(cli, "EpisodeClient", lambda _: client)
     opened = Mock()
     monkeypatch.setattr(cli, "open_episode_audio", opened)
-    answers = iter(["1", confirmation])
+    answers = iter(["1", "", confirmation])
     logs = []
     args = ["--root", str(tmp_path)] + (["--no-play"] if no_play else [])
     assert cli.main(args, input_fn=lambda _: next(answers), log=logs.append) == 0
@@ -301,7 +303,7 @@ def test_confirmation_rejects_invalid_input_then_cancels(tmp_path, monkeypatch, 
     client = Mock()
     client.settings.return_value = {}
     monkeypatch.setattr(cli, "EpisodeClient", lambda _: client)
-    answers = iter(["1", "maybe", confirmation])
+    answers = iter(["1", "", "maybe", confirmation])
     prompts = []
     logs = []
 
@@ -310,11 +312,82 @@ def test_confirmation_rejects_invalid_input_then_cancels(tmp_path, monkeypatch, 
         return next(answers)
 
     assert cli.main(["--root", str(tmp_path)], input_fn=answer, log=logs.append) == 0
-    assert prompts[1:] == ["Crear episodio? YES/NO (y/n) [YES]: "] * 2
+    assert prompts[2:] == ["Crear episodio? YES/NO (y/n) [YES]: "] * 2
     assert any("Respuesta invalida" in message for message in logs)
     assert logs[-1] == "Cancelado; no se enviaron grabaciones."
     client.upload.assert_not_called()
     client.render.assert_not_called()
+    assert not list(folder.glob(".ntn-local-reservation-*"))
+
+
+def test_generated_requires_flag_and_reorders_inputs(tmp_path, monkeypatch):
+    folder = tmp_path / "NTN 580"
+    folder.mkdir()
+    for name in ("part 1.wav", "part 2.wav", "part 10.wav", "ntn580.mp3", "ntn580-01.mp3"):
+        (folder / name).write_bytes(name.encode())
+    client = Mock()
+    client.settings.return_value = {}
+    client.upload.side_effect = lambda path: {"path": str(path)}
+    client.render.return_value = {
+        "episode_name": "ntn580-02", "output_path": "/outputs/ntn580-02.mp3",
+        "mp3": {"orig_name": "ntn580-02.mp3"}, "qc_status": "DISABLED",
+    }
+    client.download.side_effect = lambda artifact, destination: destination / artifact["orig_name"]
+    monkeypatch.setattr(cli, "EpisodeClient", lambda _: client)
+    logs = []
+    assert cli.main(["--root", str(tmp_path), "--list-only"], log=logs.append) == 0
+    assert "No hay" in logs[-1]
+    client.ensure_server.assert_not_called()
+    answers = iter(["1", "1,1", "0", "4", "3,1", "yes"])
+    assert cli.main(["--root", str(tmp_path), "--include-generated", "--no-play"],
+                    input_fn=lambda _: next(answers), log=logs.append) == 0
+    assert [call.args[0].name for call in client.upload.call_args_list] == [
+        "part 10.wav", "part 1.wav"]
+    assert client.render.call_args.args[1] == "ntn580-02"
+    assert any("[regeneracion]" in line for line in logs)
+    assert not list(folder.glob(".ntn-local-reservation-*"))
+    assert (folder / "ntn580.mp3").read_bytes() == b"ntn580.mp3"
+
+
+def test_cancel_recording_selection_never_contacts_server(tmp_path, monkeypatch):
+    folder = tmp_path / "NTN 580"
+    folder.mkdir()
+    (folder / "interview.wav").write_bytes(b"voice")
+    factory = Mock()
+    monkeypatch.setattr(cli, "EpisodeClient", factory)
+    answers = iter(["1", "q"])
+    assert cli.main(["--root", str(tmp_path)], input_fn=lambda _: next(answers),
+                    log=lambda _: None) == 0
+    factory.assert_not_called()
+
+
+def test_final_created_during_render_is_not_overwritten_or_rerendered(tmp_path, monkeypatch):
+    folder = tmp_path / "NTN 580"
+    folder.mkdir()
+    (folder / "voice.wav").write_bytes(b"voice")
+    client = Mock()
+    client.server = "http://localhost:7860"
+    client.settings.return_value = {}
+    client.download.side_effect = EpisodeClient().download
+
+    def render(*_):
+        (folder / "ntn580.mp3").write_bytes(b"external final")
+        return {
+            "episode_name": "ntn580", "output_path": "/outputs/job/ntn580.mp3",
+            "mp3": {"path": "/outputs/job/ntn580.mp3", "orig_name": "ntn580.mp3"},
+            "qc_status": "DISABLED",
+        }
+
+    client.render.side_effect = render
+    monkeypatch.setattr(cli, "EpisodeClient", lambda _: client)
+    answers = iter(["1", "", "y"])
+    logs = []
+    assert cli.main(["--root", str(tmp_path), "--no-play"],
+                    input_fn=lambda _: next(answers), log=logs.append) == 1
+    assert (folder / "ntn580.mp3").read_bytes() == b"external final"
+    assert "no regenere" in logs[-1] and "/outputs/job/ntn580.mp3" in logs[-1]
+    client.render.assert_called_once()
+    assert not list(folder.glob(".ntn-local-reservation-*"))
 
 
 @pytest.mark.parametrize("failure", [False, True])

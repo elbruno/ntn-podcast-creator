@@ -5,6 +5,7 @@ from pydub import AudioSegment
 from features.audio_processor import AudioProcessor
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 # Add project root to path
@@ -16,8 +17,8 @@ def test_outro_no_overlap():
     """Verify that outro starts only after voice recording ends."""
 
     # Create test audio files
-    test_dir = Path(__file__).parent / "temp_test_audio"
-    test_dir.mkdir(exist_ok=True)
+    test_directory = tempfile.TemporaryDirectory(prefix="ntn-outro-test-")
+    test_dir = Path(test_directory.name)
 
     # Generate test audio files with distinct frequencies
     # Voice: 440 Hz (A note)
@@ -49,7 +50,7 @@ def test_outro_no_overlap():
         output_file=output_file,
         trim_silence=False,
         denoise_audio=False,
-        enhance_audio=False,
+        enhance_voice_enabled=False,
         normalize_lufs=False,
         generate_transcript=False
     )
@@ -59,11 +60,11 @@ def test_outro_no_overlap():
 
     # Expected duration calculation:
     # Intro: 2000ms
-    # Overlap between intro and voice: -1000ms (1 second overlap)
+    # Overlap between intro and voice: -2000ms (2 second overlap)
     # Voice: 5000ms
     # Outro: 3000ms (NO overlap with voice)
-    # Total: 2000 - 1000 + 5000 + 3000 = 9000ms
-    expected_duration = 9000
+    # Total: 2000 - 2000 + 5000 + 3000 = 8000ms
+    expected_duration = 8000
 
     actual_duration = len(result_audio)
 
@@ -80,20 +81,19 @@ def test_outro_no_overlap():
         f"This suggests outro may be overlapping with voice."
 
     # Verify that voice section ends before outro section starts
-    # The outro should start at approximately 6000ms (2s intro - 1s overlap + 5s voice)
-    outro_start_expected = 2000 - 1000 + 5000  # 6000ms
+    # The outro starts at 5000ms (2s intro - 2s overlap + 5s voice).
+    outro_start_expected = 2000 - 2000 + 5000
 
     # Sample the audio at the expected outro start point
     # If outro is overlapping, we'd hear both frequencies mixed
     print(f"\n✓ Test passed: Outro starts after voice ends (no overlap)")
-    print(f"  Intro duration: 2s (with 1s overlap into voice)")
+    print(f"  Intro duration: 2s (with 2s overlap into voice)")
     print(f"  Voice duration: 5s (complete, no outro interference)")
     print(f"  Outro duration: 3s (starts cleanly after voice)")
     print(f"  Total podcast: {actual_duration/1000:.1f}s")
 
     # Cleanup
-    import shutil
-    shutil.rmtree(test_dir)
+    test_directory.cleanup()
 
     return True
 

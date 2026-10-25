@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 import sys
+from contextlib import ExitStack
 from pathlib import Path
 from typing import Callable
 
@@ -14,6 +15,7 @@ sys.path.insert(0, str(ROOT))
 
 from features.episode_client import EpisodeClient
 from features.episode_discovery import discover_episodes, inspect_episode
+from features.episode_naming import reserve_local_output
 
 
 def open_episode_audio(path: Path, log: Callable[[str], None]) -> None:
@@ -32,10 +34,17 @@ def open_episode_audio(path: Path, log: Callable[[str], None]) -> None:
 
 def main(argv=None, *, input_fn: Callable[[str], str] = input,
          log: Callable[[str], None] = print) -> int:
+    with ExitStack() as reservations:
+        return _main(argv, input_fn=input_fn, log=log, reservations=reservations)
+
+
+def _main(argv, *, input_fn, log, reservations) -> int:
     parser = argparse.ArgumentParser(description="Crear un episodio pendiente desde OneDrive.")
     parser.add_argument("--root", type=Path, default=Path(r"C:\od\OneDrive\Podcast"))
     parser.add_argument("--server-url", default="http://localhost:7860")
     parser.add_argument("--list-only", action="store_true")
+    parser.add_argument("--include-generated", action="store_true",
+                        help="Permitir regenerar episodios con finales existentes.")
     parser.add_argument("--no-auto-start", action="store_true")
     parser.add_argument("--no-play", action="store_true",
                         help="No abrir el MP3 al finalizar.")
@@ -49,9 +58,11 @@ def main(argv=None, *, input_fn: Callable[[str], str] = input,
                 log(f"Advertencia [{episode.path.name}]: {problem}")
             if not episode.finals and not episode.recordings:
                 log(f"Sin grabaciones: {episode.path.name}")
-        pending = [episode for episode in episodes if episode.pending]
+        pending = [episode for episode in episodes
+                   if episode.selectable and (args.include_generated or episode.pending)]
         for index, episode in enumerate(pending, 1):
-            log(f"{index}. {episode.path.name} ({len(episode.recordings)} grabaciones)")
+            state = " [regeneracion]" if episode.finals else ""
+            log(f"{index}. {episode.path.name} ({len(episode.recordings)} grabaciones){state}")
         if not pending:
             log("No hay episodios pendientes seleccionables.")
             return 0
@@ -67,17 +78,38 @@ def main(argv=None, *, input_fn: Callable[[str], str] = input,
                 break
             log("Seleccion invalida.")
         selected = inspect_episode(selected.path)
-        if not selected.pending:
+        if not selected.selectable or (selected.finals and not args.include_generated):
             raise RuntimeError("La carpeta cambio y ya no es seleccionable.")
         identities = [(path.stat().st_size, path.stat().st_mtime_ns)
                       for path in selected.recordings]
+        log("Grabaciones candidatas (revise musica, duplicados y audios derivados):")
+        for index, path in enumerate(selected.recordings, 1):
+            log(f"  {index}. {path.name}")
+        while True:
+            choice = input_fn(
+                "Grabaciones en orden (Enter: todas; ej. 3,1; q: cancelar): ").strip()
+            if choice.casefold() == "q":
+                log("Cancelado; no se enviaron grabaciones.")
+                return 0
+            if not choice:
+                recordings = selected.recordings
+                break
+            parts = [part.strip() for part in choice.split(",")]
+            if all(part.isdecimal() for part in parts):
+                indices = [int(part) for part in parts]
+                if (len(set(indices)) == len(indices)
+                        and all(1 <= index <= len(selected.recordings) for index in indices)):
+                    recordings = tuple(selected.recordings[index - 1] for index in indices)
+                    break
+            log("Seleccion invalida: use indices unicos separados por comas.")
         client = EpisodeClient(args.server_url)
         client.ensure_server(ROOT, not args.no_auto_start, log)
         settings = client.settings()
-        log("Grabaciones en orden:")
-        for index, path in enumerate(selected.recordings, 1):
-            log(f"  {index}. {path.name}")
-        log(f"Destino: {selected.path / selected.output_name}")
+        output = reservations.enter_context(
+            reserve_local_output(selected.path, Path(selected.output_name).stem))
+        log("Grabaciones en orden:\n" +
+            "\n".join(f"  {index}. {path.name}" for index, path in enumerate(recordings, 1)))
+        log(f"Destino: {output}")
         log("Configuracion guardada del servidor:\n" +
             json.dumps(settings, ensure_ascii=False, indent=2))
         while True:
@@ -94,13 +126,13 @@ def main(argv=None, *, input_fn: Callable[[str], str] = input,
                               for path in current.recordings]
         if current != selected or current_identities != identities:
             raise RuntimeError("La carpeta cambio despues de la seleccion. Revise y ejecute otra vez.")
-        if any(not size for size, _ in identities):
+        if any(not path.stat().st_size for path in recordings):
             raise ValueError("Hay una grabacion vacia.")
         uploads = []
-        for path in selected.recordings:
+        for path in recordings:
             log(f"Subiendo {path.name}...")
             uploads.append(client.upload(path))
-        result = client.render(uploads, Path(selected.output_name).stem, settings, log)
+        result = client.render(uploads, output.stem, settings, log)
         log(f"Resultado del servidor: {result['output_path']}")
         downloaded_mp3 = None
         try:

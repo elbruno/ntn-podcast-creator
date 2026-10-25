@@ -11,9 +11,15 @@ from .episode_naming import extract_ntn_number
 
 FOLDER_PATTERN = re.compile(
     r"^(?:(\d{2})[ -](\d{2})[ -](\d{2})\s+)?NTN\s*(\d+)\b", re.I)
-RECORDING_PATTERN = re.compile(
-    r"^rec(?:ord|od)ing(?: \((\d+)\))?\.(m4a|mp3|wav)$", re.I)
-FINAL_PATTERN = re.compile(r"^ntn?(\d+)(?:[-_ ].+)?\.mp3$", re.I)
+FINAL_PATTERN = re.compile(r"^ntn(\d+)(?:-\d{2,})?\.mp3$", re.I)
+AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a", ".ogg", ".flac", ".aac", ".aiff", ".wma"}
+
+
+def recording_order(path: Path):
+    stem = re.sub(r"^recoding\b", "recording", path.stem.casefold())
+    parts = re.split(r"(\d+)", stem)
+    return (tuple((1, int(part)) if part.isdecimal() else (0, part)
+                  for part in parts), path.name.casefold(), path.name)
 
 
 @dataclass(frozen=True)
@@ -27,7 +33,11 @@ class EpisodeFolder:
 
     @property
     def pending(self) -> bool:
-        return bool(self.recordings) and not self.finals and not self.problems
+        return self.selectable and not self.finals
+
+    @property
+    def selectable(self) -> bool:
+        return bool(self.recordings) and not self.problems
 
     @property
     def output_name(self) -> str:
@@ -48,7 +58,6 @@ def inspect_episode(path: Path) -> EpisodeFolder:
     recordings = []
     finals = []
     problems = []
-    has_base = False
     for file in sorted(path.iterdir(), key=lambda item: item.name.casefold()):
         if not file.is_file():
             continue
@@ -57,19 +66,12 @@ def inspect_episode(path: Path) -> EpisodeFolder:
             finals.append(file)
             if int(final.group(1)) != number:
                 problems.append(f"Final {file.name} no coincide con NTN {number}.")
-        recording = RECORDING_PATTERN.fullmatch(file.name)
-        if recording:
-            has_base = has_base or recording.group(1) is None
-            index = int(recording.group(1) or "1")
-            recordings.append((index, file))
-    recordings.sort(key=lambda item: (item[0], item[1].name.casefold()))
-    indices = [index for index, _ in recordings]
-    if len(set(indices)) != len(indices):
-        problems.append("Hay grabaciones con indices duplicados.")
-    if indices and (not has_base or indices != list(range(1, len(indices) + 1))):
-        problems.append("Falta la grabacion base o hay saltos de indices.")
+            continue
+        if file.suffix.casefold() in AUDIO_EXTENSIONS:
+            recordings.append(file)
+    recordings.sort(key=recording_order)
     return EpisodeFolder(path, episode_date, number,
-                         tuple(file for _, file in recordings),
+                         tuple(recordings),
                          tuple(finals), tuple(problems))
 
 

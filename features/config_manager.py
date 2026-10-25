@@ -77,7 +77,7 @@ class ConfigManager:
             "normalize_lufs": False,
             "target_lufs": -16.0,  # Target LUFS level
             # Overlap settings
-            "intro_voice_overlap": True,  # Enable 1-second overlap between intro and voice
+            "intro_voice_overlap": True,  # Enable 2-second overlap between intro and voice
             "voice_outro_overlap": False,  # Enable 1-second overlap between voice and outro
             # Audio balance & level safety
             "auto_balance_levels": False,  # Opt-in voice/music level balancing

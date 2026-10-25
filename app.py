@@ -143,14 +143,15 @@ def generate_timeline_chart(voice_file, intro_file: Optional[str],
     outro_duration = get_audio_duration_seconds(
         outro_file) if outro_file else 0.0
 
-    # Calculate total with overlaps (2 seconds total: 1s intro-voice + 1s voice-outro)
-    overlap_seconds = 0.0
-    if intro_duration > 0 and voice_duration > 0:
-        overlap_seconds += 1.0  # intro-voice overlap
-    if voice_duration > 0 and outro_duration > 0:
-        overlap_seconds += 1.0  # voice-outro overlap
-
-    total_duration = intro_duration + voice_duration + outro_duration - overlap_seconds
+    intro_overlap = (min(2.0, intro_duration, voice_duration)
+                     if config_manager.get_intro_voice_overlap() else 0.0)
+    outro_overlap = (1.0 if config_manager.get_voice_outro_overlap()
+                     and min(voice_duration, outro_duration) >= 1.0 else 0.0)
+    overlap_seconds = intro_overlap + outro_overlap
+    voice_start = intro_duration - intro_overlap
+    outro_start = voice_start + voice_duration - outro_overlap
+    total_duration = max(intro_duration, voice_start + voice_duration,
+                         outro_start + outro_duration)
 
     if total_duration == 0:
         return "<div style='padding: 20px; text-align: center; color: #666;'>No audio files to preview</div>"
@@ -162,6 +163,8 @@ def generate_timeline_chart(voice_file, intro_file: Optional[str],
         100 if voice_duration > 0 else 0
     outro_percent = (outro_duration / total_duration) * \
         100 if outro_duration > 0 else 0
+    intro_overlap_percent = intro_overlap / total_duration * 100
+    outro_overlap_percent = outro_overlap / total_duration * 100
 
     # Format durations
     def format_time(seconds):
@@ -176,7 +179,7 @@ def generate_timeline_chart(voice_file, intro_file: Optional[str],
         <div style="margin: 20px 0;">
             <div style="font-size: 14px; color: #666; margin-bottom: 10px;">
                 Total Duration: <strong>{format_time(total_duration)}</strong>
-                {' (with 1s overlaps)' if overlap_seconds > 0 else ''}
+                {' (with overlaps)' if overlap_seconds > 0 else ''}
             </div>
             <div style="position: relative; height: 80px;">
                 <!-- Main timeline -->
@@ -187,13 +190,14 @@ def generate_timeline_chart(voice_file, intro_file: Optional[str],
     if intro_duration > 0:
         html += f"""
                     <div style="width: {intro_percent}%; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                         flex-shrink: 0; margin-right: -{intro_overlap_percent}%;
                          display: flex; align-items: center; justify-content: center; color: white;
                          font-size: 12px; font-weight: bold; border-right: 2px solid white; position: relative;">
                         <div style="text-align: center; padding: 5px;">
                             <div>INTRO</div>
                             <div style="font-size: 10px; opacity: 0.9;">{format_time(intro_duration)}</div>
                         </div>
-                        {"<div style='position: absolute; right: -10px; top: 0; bottom: 0; width: 20px; background: rgba(255,255,255,0.3); z-index: 10;'></div>" if voice_duration > 0 else ""}
+                        {"<div style='position: absolute; right: -10px; top: 0; bottom: 0; width: 20px; background: rgba(255,255,255,0.3); z-index: 10;'></div>" if intro_overlap else ""}
                     </div>
         """
 
@@ -227,12 +231,12 @@ def generate_timeline_chart(voice_file, intro_file: Optional[str],
                 filename) <= 20 else filename[:17] + "..."
 
             # Determine if we show overlap indicators
-            show_left_overlap = (intro_duration > 0 and idx == 0) or idx > 0
-            show_right_overlap = (outro_duration > 0 and idx == len(
-                voice_file_durations) - 1) or idx < len(voice_file_durations) - 1
+            show_left_overlap = intro_overlap > 0 and idx == 0
+            show_right_overlap = outro_overlap > 0 and idx == len(voice_file_durations) - 1
 
             html += f"""
                     <div style="width: {percent}%; background: {color};
+                         flex-shrink: 0;
                          display: flex; align-items: center; justify-content: center; color: white;
                          font-size: 10px; font-weight: bold; border-right: 2px solid white; position: relative; overflow: hidden;">
                         <div style="text-align: center; padding: 2px; line-height: 1.2;">
@@ -249,13 +253,14 @@ def generate_timeline_chart(voice_file, intro_file: Optional[str],
     if outro_duration > 0:
         html += f"""
                     <div style="width: {outro_percent}%; background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+                         flex-shrink: 0; margin-left: -{outro_overlap_percent}%;
                          display: flex; align-items: center; justify-content: center; color: white;
                          font-size: 12px; font-weight: bold; position: relative;">
                         <div style="text-align: center; padding: 5px;">
                             <div>OUTRO</div>
                             <div style="font-size: 10px; opacity: 0.9;">{format_time(outro_duration)}</div>
                         </div>
-                        {"<div style='position: absolute; left: -10px; top: 0; bottom: 0; width: 20px; background: rgba(255,255,255,0.3); z-index: 10;'></div>" if voice_duration > 0 else ""}
+                        {"<div style='position: absolute; left: -10px; top: 0; bottom: 0; width: 20px; background: rgba(255,255,255,0.3); z-index: 10;'></div>" if outro_overlap else ""}
                     </div>
         """
 
@@ -268,7 +273,7 @@ def generate_timeline_chart(voice_file, intro_file: Optional[str],
         if len(voice_files) == 1:
             # Single voice track: show one overlay only if enabled
             if normalized_bg_flags[0]:
-                bg_start_percent = intro_percent
+                bg_start_percent = voice_start / total_duration * 100
                 bg_width_percent = voice_percent
 
                 html += f"""
@@ -281,7 +286,7 @@ def generate_timeline_chart(voice_file, intro_file: Optional[str],
                 """
         else:
             # Multiple voice tracks: show overlay only on enabled segments
-            voice_start_percent = intro_percent
+            voice_start_percent = voice_start / total_duration * 100
             for _, _, segment_percent, use_background in voice_file_durations:
                 if use_background:
                     html += f"""
@@ -350,7 +355,7 @@ def generate_timeline_chart(voice_file, intro_file: Optional[str],
             html += "</div>"
 
     if overlap_seconds > 0:
-        html += "<div style='margin: 3px 0; padding: 5px; background: #fff3cd; border-radius: 3px;'>⚡ <strong>Overlaps:</strong> 1-second smooth transitions between segments (shown as lighter areas)</div>"
+        html += f"<div style='margin: 3px 0; padding: 5px; background: #fff3cd; border-radius: 3px;'>⚡ <strong>Overlaps:</strong> intro-voice {intro_overlap:g}s; voice-outro {outro_overlap:g}s. Recordings are joined without overlaps.</div>"
 
     html += """
             </div>
@@ -3684,7 +3689,7 @@ def create_ui():
                     "intro_file": "Default intro", "outro_file": "Default outro",
                     "background_tracks": "Background tracks", "background_volume": "Master background level (%)", "delete_voice": "Delete voice recording after creation",
                     "trim_silence": "Trim silence from voice recording", "prioritize_recording_filename": "Prefer Recording.m4a first",
-                    "rss_feed_url": "RSS Feed URL", "intro_voice_overlap": "Intro-voice overlap (1 second)",
+                    "rss_feed_url": "RSS Feed URL", "intro_voice_overlap": "Intro-voice overlap (2 seconds)",
                     "voice_outro_overlap": "Voice-outro overlap (1 second)", "denoise_audio": "Enable noise reduction",
                     "denoise_method": "Noise Reduction Method", "enhance_voice": "Enable professional voice enhancement",
                     "voice_enhancement_preset": "Enhancement Preset", "normalize_lufs": "Normalize audio to professional LUFS level",
@@ -4471,7 +4476,7 @@ def _legacy_create_ui():
 
                             with gr.Row(elem_classes=["compact-row"]):
                                 intro_voice_overlap_checkbox = gr.Checkbox(
-                                    label="Enable intro-voice overlap (1 second)",
+                                    label="Enable intro-voice overlap (2 seconds)",
                                     value=config_manager.get_intro_voice_overlap(),
                                     info="Smooth transition from intro to voice"
                                 )

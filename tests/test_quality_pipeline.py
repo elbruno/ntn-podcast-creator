@@ -400,27 +400,26 @@ class TestMixStems(PipelineCase):
             background_segments=[(-100, 1000), (2000, 3000),
                                  (None, 200), (5000, 6000)],
             auto_ducking=True, quality_config=AudioQualityConfig(window_ms=250))
-        self.assertEqual(offset, 1)
+        self.assertEqual(offset, 0)
         self.assertEqual(actual_voice.raw_data, voice.raw_data)
         self.assertEqual(len(actual_music), 4000)
         expected = silence(4000)
         ducked = self.processor.apply_ducking(voice[:1000], music)
         expected = expected.overlay(ducked).overlay(ducked, position=2000)
-        expected = expected.overlay(
-            intro[-1000:]).overlay(outro[:1000], position=3000)
+        expected = expected.overlay(intro).overlay(outro[:1000], position=3000)
         self.assertEqual(actual_music.raw_data, expected.raw_data)
-        self.assertEqual(actual_music[1000:2000].rms, 0)
+        self.assertEqual(actual_music[1000:2000].raw_data, intro[1000:2000].raw_data)
         report = self.reports[-1]
-        self.assertEqual(report.windows[0]["timestamp_start"], 1)
-        self.assertEqual(report.windows[-1]["timestamp_end"], 5)
+        self.assertEqual(report.windows[0]["timestamp_start"], 0)
+        self.assertEqual(report.windows[-1]["timestamp_end"], 4)
         tracks = self.sidecar()["metadata"]["selected_tracks"]
         self.assertEqual([track["start_ms"] for track in tracks], [0, 2000])
         self.assertEqual([track["episode_start_ms"]
-                         for track in tracks], [1000, 3000])
+                         for track in tracks], [0, 2000])
         self.assertEqual([track["episode_end_ms"]
-                         for track in tracks], [2000, 4000])
+                         for track in tracks], [1000, 3000])
         with open(self.root / "episode.mp3", "rb") as source:
-            self.assertEqual(len(AudioSegment.from_file(source)), 6000)
+            self.assertEqual(len(AudioSegment.from_file(source)), 5000)
 
     def test_balancing_selective_quiet_voice_does_not_use_ignored_regain(self):
         voice = tone(1000, -18) + tone(1000, -36)
@@ -468,9 +467,9 @@ class TestMixStems(PipelineCase):
         actual_voice, music, offset = self.capture_render(
             voice_file=self.write(voice, "unchanged.wav"),
             intro_file=self.write(intro, "intro.wav"), intro_voice_overlap=True)
-        self.assertEqual(offset, 1)
+        self.assertEqual(offset, 0)
         self.assertEqual(actual_voice.raw_data, voice.raw_data)
-        self.assertEqual(music[:1000].raw_data, intro[1000:].raw_data)
+        self.assertEqual(music[:2000].raw_data, intro.raw_data)
         self.assertAlmostEqual(music[950:1000].dBFS, music[:50].dBFS, delta=0.1)
 
     def test_opening_word_correction_is_opt_in_and_keeps_timeline(self):
@@ -521,6 +520,50 @@ class TestMixStems(PipelineCase):
                 with open(self.root / "episode.mp3", "rb") as source:
                     self.assertEqual(
                         len(AudioSegment.from_file(source)), expected_duration)
+
+    def test_intro_overlay_timeline_and_exact_unfaded_samples(self):
+        cases = [
+            (5000, 10000, 0, True, False, 3000, 13000),
+            (5000, 10000, 0, False, False, 5000, 15000),
+            (500, 3000, 0, True, False, 0, 3000),
+            (5000, 250, 0, True, False, 4750, 5000),
+            (5000, 10000, 2000, True, True, 3000, 14000),
+            (5000, 10000, 2000, True, False, 3000, 15000),
+            (0, 3000, 0, True, False, 0, 3000),
+            (5000, 250, 200, True, False, 4750, 5200),
+        ]
+        for intro_ms, voice_ms, outro_ms, enabled, outro_enabled, offset, duration in cases:
+            with self.subTest(case=(intro_ms, voice_ms, outro_ms, enabled, outro_enabled)):
+                voice = tone(voice_ms, -24, frequency=440)
+                intro = tone(intro_ms, -30, frequency=220) if intro_ms else None
+                outro = tone(outro_ms, -30, frequency=880) if outro_ms else None
+                captured = []
+                export = AudioSegment.export
+
+                def spy(audio, path, *args, **kwargs):
+                    if os.fspath(path) == str(self.root / "episode.mp3"):
+                        captured.append(audio)
+                    return export(audio, path, *args, **kwargs)
+
+                with patch.object(AudioSegment, "export", autospec=True, side_effect=spy):
+                    self.render(
+                        voice_file=self.write(voice, "voice.wav"),
+                        intro_file=self.write(intro, "intro.wav") if intro is not None else None,
+                        outro_file=self.write(outro, "outro.wav") if outro is not None else None,
+                        intro_voice_overlap=enabled, voice_outro_overlap=outro_enabled,
+                        quality_gate_enabled=False)
+                expected = silence(duration)
+                if intro is not None:
+                    expected = expected.overlay(intro)
+                if outro is not None:
+                    outro_offset = offset + voice_ms - (
+                        1000 if outro_enabled and min(voice_ms, outro_ms) >= 1000 else 0)
+                    if not outro_enabled:
+                        outro = outro.fade_in(200)
+                    expected = expected.overlay(outro, position=outro_offset)
+                expected = expected.overlay(voice, position=offset)
+                self.assertEqual(len(captured[0]), duration)
+                self.assertEqual(captured[0].raw_data, expected.raw_data)
 
     def test_overlapping_selected_ranges_are_measured_as_actually_summed(self):
         music = tone(1000, -32, frequency=220)

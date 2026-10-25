@@ -135,6 +135,35 @@ def test_cli_overrides_are_request_local(setup):
     assert manager.snapshot()["generate_transcript"] is False
 
 
+def test_versioned_folder_artifacts_share_the_requested_stem(setup):
+    manager, processor, recording = setup
+    manager.update_settings({"generate_transcript": True, "quality_gate_enabled": True})
+    original_render = processor.create_podcast.side_effect
+    cleaned = recording.with_name("cleaned.wav")
+    shutil.copyfile(recording, cleaned)
+
+    def render(**kwargs):
+        result, _, _ = original_render(**kwargs)
+        return result, str(cleaned), None
+
+    def transcribe(**kwargs):
+        audio = Path(kwargs["audio_file"])
+        transcript = audio.with_name(audio.stem + "_transcript.txt")
+        transcript.write_text("synthetic transcript", encoding="utf-8")
+        return str(transcript)
+
+    processor.create_podcast.side_effect = render
+    processor.transcribe_podcast.side_effect = transcribe
+    result = render_saved_episode(manager, processor, EpisodeRequest(
+        str(recording), "ntn603-02", saved_settings=True, folder_output=True), print)
+    assert result["mp3"]["orig_name"] == "ntn603-02.mp3"
+    assert result["denoised"]["orig_name"] == "ntn603-02_denoised.wav"
+    assert result["transcript"]["orig_name"] == "ntn603-02_transcript.txt"
+    assert result["quality_report"]["orig_name"] == "ntn603-02.mp3.quality.json"
+    assert all(Path(result[kind]["path"]).is_file()
+               for kind in ("mp3", "denoised", "transcript", "quality_report"))
+
+
 @pytest.mark.parametrize("folder_output", [False, True])
 def test_real_processor_exports_mix_and_bound_quality_report(setup, folder_output):
     from features.audio_processor import AudioProcessor, _read_quality_sidecar
@@ -433,7 +462,8 @@ def test_actual_python_folder_client(server, tmp_path):
         client.render([bad_upload], "ntn602", settings, print)
 
 
-def test_menu_to_real_api_and_audio_pipeline(server, tmp_path, monkeypatch):
+@pytest.mark.parametrize("generated", [False, True])
+def test_menu_to_real_api_and_audio_pipeline(server, tmp_path, monkeypatch, generated):
     import importlib.util
     import numpy as np
     from features.audio_processor import AudioProcessor
@@ -441,6 +471,10 @@ def test_menu_to_real_api_and_audio_pipeline(server, tmp_path, monkeypatch):
     root = tmp_path / "library"
     folder = root / "26 10 11 NTN 603 Synthetic"
     folder.mkdir(parents=True)
+    stem = "ntn603-02" if generated else "ntn603"
+    if generated:
+        (folder / "ntn603.mp3").write_bytes(b"original final")
+        (folder / "ntn603-01.mp3").write_bytes(b"previous version")
     first = folder / "Recording.wav"
     second = folder / "Recoding (2).wav"
     Sine(440).to_audio_segment(duration=250).export(first, format="wav")
@@ -457,12 +491,15 @@ def test_menu_to_real_api_and_audio_pipeline(server, tmp_path, monkeypatch):
     spec = importlib.util.spec_from_file_location("synthetic_pending", ROOT / "scripts/ntn-create-pending.py")
     cli = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(cli)
-    answers = iter(["1", "yes"])
+    answers = iter(["1", "", "yes"])
     before = first.read_bytes(), second.read_bytes()
     logs = []
-    assert cli.main(["--root", str(root), "--server-url", server[0], "--no-auto-start", "--no-play"],
+    args = ["--root", str(root), "--server-url", server[0], "--no-auto-start", "--no-play"]
+    if generated:
+        args.append("--include-generated")
+    assert cli.main(args,
                     input_fn=lambda _: next(answers), log=logs.append) == 0
-    output = folder / "ntn603.mp3"
+    output = folder / f"{stem}.mp3"
     assert output.is_file()
     audio = AudioSegment.from_file(output).set_channels(1)
     assert abs(len(audio) - 950) < 10
@@ -474,7 +511,11 @@ def test_menu_to_real_api_and_audio_pipeline(server, tmp_path, monkeypatch):
             np.abs(np.fft.rfft(samples)).argmax()]
         assert abs(peak - expected) < 15
     assert (first.read_bytes(), second.read_bytes()) == before
-    assert len(list(Path("outputs").glob("folder-episode-*/ntn603.mp3"))) == 1
+    assert len(list(Path("outputs").glob(f"folder-episode-*/{stem}.mp3"))) == 1
+    if generated:
+        assert (folder / "ntn603.mp3").read_bytes() == b"original final"
+        assert (folder / "ntn603-01.mp3").read_bytes() == b"previous version"
+    assert not list(folder.glob(".ntn-local-reservation-*"))
     assert not list(folder.glob("*.part"))
     assert not list(Path("uploads").iterdir())
     assert any("guardado" in line for line in logs)
@@ -488,6 +529,47 @@ def test_api_rejects_server_paths_and_duplicate_names(server):
     assert collect(server, submit(server, "ntn583"))["success"]
     duplicate = collect(server, submit(server, "ntn583"))
     assert not duplicate["success"] and "already exists" in duplicate["error"]
+
+
+def test_folder_cli_two_second_overlay_through_real_api(server, tmp_path):
+    import importlib.util
+    import numpy as np
+    from features.audio_processor import AudioProcessor
+
+    root = tmp_path / "library"
+    folder = root / "NTN 604 Synthetic"
+    folder.mkdir(parents=True)
+    voice = folder / "interview.wav"
+    intro = tmp_path / "intro.wav"
+    Sine(440).to_audio_segment(duration=10000).apply_gain(-12).export(voice, format="wav")
+    Sine(220).to_audio_segment(duration=5000).apply_gain(-18).export(intro, format="wav")
+    (folder / "ntn604.mp3").write_bytes(b"preserved final")
+    server[1].update_settings({
+        "intro_file": str(intro), "outro_file": None, "intro_voice_overlap": True})
+    server[2].create_podcast.side_effect = AudioProcessor().create_podcast
+    spec = importlib.util.spec_from_file_location(
+        "overlay_pending", ROOT / "scripts/ntn-create-pending.py")
+    cli = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cli)
+    answers = iter(["1", "", "yes"])
+    assert cli.main([
+        "--root", str(root), "--server-url", server[0], "--include-generated",
+        "--no-auto-start", "--no-play",
+    ], input_fn=lambda _: next(answers), log=lambda _: None) == 0
+    audio = AudioSegment.from_file(folder / "ntn604-01.mp3").set_channels(1)
+    assert abs(len(audio) - 13000) < 10
+
+    def amplitude(start, frequency):
+        segment = audio[start:start + 500]
+        samples = np.array(segment.get_array_of_samples(), dtype=float)
+        frequencies = np.fft.rfftfreq(len(samples), 1 / audio.frame_rate)
+        spectrum = np.abs(np.fft.rfft(samples))
+        return spectrum[np.abs(frequencies - frequency).argmin()]
+
+    assert amplitude(3500, 220) > amplitude(5500, 220) * 100
+    assert amplitude(3500, 440) > amplitude(2000, 440) * 100
+    assert amplitude(5500, 440) > amplitude(2000, 440) * 100
+    assert (folder / "ntn604.mp3").read_bytes() == b"preserved final"
 
 
 @pytest.mark.parametrize("transcribe,no_background,default_destination",
