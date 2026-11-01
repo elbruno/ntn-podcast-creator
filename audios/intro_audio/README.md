@@ -1,6 +1,9 @@
 # Intro Audio Folder
 
-Place your default intro audio files in this folder. The application will automatically load the first audio file found here on startup.
+This folder includes the approved NTN intro used by the
+[portable first-run settings](../../core/config.initial.json).
+Existing saved selections always win. Only configurations missing an intro
+selection discover an available file on startup.
 
 ## Supported Formats
 - MP3
@@ -12,7 +15,8 @@ Place your default intro audio files in this folder. The application will automa
 ## Usage
 1. Add your intro audio file to this folder (e.g., `intro.mp3`)
 2. Restart the application
-3. The intro will be automatically loaded and used for all podcasts
+3. Select the intro in **Settings** and choose **Save settings**
 
 ## Note
-If multiple files are present, only the first one (alphabetically) will be used.
+Additional local audio stays ignored by Git. Publish new audio only with
+redistribution permission. See the [machine handoff guide](../../docs/MACHINE_HANDOFF.md).

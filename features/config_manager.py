@@ -21,12 +21,20 @@ class ConfigManager:
     def __init__(self, config_file: str = "core/config.json"):
         """Initialize configuration manager.
 
+        If the local file is absent, validate and persist an adjacent
+        config.initial.json once. Never replace an existing local file.
+
         Args:
             config_file: Path to the configuration JSON file
         """
         self.config_file = config_file
         self._lock = RLock()
         self.config = self._load_config()
+        initial_file = os.path.splitext(config_file)[0] + ".initial.json"
+        if not os.path.exists(config_file) and os.path.isfile(initial_file):
+            print(f"Initializing settings from {initial_file}", flush=True)
+            with open(initial_file, 'r', encoding='utf-8') as f:
+                self.update_settings(json.load(f))
 
     def _load_config(self) -> Dict[str, Any]:
         """Load configuration from file or create default config.

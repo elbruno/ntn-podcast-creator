@@ -30,6 +30,11 @@ saved settings without local audio dependencies.
 ### [Docker Publishing](DOCKER_PUBLISH.md)
 Instructions for building and publishing Docker images.
 
+### [Machine Handoff](MACHINE_HANDOFF.md)
+Implementation plan and new-computer checklist: clone the approved audio library,
+bootstrap portable settings without overwriting local configuration, start Docker,
+and verify persistence. Explains what must be transferred privately.
+
 ## 🛠️ Technical Documentation
 
 ### [Audio Quality Gate](AUDIO_QUALITY_GATE.md)

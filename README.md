@@ -32,6 +32,11 @@ docker-compose up -d
 
 Open your browser to **http://localhost:7860** and you're ready!
 
+Moving to another computer? The repository includes the approved NTN intro,
+outro, background library, and first-run settings. Existing local settings are
+never overwritten. Follow the [machine handoff guide](docs/MACHINE_HANDOFF.md)
+for clone, startup, verification, and later updates.
+
 Already saved your settings? Generate from a terminal without opening the portal:
 
 ```powershell

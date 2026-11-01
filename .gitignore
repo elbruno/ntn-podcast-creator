@@ -232,3 +232,13 @@ audios/background_music/*.flac
 
 # Keep test audio files
 !audios/test/**
+
+# Approved, portable NTN audio library. Keep other local audio ignored.
+!audios/intro_audio/25 11 22 NTN-Intro.MP3
+!audios/outro_audio/24 12 03 NTN-Outro.m4a
+!audios/background_music/Bubblegum_Ballgame.mp3
+!audios/background_music/Calypso_Beach_Walk.mp3
+!audios/background_music/Driving-Electronic-Drama.mp3
+!audios/background_music/hips-are-moving.mp3
+!audios/background_music/Mr Smith - I Still Miss You.mp3
+!audios/background_music/Safety_Net.mp3

@@ -178,16 +178,22 @@ git clone https://github.com/elbruno/ntn-podcast-creator.git
 cd ntn-podcast-creator
 
 # Start the application
-docker-compose up -d
+docker compose -f deployment/docker-compose.yml up -d --build
 
 # View logs
-docker-compose logs -f
+docker compose -f deployment/docker-compose.yml logs -f
 
 # Stop the application
-docker-compose down
+docker compose -f deployment/docker-compose.yml down
 ```
 
 The application will be available at http://localhost:7860
+
+Fresh clones include the approved NTN music library and
+`core/config.initial.json`. Startup validates and saves these initial settings
+only when `core/config.json` is absent. Existing local configuration always wins.
+See the [machine handoff guide](MACHINE_HANDOFF.md) for the complete
+new-computer checklist, PowerShell commands, and private-backup boundaries.
 
 ### Option 3: Build from Source
 
@@ -199,7 +205,7 @@ git clone https://github.com/elbruno/ntn-podcast-creator.git
 cd ntn-podcast-creator
 
 # Build the image
-docker build -t ntn-podcast-creator .
+docker build -t ntn-podcast-creator -f deployment/Dockerfile .
 
 # Run the container
 docker run -d \
